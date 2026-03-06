@@ -89,7 +89,8 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
     // Zoom & Pan state
     const [stageScale, setStageScale] = useState(1);
     const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
-    const [scaleFactor, setScaleFactor] = useState(1);
+    const [targetMaxScore, setTargetMaxScore] = useState<number>(10);
+    const [scoreStampSize, setScoreStampSize] = useState(24);
     const [history, setHistory] = useState<Annotation[][]>([]);
     const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('correction-dark-mode');
@@ -711,22 +712,28 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Grade tracker</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'var(--bg-tertiary)', padding: '0.1rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border)' }}>
-                            <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Factor:</span>
+                            <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Màxim:</span>
                             <input 
-                                type="number" step="0.1" value={scaleFactor} 
-                                onChange={(e) => setScaleFactor(Number(e.target.value))}
+                                type="number" step="0.5" value={targetMaxScore} 
+                                onChange={(e) => setTargetMaxScore(Number(e.target.value))}
                                 style={{ width: '40px', background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '0.7rem', fontWeight: 700, textAlign: 'center', padding: 0 }}
                             />
                         </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem' }}>
-                        <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent)' }}>Total: {roundedTotalStudentScore} pt</span>
-                        {scaleFactor !== 1 && (
-                            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--success)' }}>
-                                (Scaled: {Math.round(roundedTotalStudentScore * scaleFactor * 100) / 100})
-                            </span>
-                        )}
-                    </div>
+                    {(() => {
+                        const totalPossible = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+                        const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
+                        const scaledScore = Math.round(roundedTotalStudentScore * currentFactor * 100) / 100;
+                        
+                        return (
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem' }}>
+                                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent)' }}>Total: {roundedTotalStudentScore} pt</span>
+                                <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--success)' }}>
+                                    (Recalculat: {scaledScore} / {targetMaxScore})
+                                </span>
+                            </div>
+                        );
+                    })()}
                 </div>
 
                 {/* Right: Student Navigation & Export */}
@@ -747,7 +754,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                             >
                                 {students.map((st, i) => (
                                     <option key={st.id} value={i}>
-                                        Alumne {i + 1}
+                                        {st.name || `Alumne ${i + 1}`}
                                     </option>
                                 ))}
                             </select>
@@ -763,12 +770,14 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                             onClick={async () => {
                                 setIsExporting(true);
                                 setExportProgress({ done: 0, total: exercises.length });
+                                const totalPossible = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+                                const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
                                 try {
                                     await exportAnnotatedPDF({
                                         pdfDoc, students, exercises, annotations, rubricCounts,
                                         scope: 'current',
                                         currentStudentIdx: studentIdx,
-                                        scaleFactor,
+                                        scaleFactor: currentFactor,
                                         onProgress: (d, t) => setExportProgress({ done: d, total: t })
                                     });
                                 } finally {
@@ -793,12 +802,14 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                             onClick={async () => {
                                 setIsExporting(true);
                                 setExportProgress({ done: 0, total: students.length * exercises.length });
+                                const totalPossible = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+                                const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
                                 try {
                                     await exportAnnotatedPDF({
                                         pdfDoc, students, exercises, annotations, rubricCounts,
                                         scope: 'all',
                                         currentStudentIdx: studentIdx,
-                                        scaleFactor,
+                                        scaleFactor: currentFactor,
                                         onProgress: (d, t) => setExportProgress({ done: d, total: t })
                                     });
                                 } finally {
@@ -824,12 +835,14 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                             onClick={async () => {
                                 setIsExporting(true);
                                 setExportProgress({ done: 0, total: exercises.length });
+                                const totalPossible = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+                                const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
                                 try {
                                     await exportOriginalLayoutPDF({
                                         pdfDoc, students, exercises, annotations, rubricCounts,
                                         scope: 'current',
                                         currentStudentIdx: studentIdx,
-                                        scaleFactor,
+                                        scaleFactor: currentFactor,
                                         onProgress: (d, t) => setExportProgress({ done: d, total: t })
                                     });
                                 } finally {
@@ -855,12 +868,14 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                             onClick={async () => {
                                 setIsExporting(true);
                                 setExportProgress({ done: 0, total: students.length * exercises.length });
+                                const totalPossible = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+                                const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
                                 try {
                                     await exportOriginalLayoutPDF({
                                         pdfDoc, students, exercises, annotations, rubricCounts,
                                         scope: 'all',
                                         currentStudentIdx: studentIdx,
-                                        scaleFactor,
+                                        scaleFactor: currentFactor,
                                         onProgress: (d, t) => setExportProgress({ done: d, total: t })
                                     });
                                 } finally {
@@ -1022,6 +1037,13 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                             <span style={{ fontSize: '0.5rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'center' }}>Mida Text</span>
                             <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
                                 <input type="number" value={commentDefaultSize} onChange={e => setCommentDefaultSize(Number(e.target.value))}
+                                    style={{ width: '100%', maxWidth: '60px', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 4px', fontSize: '0.75rem', textAlign: 'center' }} />
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', width: '100%', padding: '0' }}>
+                            <span style={{ fontSize: '0.5rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'center' }}>Mida Nota</span>
+                            <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+                                <input type="number" value={scoreStampSize} onChange={e => setScoreStampSize(Number(e.target.value))}
                                     style={{ width: '100%', maxWidth: '60px', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 4px', fontSize: '0.75rem', textAlign: 'center' }} />
                             </div>
                         </div>
@@ -1355,12 +1377,34 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                                 anchorFill="white"
                                                 anchorStroke="#6366f1"
                                                 anchorStrokeWidth={1.5}
-                                                anchorSize={6 / stageScale}
-                                                anchorCornerRadius={2}
-                                                padding={3}
+                                                anchorSize={5 / stageScale}
+                                                anchorCornerRadius={1}
+                                                padding={5 / stageScale}
                                                 enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right', 'top-center', 'bottom-center']}
                                             />
                                         )}
+
+                                        {/* Persistent Score Stamp in Viewer */}
+                                        {renderedPages.length > 0 && computedScore !== null && (() => {
+                                            const totalPossible = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+                                            const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
+                                            const scaledExScore = Math.round(computedScore * currentFactor * 100) / 100;
+                                            const scaledExMax = (currentExercise.maxScore ?? 10) * currentFactor;
+
+                                            return (
+                                                <Text
+                                                    x={renderedPages[0].width - 310}
+                                                    y={renderedPages.reduce((sum, p) => sum + p.height, 0) - (scoreStampSize + 10)}
+                                                    text={`Nota: ${scaledExScore}`}
+                                                    fontSize={scoreStampSize}
+                                                    fontFamily="'Caveat', cursive"
+                                                    fontStyle="bold"
+                                                    fill={(scaledExScore >= (scaledExMax / 2)) ? '#10b981' : '#ef4444'}
+                                                    align="right"
+                                                    width={300}
+                                                />
+                                            );
+                                        })()}
                                     </Layer>
                                 </Stage>
 
