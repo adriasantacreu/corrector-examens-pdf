@@ -293,7 +293,6 @@ export async function exportOriginalLayoutPDF(opts: ExportOptions): Promise<void
                 if (exercise.type !== 'crop' && exercise.type !== 'pages') continue;
                 const exAnns = annotations[student.id]?.[exercise.id] || [];
                 const exRubricCounts = rubricCounts?.[student.id]?.[exercise.id] ?? {};
-                const activeItems = exercise.rubric ? exercise.rubric.filter(it => (exRubricCounts[it.id] ?? 0) > 0) : [];
                 const highlightAdj = exAnns.reduce((s, a) => (a.type === 'highlighter' && typeof a.points === 'number' ? s + a.points : (a.type === 'text' && typeof a.score === 'number' ? s + a.score : s)), 0);
                 const rubricBase = (exercise.scoringMode === 'from_zero' && exercise.rubric) ? exercise.rubric.reduce((s, item) => s + item.points * (exRubricCounts[item.id] ?? 0), 0) : (exercise.maxScore ?? 0);
                 const finalScore = (rubricBase + highlightAdj) * scaleFactor;
