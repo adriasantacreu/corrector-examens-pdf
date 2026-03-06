@@ -302,7 +302,7 @@ export async function exportOriginalLayoutPDF(opts: ExportOptions): Promise<void
                     const absPage = student.pageIndexes[exercise.pageIndex];
                     if (absPage === undefined || absPage === -1) continue;
                     const scoreX = exercise.x + exercise.width - 10, scoreY = exercise.y + exercise.height - 10;
-                    const addedAnns = createScoreAnns(exercise, finalScore, exAnns, activeItems, exRubricCounts, scoreX, scoreY, 1.0, scaleFactor);
+                    const addedAnns = createScoreAnns(exercise, finalScore, scoreX, scoreY, 1.0, scaleFactor);
                     const existing = pageAnnotMap.get(absPage) || [];
                     pageAnnotMap.set(absPage, [...existing, ...addCropOffset(exAnns, exercise.x, exercise.y), ...addedAnns]);
                 } else if (exercise.type === 'pages') {
@@ -322,7 +322,7 @@ export async function exportOriginalLayoutPDF(opts: ExportOptions): Promise<void
                         const existing = pageAnnotMap.get(absPage) || [];
                         let fullPageAnns = [...existing, ...annsOnThisPage];
                         if (i === 0) {
-                            const addedAnns = createScoreAnns(exercise, finalScore, exAnns, activeItems, exRubricCounts, viewport.width - 20, viewport.height - 20, 0.8, scaleFactor);
+                            const addedAnns = createScoreAnns(exercise, finalScore, viewport.width - 20, viewport.height - 20, 0.8, scaleFactor);
                             fullPageAnns = [...fullPageAnns, ...addedAnns];
                         }
                         pageAnnotMap.set(absPage, fullPageAnns);
