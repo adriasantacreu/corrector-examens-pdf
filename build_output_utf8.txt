@@ -1,0 +1,18 @@
+﻿
+> prova-app-correccio-pc@0.0.0 build
+> tsc -b && vite build
+
+src/App.tsx(42,27): error TS2552: Cannot find name 'useState'. Did you mean 'saveState'?
+src/App.tsx(45,53): error TS2552: Cannot find name 'useState'. Did you mean 'saveState'?
+src/App.tsx(48,26): error TS2552: Cannot find name 'useState'. Did you mean 'saveState'?
+src/App.tsx(49,31): error TS2552: Cannot find name 'useState'. Did you mean 'saveState'?
+src/App.tsx(50,35): error TS2552: Cannot find name 'useState'. Did you mean 'saveState'?
+src/App.tsx(51,43): error TS2552: Cannot find name 'useState'. Did you mean 'saveState'?
+src/App.tsx(54,35): error TS2552: Cannot find name 'useState'. Did you mean 'saveState'?
+src/App.tsx(55,37): error TS2552: Cannot find name 'useState'. Did you mean 'saveState'?
+src/App.tsx(56,41): error TS2552: Cannot find name 'useState'. Did you mean 'saveState'?
+src/App.tsx(57,43): error TS2304: Cannot find name 'useState'.
+src/App.tsx(58,41): error TS2304: Cannot find name 'useState'.
+src/App.tsx(59,57): error TS2304: Cannot find name 'useState'.
+src/App.tsx(62,3): error TS2304: Cannot find name 'useEffect'.
+src/App.tsx(125,20): error TS7006: Parameter 'prev' implicitly has an 'any' type.
