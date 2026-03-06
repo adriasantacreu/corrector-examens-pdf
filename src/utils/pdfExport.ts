@@ -375,7 +375,7 @@ export async function exportOriginalLayoutPDF(opts: ExportOptions): Promise<void
     downloadBytes(bytes, scope === 'current' ? `layout_${students[currentStudentIdx]?.name.replace(/\s+/g, '_')}.pdf` : 'layout_tots_els_alumnes.pdf');
 }
 
-function createScoreAnns(exercise: ExerciseDef, finalScore: number, exAnns: Annotation[], activeItems: any[], exRubricCounts: Record<string, number>, x: number, y: number, scale: number = 1.8, scaleFactor: number = 1): Annotation[] {
+function createScoreAnns(exercise: ExerciseDef, finalScore: number, x: number, y: number, scale: number = 1.8, scaleFactor: number = 1): Annotation[] {
     const maxPoss = (exercise.maxScore ?? 10) * scaleFactor;
     return [{
         id: `fake_score_${exercise.id}`, type: 'text', text: "Nota: " + String(Math.round(finalScore * 100) / 100),

@@ -612,14 +612,14 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                     const dy = e.target.y();
                     const points = a.points.map((p, i) => i % 2 === 0 ? p + dx : p + dy);
                     e.target.position({ x: 0, y: 0 });
-                    return { ...a, points };
+                    return { ...a, points } as PenAnnotation;
                 } else {
                     // Other types use Group position as coordinate
-                    return { ...a, x: e.target.x(), y: e.target.y() };
+                    return { ...a, x: e.target.x(), y: e.target.y() } as any;
                 }
             }
             return a;
-        });
+        }) as Annotation[];
         updateAnnotationsWithHistory(newAnnots);
     };
 
@@ -638,7 +638,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                         const scale = i % 2 === 0 ? scaleX : scaleY;
                         return base + (p - base) * scale;
                     });
-                    return { ...a, points: scaledPoints };
+                    return { ...a, points: scaledPoints } as PenAnnotation;
                 } else if (a.type === 'highlighter' || a.type === 'image') {
                     return {
                         ...a,
@@ -646,11 +646,11 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                         y: node.y(),
                         width: Math.abs(node.width() * scaleX),
                         height: Math.abs(node.height() * scaleY),
-                    };
+                    } as any;
                 }
             }
             return a;
-        });
+        }) as Annotation[];
         node.scaleX(1);
         node.scaleY(1);
         updateAnnotationsWithHistory(newAnnots);
@@ -1119,13 +1119,12 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                         fontSize: commentDefaultSize,
                                         score: commentScore,
                                     };
-                                    updateAnnotationsWithHistory([...currentAnnotations, newAnnotation]);
+                                    updateAnnotationsWithHistory([...currentAnnotations, newAnnotation] as Annotation[]);
                                     setDraggingComment(null);
                                     setTool('select');
                                     // Select after short delay to let state settle
                                     setTimeout(() => setSelectedId(newId), 50);
-                                }}
-                            >
+                                }}                            >
                                 <Stage
                                     ref={stageRef}
                                     width={containerRef.current?.clientWidth || window.innerWidth}
@@ -1625,21 +1624,21 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                             <div style={{ display: 'flex', gap: '0.3rem' }}>
                                                 <input
                                                     type="number" step="0.1" placeholder="Pts"
-                                                    value={selectedAnn.type === 'text' ? ((selectedAnn as TextAnnotation).score ?? '') : ((selectedAnn as HighlighterAnnotation).points ?? '')}
+                                                    value={selectedAnn.type === 'text' ? ((selectedAnn as TextAnnotation).score ?? '') : (selectedAnn.type === 'highlighter' ? ((selectedAnn as HighlighterAnnotation).points ?? '') : '')}
                                                     onChange={e => {
                                                         const val = e.target.value === '' ? undefined : Number(e.target.value);
                                                         updateAnnotationsWithHistory(currentAnnotations.map(a =>
-                                                            a.id === selectedId ? (a.type === 'text' ? { ...a, score: val } : { ...a, points: val }) : a
+                                                            a.id === selectedId ? (a.type === 'text' ? { ...a, score: val } : (a.type === 'highlighter' ? { ...a, points: val } : a)) : a
                                                         ));
                                                     }}
                                                     style={{ width: '50px', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text-primary)', padding: '0.2rem 0.3rem', fontSize: '0.65rem' }}
                                                 />
                                                 <input 
                                                     type="color" 
-                                                    value={selectedAnn.color.startsWith('#') ? selectedAnn.color : '#ef4444'} 
+                                                    value={(selectedAnn as any).color?.startsWith('#') ? (selectedAnn as any).color : '#ef4444'} 
                                                     onChange={e => {
                                                         updateAnnotationsWithHistory(currentAnnotations.map(a => 
-                                                            a.id === selectedId ? { ...a, color: e.target.value } : a
+                                                            a.id === selectedId ? { ...a, color: e.target.value } as any : a
                                                         ));
                                                     }}
                                                     style={{ width: '24px', height: '24px', padding: 0, border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer' }}
@@ -1775,14 +1774,14 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                     {['#ef4444', '#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#000000'].map(c => {
                                         const selectedAnn = currentAnnotations.find(a => a.id === selectedId);
-                                        const isSelectedColor = selectedAnn?.color === c;
+                                        const isSelectedColor = (selectedAnn as any)?.color === c;
                                         
                                         return (
                                             <button
                                                 key={c}
                                                 onClick={() => {
                                                     const newAnns = currentAnnotations.map(a => 
-                                                        a.id === selectedId ? { ...a, color: c } : a
+                                                        a.id === selectedId ? { ...a, color: c } as any : a
                                                     );
                                                     updateAnnotationsWithHistory(newAnns);
                                                 }}
@@ -1798,13 +1797,13 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                     <input 
                                         type="color" 
                                         value={(() => {
-                                            const ann = currentAnnotations.find(a => a.id === selectedId);
+                                            const ann = currentAnnotations.find(a => a.id === selectedId) as any;
                                             if (ann?.color && ann.color.startsWith('#')) return ann.color;
                                             return '#3b82f6'; 
                                         })()}
                                         onChange={(e) => {
                                             const newAnns = currentAnnotations.map(a => 
-                                                a.id === selectedId ? { ...a, color: e.target.value } : a
+                                                a.id === selectedId ? { ...a, color: e.target.value } as any : a
                                             );
                                             updateAnnotationsWithHistory(newAnns);
                                         }}
