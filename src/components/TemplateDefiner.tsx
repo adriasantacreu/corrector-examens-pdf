@@ -19,6 +19,7 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
     const [stageScale, setStageScale] = useState(1);
     const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
     const [exercises, setExercises] = useState<ExerciseDef[]>(initialExercises);
+    const [lastAddedId, setLastAddedId] = useState<string | null>(null);
 
     // Drawing state
     const [isDrawing, setIsDrawing] = useState(false);
@@ -26,6 +27,16 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
     const [mode, setMode] = useState<'select' | 'draw' | 'draw_qr' | 'draw_ocr' | 'draw_total_score'>('select');
 
     const containerRef = useRef<HTMLDivElement>(null);
+    const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+    const stageRef = useRef<any>(null);
+    const lastDistRef = useRef<number>(0);
+
+    useEffect(() => {
+        if (lastAddedId && inputRefs.current[lastAddedId]) {
+            inputRefs.current[lastAddedId]?.focus();
+            setLastAddedId(null);
+        }
+    }, [lastAddedId, exercises]);
 
     useEffect(() => {
         const loadPage = async () => {
@@ -99,7 +110,7 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
 
     const handleWheel = (e: any) => {
         e.evt.preventDefault();
-        const stage = e.target.getStage();
+        const stage = stageRef.current;
         if (!stage) return;
 
         if (e.evt.ctrlKey) {
@@ -134,6 +145,68 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
         }
     };
 
+    const handleTouchMove = (e: any) => {
+        const touch1 = e.evt.touches[0];
+        const touch2 = e.evt.touches[1];
+
+        if (touch1 && touch2) {
+            // Pinch to zoom
+            const dist = Math.sqrt(
+                Math.pow(touch1.clientX - touch2.clientX, 2) +
+                Math.pow(touch1.clientY - touch2.clientY, 2)
+            );
+
+            if (!lastDistRef.current) {
+                lastDistRef.current = dist;
+                return;
+            }
+
+            const stage = stageRef.current;
+            if (!stage) return;
+
+            const scaleBy = dist / lastDistRef.current;
+            const oldScale = stage.scaleX();
+            const newScale = oldScale * scaleBy;
+
+            if (newScale < 0.1 || newScale > 10) return;
+
+            const center = {
+                x: (touch1.clientX + touch2.clientX) / 2,
+                y: (touch1.clientY + touch2.clientY) / 2,
+            };
+
+            // Get pointer position relative to stage
+            const stageBox = containerRef.current?.getBoundingClientRect();
+            if (!stageBox) return;
+
+            const pointer = {
+                x: center.x - stageBox.left,
+                y: center.y - stageBox.top,
+            };
+
+            const mousePointTo = {
+                x: (pointer.x - stage.x()) / oldScale,
+                y: (pointer.y - stage.y()) / oldScale,
+            };
+
+            setStageScale(newScale);
+            setStagePos({
+                x: pointer.x - mousePointTo.x * newScale,
+                y: pointer.y - mousePointTo.y * newScale,
+            });
+
+            lastDistRef.current = dist;
+        } else {
+            // Single touch - allow drawing or panning
+            handleMouseMove(e);
+        }
+    };
+
+    const handleTouchEnd = () => {
+        lastDistRef.current = 0;
+        handleMouseUp();
+    };
+
     const handleMouseUp = () => {
         if (isDrawing && newCropRef && mode !== 'select') {
             let { x, y, width, height } = newCropRef as any;
@@ -148,13 +221,15 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
 
             if (width > 20 && height > 20) {
                 const finalType = mode === 'draw' ? 'crop' : mode === 'draw_qr' ? 'qr_code' : mode === 'draw_ocr' ? 'ocr_name' : 'total_score';
+                const newId = `ex_${Date.now()}`;
                 const finalCrop: any = {
-                    id: `ex_${Date.now()}`,
+                    id: newId,
                     type: finalType,
                     pageIndex: currentPageIndex,
                     x, y, width, height
                 };
                 setExercises(prev => [...prev, finalCrop]);
+                setLastAddedId(newId);
             }
         }
         setIsDrawing(false);
@@ -166,12 +241,14 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
     };
 
     const addFullPageExercise = () => {
+        const newId = `ex_${Date.now()}`;
         const newEx: PagesExercise = {
-            id: `ex_${Date.now()}`,
+            id: newId,
             type: 'pages',
             pageIndexes: [currentPageIndex]
         };
         setExercises(prev => [...prev, newEx]);
+        setLastAddedId(newId);
     };
 
     const addPageToExistingExercise = (id: string) => {
@@ -322,6 +399,7 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
 
                                             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
                                                 <input
+                                                    ref={el => inputRefs.current[ex.id] = el}
                                                     type="text"
                                                     placeholder="Name (e.g. Ex 1a)"
                                                     value={ex.name || ''}
@@ -430,9 +508,22 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
                                                                 type="checkbox"
                                                                 checked={(ex as any).spansTwoPages === true}
                                                                 onChange={e => {
-                                                                    updateExerciseMeta(ex.id, {
-                                                                        spansTwoPages: e.target.checked
-                                                                    } as any);
+                                                                    const isChecked = e.target.checked;
+                                                                    setExercises(prev => prev.map(pEx => {
+                                                                        if (pEx.id === ex.id && pEx.type === 'pages') {
+                                                                            let newPages = [...pEx.pageIndexes];
+                                                                            if (isChecked) {
+                                                                                // Add next page if not already there and within bounds
+                                                                                const lastPage = Math.max(...newPages);
+                                                                                if (lastPage + 1 < pagesPerExam && !newPages.includes(lastPage + 1)) {
+                                                                                    newPages.push(lastPage + 1);
+                                                                                    newPages.sort((a, b) => a - b);
+                                                                                }
+                                                                            }
+                                                                            return { ...pEx, pageIndexes: newPages, spansTwoPages: isChecked };
+                                                                        }
+                                                                        return pEx;
+                                                                    }));
                                                                 }}
                                                             />
                                                             Abasta 2 pàgines simultànies
@@ -495,6 +586,7 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
                 {bgImage ? (
                     <div className="canvas-container" style={{ width: '100%', height: '100%', cursor: mode !== 'select' ? 'crosshair' : 'grab' }}>
                         <Stage
+                            ref={stageRef}
                             width={containerRef.current?.clientWidth || window.innerWidth - 320}
                             height={containerRef.current?.clientHeight || window.innerHeight}
                             scaleX={stageScale}
@@ -506,8 +598,8 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
                             onMouseUp={handleMouseUp}
                             onMouseLeave={handleMouseUp}
                             onTouchStart={handleMouseDown}
-                            onTouchMove={handleMouseMove}
-                            onTouchEnd={handleMouseUp}
+                            onTouchMove={handleTouchMove}
+                            onTouchEnd={handleTouchEnd}
                             onWheel={handleWheel}
                             draggable={mode === 'select'}
                             onDragEnd={(e) => {

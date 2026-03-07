@@ -242,6 +242,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
 
     const stageRef = useRef<any>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const lastDistRef = useRef<number>(0);
 
     useEffect(() => {
         if (!currentStudent || !currentExercise) return;
@@ -557,6 +558,67 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
         }
     };
 
+    const handleTouchMove = (e: any) => {
+        const touch1 = e.evt.touches[0];
+        const touch2 = e.evt.touches[1];
+
+        if (touch1 && touch2) {
+            // Pinch to zoom
+            const dist = Math.sqrt(
+                Math.pow(touch1.clientX - touch2.clientX, 2) +
+                Math.pow(touch1.clientY - touch2.clientY, 2)
+            );
+
+            if (!lastDistRef.current) {
+                lastDistRef.current = dist;
+                return;
+            }
+
+            const stage = stageRef.current;
+            if (!stage) return;
+
+            const scaleBy = dist / lastDistRef.current;
+            const oldScale = stage.scaleX();
+            const newScale = oldScale * scaleBy;
+
+            if (newScale < 0.1 || newScale > 10) return;
+
+            const center = {
+                x: (touch1.clientX + touch2.clientX) / 2,
+                y: (touch1.clientY + touch2.clientY) / 2,
+            };
+
+            // Get pointer position relative to stage
+            const stageBox = containerRef.current?.getBoundingClientRect();
+            if (!stageBox) return;
+
+            const pointer = {
+                x: center.x - stageBox.left,
+                y: center.y - stageBox.top,
+            };
+
+            const mousePointTo = {
+                x: (pointer.x - stage.x()) / oldScale,
+                y: (pointer.y - stage.y()) / oldScale,
+            };
+
+            setStageScale(newScale);
+            setStagePos({
+                x: pointer.x - mousePointTo.x * newScale,
+                y: pointer.y - mousePointTo.y * newScale,
+            });
+
+            lastDistRef.current = dist;
+        }
+    };
+
+    const handleTouchEnd = () => {
+        lastDistRef.current = 0;
+        if (isDrawing) {
+            setIsDrawing(false);
+        }
+    };
+
     const handleMouseUp = () => {
         if (isDrawing) {
             setIsDrawing(false);
@@ -726,9 +788,9 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                         const scaledScore = Math.round(roundedTotalStudentScore * currentFactor * 100) / 100;
                         
                         return (
-                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0' }}>
                                 <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent)' }}>Total: {roundedTotalStudentScore} pt</span>
-                                <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--success)' }}>
+                                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--success)', marginTop: '-2px' }}>
                                     (Recalculat: {scaledScore} / {targetMaxScore})
                                 </span>
                             </div>
@@ -1160,8 +1222,8 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                     onMouseUp={handleMouseUp}
                                     onMouseLeave={handleMouseUp}
                                     onTouchStart={handleMouseDown}
-                                    onTouchMove={handleMouseMove}
-                                    onTouchEnd={handleMouseUp}
+                                    onTouchMove={handleTouchMove}
+                                    onTouchEnd={handleTouchEnd}
                                     onWheel={handleWheel}
                                     onClick={(e) => {
                                         // If we click the stage (empty area), deselect
@@ -1185,7 +1247,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                     <Layer>
                                         {/* Render the background pages */}
                                         {renderedPages.map((page, i) => (
-                                            <KonvaImage key={i} image={page.img} y={page.yOffset} width={page.width} height={page.height} />
+                                            <KonvaImage key={i} image={page.img} x={page.xOffset || 0} y={page.yOffset} width={page.width} height={page.height} />
                                         ))}
 
                                         {/* Clipping Limit Visualization */}
@@ -1193,8 +1255,10 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                             <Rect
                                                 x={0}
                                                 y={0}
-                                                width={renderedPages[0].width}
-                                                height={renderedPages.reduce((sum, p) => sum + p.height, 0)}
+                                                width={(currentExercise.type === 'pages' && (currentExercise as any).spansTwoPages && renderedPages.length > 1) 
+                                                    ? renderedPages[0].width + (renderedPages[1].width || 0) + 20
+                                                    : renderedPages[0].width}
+                                                height={renderedPages.reduce((max, p) => Math.max(max, p.yOffset + p.height), 0)}
                                                 stroke="#ef4444"
                                                 strokeWidth={2 / stageScale}
                                                 dash={[15 / stageScale, 10 / stageScale]}
@@ -1657,7 +1721,13 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                             </div>
                                             <input
                                                 placeholder="Text..."
+                                                autoFocus
                                                 value={selectedAnn.type === 'text' ? (selectedAnn as TextAnnotation).text : (selectedAnn as HighlighterAnnotation).label || ''}
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter') {
+                                                        setSelectedId(null);
+                                                    }
+                                                }}
                                                 onChange={e => {
                                                     updateAnnotationsWithHistory(currentAnnotations.map(a =>
                                                         a.id === selectedId ? (a.type === 'text' ? { ...a, text: e.target.value } : { ...a, label: e.target.value }) : a
@@ -1726,6 +1796,26 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                             placeholder="Text..."
                                             value={newComment}
                                             onChange={e => setNewComment(e.target.value)}
+                                            onKeyDown={e => {
+                                                if (e.key === 'Enter' && newComment.trim()) {
+                                                    const score = newCommentScore !== '' ? Number(newCommentScore) : undefined;
+                                                    if (editingBankComment !== null) {
+                                                        const b = [...commentBank];
+                                                        b[editingBankComment] = { ...b[editingBankComment], text: newComment.trim(), score, colorMode: newCommentColorMode, customColor: newCommentColorMode === 'custom' ? newCommentCustomColor : undefined };
+                                                        setCommentBank(b);
+                                                        setEditingBankComment(null);
+                                                    } else {
+                                                        setCommentBank(prev => [...prev, {
+                                                            text: newComment.trim(),
+                                                            score,
+                                                            colorMode: newCommentColorMode,
+                                                            customColor: newCommentColorMode === 'custom' ? newCommentCustomColor : undefined,
+                                                            exerciseId: currentExercise.id
+                                                        }]);
+                                                    }
+                                                    setNewComment(''); setNewCommentScore('');
+                                                }
+                                            }}
                                             style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text-primary)', padding: '0.2rem 0.3rem', fontSize: '0.65rem' }}
                                         />
                                         <div style={{ display: 'flex', gap: '0.3rem' }}>
