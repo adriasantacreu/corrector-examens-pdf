@@ -10,13 +10,35 @@ type AppMode = 'upload' | 'setup' | 'organize_pages' | 'configure_crops' | 'corr
 
 const STORAGE_KEY = 'correccio_app_state';
 
+// Helper for fuzzy matching
+function getLevenshteinDistance(a: string, b: string): number {
+  const tmp = [];
+  for (let i = 0; i <= a.length; i++) tmp[i] = [i];
+  for (let j = 0; j <= b.length; j++) tmp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      tmp[i][j] = Math.min(
+        tmp[i - 1][j] + 1,
+        tmp[i][j - 1] + 1,
+        tmp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+  }
+  return tmp[a.length][b.length];
+}
+
 interface PersistedState {
   pagesPerExam: number;
   exercises: ExerciseDef[];
   students: Student[];
   annotations: AnnotationStore;
   rubricCounts: RubricCountStore;
+  commentBank: import('./types').AnnotationComment[];
+  targetMaxScore: number;
+  studentList: string;
   mode: AppMode;
+  lastStudentIdx?: number;
+  lastExerciseIdx?: number;
 }
 
 function saveState(state: PersistedState) {
@@ -57,6 +79,15 @@ function App() {
   const [exercises, setExercises] = useState<ExerciseDef[]>(savedState?.exercises ?? []);
   const [annotations, setAnnotations] = useState<AnnotationStore>(savedState?.annotations ?? {});
   const [rubricCounts, setRubricCounts] = useState<RubricCountStore>(savedState?.rubricCounts ?? {});
+  const [targetMaxScore, setTargetMaxScore] = useState<number>(savedState?.targetMaxScore ?? 10);
+  const [studentList, setStudentList] = useState<string>(savedState?.studentList ?? '');
+  const [commentBank, setCommentBank] = useState<import('./types').AnnotationComment[]>(savedState?.commentBank ?? [
+    { text: 'Excel·lent!', score: 1, colorMode: 'score' },
+    { text: 'Molt bé', score: 0.5, colorMode: 'score' },
+    { text: 'Revisa aquest concepte', score: -0.5, colorMode: 'neutral' },
+    { text: 'Falta justificar la resposta', score: -1, colorMode: 'neutral' },
+  ]);
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('Processant...');
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
@@ -64,23 +95,43 @@ function App() {
 
   const addLog = (msg: string) => { console.log('[App]', msg); setDebugLogs(prev => [...prev.slice(-200), msg]); };
 
+  const [studentIdx, setStudentIdx] = useState<number>(savedState?.lastStudentIdx ?? 0);
+  const [exerciseIdx, setExerciseIdx] = useState<number>(savedState?.lastExerciseIdx ?? 0);
+
   // Persist state whenever key values change
   useEffect(() => {
     if (exercises.length > 0 || students.length > 0 || Object.keys(annotations).length > 0) {
       saveState({
-        pagesPerExam: typeof pagesPerExam === 'number' ? pagesPerExam : 1,
-        exercises, students, annotations, rubricCounts, mode,
+        mode,
+        pagesPerExam: Number(pagesPerExam) || 1,
+        exercises,
+        students,
+        annotations,
+        rubricCounts,
+        targetMaxScore,
+        studentList,
+        commentBank,
+        lastStudentIdx: studentIdx,
+        lastExerciseIdx: exerciseIdx
       });
     }
-  }, [exercises, students, annotations, rubricCounts, pagesPerExam, mode]);
+  }, [mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, studentIdx, exerciseIdx]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
+      if (file.type !== 'application/pdf') {
+        alert("El fitxer seleccionat no és un PDF.");
+        return;
+      }
       setPdfFile(file);
       setIsProcessing(true);
+      setProcessingMessage('Carregant PDF...');
+
       try {
+        console.log('[App] Starting PDF load...');
         const doc = await loadPDF(file);
+        console.log('[App] PDF loaded, pages:', doc.numPages);
         setPdfDoc(doc);
         setNumPages(doc.numPages);
         if (pendingModeAfterPDF) {
@@ -90,9 +141,9 @@ function App() {
           setMode('setup');
         }
         setShowRestorePrompt(false);
-      } catch (err) {
-        console.error("Error loading PDF", err);
-        alert("Failed to load PDF. See console for details.");
+      } catch (err: any) {
+        console.error("[App] Error loading PDF", err);
+        alert(`Error carregant el PDF: ${err?.message || 'Error desconegut'}\n\nComprova que el fitxer no estigui corrupte.`);
       } finally {
         setIsProcessing(false);
       }
@@ -148,14 +199,18 @@ function App() {
   return (
     <div className="app-container">
       {/* Global Processing Overlay */}
-      {isProcessing && mode !== 'upload' && (
+      {isProcessing && (
         <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999,
-          display: 'flex', alignItems: 'center', justifyContent: 'center'
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(4px)'
         }}>
-          <div style={{ background: 'var(--bg-secondary)', padding: '2rem', borderRadius: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', border: '1px solid var(--border)' }}>
-            <div className="loader"></div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>{processingMessage}</h2>
+          <div style={{ background: 'var(--bg-secondary)', padding: '2.5rem', borderRadius: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem', border: '1px solid var(--border)', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
+            <div className="loader" style={{ width: '40px', height: '40px', borderWidth: '4px' }}></div>
+            <div style={{ textAlign: 'center' }}>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem' }}>{processingMessage}</h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Això pot trigar uns segons depenent de la mida del fitxer.</p>
+            </div>
           </div>
         </div>
       )}
@@ -243,12 +298,14 @@ function App() {
                 {isProcessing ? 'Loading PDF...' : 'Select PDF File'}
               </label>
               {pendingModeAfterPDF === 'correction' && (
-                <button
-                  onClick={() => { setPendingModeAfterPDF(null); handleNewSession(); }}
-                  style={{ marginTop: '1rem', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.875rem', textDecoration: 'underline' }}
-                >
-                  Cancel·lar i iniciar nova sessió
-                </button>
+                <div style={{ marginTop: '1.5rem', width: '100%', display: 'flex', justifyContent: 'center' }}>
+                  <button
+                    onClick={() => { setPendingModeAfterPDF(null); handleNewSession(); }}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.875rem', textDecoration: 'underline' }}
+                  >
+                    Cancel·lar i iniciar nova sessió
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -285,14 +342,42 @@ function App() {
                 </p>
               </div>
 
-              <button
-                className={`btn btn-primary ${typeof pagesPerExam !== 'number' || pagesPerExam < 1 ? 'disabled' : ''}`}
-                style={{ width: '100%' }}
-                onClick={startConfiguration}
-                disabled={typeof pagesPerExam !== 'number' || pagesPerExam < 1}
-              >
-                Next: Define Exercises (Retalls)
-              </button>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
+                  Llista d'alumnes (Experimental, un per línia)
+                </label>
+                <textarea
+                  placeholder="Joan Garcia&#10;Maria Lopez..."
+                  value={studentList}
+                  onChange={(e) => setStudentList(e.target.value)}
+                  style={{
+                    width: '100%',
+                    height: '120px',
+                    padding: '0.75rem',
+                    borderRadius: '0.5rem',
+                    border: '1px solid var(--border)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.875rem',
+                    fontFamily: 'inherit',
+                    resize: 'vertical'
+                  }}
+                />
+                <p style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  Si poses la llista, l'OCR intentarà associar el que llegeixi al nom més proper.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+                <button
+                  className={`btn btn-primary ${typeof pagesPerExam !== 'number' || pagesPerExam < 1 ? 'disabled' : ''}`}
+                  style={{ flex: 1 }}
+                  onClick={startConfiguration}
+                  disabled={typeof pagesPerExam !== 'number' || pagesPerExam < 1}
+                >
+                  Next: Define Exercises (Retalls)
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -323,13 +408,23 @@ function App() {
               setExercises(definedExercises);
               if (!pdfDoc) return;
 
-              const qrRegion = definedExercises.find(ex => ex.type === 'qr_code') as any;
+              // QR is strictly disabled for now to prevent ID loss
               const ocrRegion = definedExercises.find(ex => ex.type === 'ocr_name') as any;
 
-              if (!qrRegion && !ocrRegion) {
+              if (!ocrRegion) {
                 // Students already have correct pageIndexes from the organizer — nothing to do
                 setMode('correction');
                 return;
+              }
+
+              // Check if we already have meaningful names (not the default 'Alumne X')
+              const hasMeaningfulNames = students.some(s => s.name && !s.name.startsWith('Alumne '));
+              if (hasMeaningfulNames) {
+                const reRun = window.confirm("Sembla que ja tens els noms dels alumnes. Vols tornar a passar l'OCR/QR per actualitzar-los?");
+                if (!reRun) {
+                  setMode('correction');
+                  return;
+                }
               }
 
               setIsProcessing(true);
@@ -338,43 +433,15 @@ function App() {
               try {
                 const updatedStudents = [...students];
 
-                if (qrRegion) {
-                  // === QR CODE PATH: re-group from scratch using QR ===
-                  const { scanQRCode } = await import('./utils/qrUtils');
-                  const scannedGroups: Record<string, { pageNum: number, absPage: number }[]> = {};
-                  let maxPageFound = typeof pagesPerExam === 'number' ? pagesPerExam : 1;
-
-                  for (let i = 1; i <= pdfDoc.numPages; i++) {
-                    setProcessingMessage(`Escanejant QR... Pàgina ${i} de ${pdfDoc.numPages}`);
-                    await new Promise(r => setTimeout(r, 10));
-                    const qr = await scanQRCode(pdfDoc, i, qrRegion);
-                    if (qr && qr.studentId) {
-                      addLog(`P${i}: QR detectat → ${qr.studentId} pàg.${qr.pageNum}`);
-                      if (!scannedGroups[qr.studentId]) scannedGroups[qr.studentId] = [];
-                      scannedGroups[qr.studentId].push({ pageNum: qr.pageNum, absPage: i });
-                      if (qr.pageNum > maxPageFound) maxPageFound = qr.pageNum;
-                    } else {
-                      addLog(`P${i}: cap QR`);
-                    }
-                  }
-
-                  const foundIds = Object.keys(scannedGroups);
-                  if (foundIds.length > 0) {
-                    const qrStudents = foundIds.map(sId => {
-                      const pages = scannedGroups[sId].sort((a, b) => a.pageNum - b.pageNum);
-                      const pageIndexes = new Array(maxPageFound).fill(-1);
-                      pages.forEach(p => { if (p.pageNum >= 1 && p.pageNum <= maxPageFound) pageIndexes[p.pageNum - 1] = p.absPage; });
-                      return { id: sId, name: sId, pageIndexes };
-                    });
-                    setStudents(qrStudents);
-                    setPagesPerExam(maxPageFound);
-                  }
-                  // If no QR found, keep organizer groups as-is
+                if (false) {
+                  // === QR CODE PATH (DISABLED) ===
                 } else if (ocrRegion) {
                   // === OCR PATH: update names using OCR on confirmed groups ===
                   const safePages = typeof pagesPerExam === 'number' ? pagesPerExam : 1;
                   setProcessingMessage('Carregant OCR...');
-                  const { extractTextFromRegion } = await import('./utils/ocrUtils');
+                  const { extractTextFromRegion, extractImageFromRegion } = await import('./utils/ocrUtils');
+
+                  const knownNames = studentList.split('\n').map(n => n.trim()).filter(n => n.length > 0);
 
                   for (let i = 0; i < updatedStudents.length; i++) {
                     setProcessingMessage(`OCR alumne ${i + 1} de ${updatedStudents.length}...`);
@@ -382,12 +449,43 @@ function App() {
                       const pIdxs = updatedStudents[i].pageIndexes;
                       const pageForOcr = pIdxs[Math.min(ocrRegion.pageIndex, pIdxs.length - 1)] ?? pIdxs[0];
                       addLog(`Alumne ${i + 1}: OCR a pàg. absoluta ${pageForOcr}`);
+
+                      // Visual Snippet (Experimental)
+                      const cropUrl = await extractImageFromRegion(pdfDoc, pageForOcr, ocrRegion);
+
                       const extracted = await extractTextFromRegion(pdfDoc, pageForOcr, ocrRegion);
                       addLog(`  → text extret: "${extracted}"`);
-                      if (extracted && extracted.trim().length > 0) {
-                        updatedStudents[i] = { ...updatedStudents[i], name: extracted.trim() };
-                      } else {
-                        addLog(`  → OCR buit, mantenint "${updatedStudents[i].name}"`);
+
+                      let finalName = extracted.trim();
+                      let originalOcrName = finalName;
+
+                      // Fuzzy Matching (Experimental)
+                      if (knownNames.length > 0 && finalName.length > 2) {
+                        let bestMatch = '';
+                        let minDistance = 999;
+
+                        for (const kn of knownNames) {
+                          const dist = getLevenshteinDistance(finalName.toLowerCase(), kn.toLowerCase());
+                          if (dist < minDistance) {
+                            minDistance = dist;
+                            bestMatch = kn;
+                          }
+                        }
+
+                        // Only apply if the match is reasonably close (distance < 40% of name length)
+                        if (minDistance < bestMatch.length * 0.4) {
+                          addLog(`  → Fuzzy Match: "${finalName}" -> "${bestMatch}" (dist: ${minDistance})`);
+                          finalName = bestMatch;
+                        }
+                      }
+
+                      if (finalName || cropUrl) {
+                        updatedStudents[i] = {
+                          ...updatedStudents[i],
+                          name: finalName || updatedStudents[i].name,
+                          originalOcrName,
+                          nameCropUrl: cropUrl
+                        };
                       }
                     } catch (err: any) {
                       addLog(`  → Error OCR: ${err?.message || err}`);
@@ -417,6 +515,10 @@ function App() {
             exercises={exercises}
             annotations={annotations}
             rubricCounts={rubricCounts}
+            commentBank={commentBank}
+            targetMaxScore={targetMaxScore}
+            onUpdateCommentBank={setCommentBank}
+            onUpdateTargetMaxScore={setTargetMaxScore}
             onBack={handleBack}
             onUpdateAnnotations={handleUpdateAnnotations}
             onUpdateRubricCounts={(studentId, exerciseId, itemId, delta) => {
@@ -435,6 +537,10 @@ function App() {
             onUpdateExercise={(updatedEx) => {
               setExercises(prev => prev.map(ex => ex.id === updatedEx.id ? updatedEx : ex));
             }}
+            studentIdx={studentIdx}
+            exerciseIdx={exerciseIdx}
+            onUpdateStudentIdx={setStudentIdx}
+            onUpdateExerciseIdx={setExerciseIdx}
           />
         )}
 

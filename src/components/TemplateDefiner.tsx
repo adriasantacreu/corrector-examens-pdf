@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Stage, Layer, Image as KonvaImage, Rect, Group, Text } from 'react-konva';
-import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, File, Award, QrCode, TextSelect } from 'lucide-react';
+import { Stage, Layer, Image as KonvaImage, Rect, Group, Text, Transformer } from 'react-konva';
+import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, File, Award, TextSelect, Settings, FileText } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
-import type { ExerciseDef, CropExercise, PagesExercise, RubricItem } from '../types';
+import type { ExerciseDef, CropExercise, PagesExercise } from '../types';
 
 interface Props {
     pdfDoc: PDFDocumentProxy;
@@ -11,6 +11,67 @@ interface Props {
     initialExercises: ExerciseDef[];
     onComplete: (crops: ExerciseDef[]) => void;
     onBack?: () => void;
+}
+
+// Helper for natural number input (handles commas, dots, negative signs, etc)
+function NumericInput({ value, onChange, style, placeholder = "" }: {
+    value: number | undefined,
+    onChange: (val: number | undefined) => void,
+    style?: React.CSSProperties,
+    placeholder?: string
+}) {
+    const [tempValue, setTempValue] = useState<string>(value !== undefined ? value.toString().replace('.', ',') : "");
+
+    useEffect(() => {
+        if (value !== undefined) {
+            const currentStr = value.toString().replace('.', ',');
+            if (parseFloat(tempValue.replace(',', '.')) !== value) {
+                setTempValue(currentStr);
+            }
+        } else if (tempValue !== "") {
+            setTempValue("");
+        }
+    }, [value]);
+
+    return (
+        <input
+            type="text"
+            inputMode="decimal"
+            placeholder={placeholder}
+            value={tempValue}
+            onChange={(e) => {
+                const val = e.target.value.replace('.', ',');
+                if (val === "" || val === "-" || /^-?\d*,?\d*$/.test(val)) {
+                    setTempValue(val);
+                    const parsed = parseFloat(val.replace(',', '.'));
+                    if (!isNaN(parsed)) {
+                        onChange(parsed);
+                    } else if (val === "" || val === "-") {
+                        onChange(undefined);
+                    }
+                }
+            }}
+            onBlur={() => {
+                const parsed = parseFloat(tempValue.replace(',', '.'));
+                if (isNaN(parsed)) {
+                    setTempValue(value !== undefined ? value.toString().replace('.', ',') : "");
+                    onChange(value);
+                } else {
+                    setTempValue(parsed.toString().replace('.', ','));
+                    onChange(parsed);
+                }
+            }}
+            style={{
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border)',
+                borderRadius: '4px',
+                color: 'var(--text-primary)',
+                padding: '0.2rem 0.3rem',
+                fontSize: '0.75rem',
+                ...style
+            }}
+        />
+    );
 }
 
 export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises, onComplete, onBack }: Props) {
@@ -25,6 +86,7 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
     const [isDrawing, setIsDrawing] = useState(false);
     const [newCropRef, setNewCropRef] = useState<Partial<CropExercise> | null>(null);
     const [mode, setMode] = useState<'select' | 'draw' | 'draw_qr' | 'draw_ocr' | 'draw_total_score'>('select');
+    const [selectedId, setSelectedId] = useState<string | null>(null);
 
     const containerRef = useRef<HTMLDivElement>(null);
     const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -71,6 +133,18 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
         // Small delay to ensure container is measured correctly
         setTimeout(loadPage, 100);
     }, [currentPageIndex, pdfDoc]);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+                setExercises(prev => prev.filter(ex => ex.id !== selectedId));
+                setSelectedId(null);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedId]);
 
     const handleMouseDown = (e: any) => {
         if (mode === 'select') return;
@@ -197,7 +271,6 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
 
             lastDistRef.current = dist;
         } else {
-            // Single touch - allow drawing or panning
             handleMouseMove(e);
         }
     };
@@ -219,6 +292,13 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
                 height = Math.abs(height);
             }
 
+            if (bgImage) {
+                if (x < 0) { width += x; x = 0; }
+                if (y < 0) { height += y; y = 0; }
+                if (x + width > bgImage.width) width = bgImage.width - x;
+                if (y + height > bgImage.height) height = bgImage.height - y;
+            }
+
             if (width > 20 && height > 20) {
                 const finalType = mode === 'draw' ? 'crop' : mode === 'draw_qr' ? 'qr_code' : mode === 'draw_ocr' ? 'ocr_name' : 'total_score';
                 const newId = `ex_${Date.now()}`;
@@ -238,6 +318,7 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
 
     const removeExercise = (id: string) => {
         setExercises(prev => prev.filter(c => c.id !== id));
+        if (selectedId === id) setSelectedId(null);
     };
 
     const addFullPageExercise = () => {
@@ -285,7 +366,7 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
     return (
         <div style={{ display: 'flex', width: '100%', flex: 1, minHeight: 0, overflow: 'hidden' }}>
             {/* Sidebar Configuration */}
-            <div className="sidebar" style={{ width: '320px', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
+            <div className="sidebar" style={{ width: '320px', flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)', borderLeft: '1px solid var(--border)' }}>
                 <div style={{ padding: '1rem', borderBottom: '1px solid var(--border)', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
                     {onBack && (
                         <button className="btn-icon" onClick={onBack} title="Back">
@@ -293,255 +374,261 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
                         </button>
                     )}
                     <div>
-                        <h3 style={{ fontSize: '1.2rem', marginBottom: '0.25rem', fontWeight: 600 }}>Define Exercises</h3>
-                        <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                            Page {currentPageIndex + 1} of {pagesPerExam}. Draw bounding boxes or add entire pages.
+                        <h3 style={{ fontSize: '1.2rem', marginBottom: '0.25rem', fontWeight: 600 }}>Definir Plantilla</h3>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                            Pàgina {currentPageIndex + 1} de {pagesPerExam}.
                         </p>
                     </div>
                 </div>
 
-                <div style={{ padding: '1rem', display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border)' }}>
-                    <button
-                        className={`btn-icon ${mode === 'select' ? 'active' : ''}`}
-                        onClick={() => setMode('select')}
-                        title="Select/Delete Region"
-                    >
-                        <MousePointer2 size={20} />
-                    </button>
-                    <button
-                        className={`btn-icon ${mode === 'draw' ? 'active' : ''}`}
-                        onClick={() => setMode('draw')}
-                        title="Draw Crop Rectangle"
-                    >
-                        <Square size={20} />
-                    </button>
-                    <button
-                        className={`btn-icon ${mode === 'draw_qr' ? 'active' : ''}`}
-                        onClick={() => setMode('draw_qr')}
-                        title="Define QR Code Area"
-                        style={{ color: mode === 'draw_qr' ? '#10b981' : undefined }}
-                    >
-                        <QrCode size={20} />
-                    </button>
-                    <button
-                        className={`btn-icon ${mode === 'draw_ocr' ? 'active' : ''}`}
-                        onClick={() => setMode('draw_ocr')}
-                        title="Define OCR Name Area (for non-QR users)"
-                        style={{ color: mode === 'draw_ocr' ? '#eab308' : undefined }}
-                    >
-                        <TextSelect size={20} />
-                    </button>
-                    <button
-                        className={`btn-icon ${mode === 'draw_total_score' ? 'active' : ''}`}
-                        onClick={() => setMode('draw_total_score')}
-                        title="Define Final Score Area"
-                        style={{ color: mode === 'draw_total_score' ? '#ef4444' : undefined }}
-                    >
-                        <Award size={20} />
-                    </button>
-
-                    <div style={{ width: '1px', background: 'var(--border)', margin: '0 0.5rem' }}></div>
-
-                    <button
-                        className="btn btn-secondary"
-                        style={{ flex: 1, padding: '0.25rem 0.5rem', fontSize: '0.85rem' }}
-                        onClick={addFullPageExercise}
-                        title="Define this entire page as an exercise"
-                    >
-                        <File size={16} /> Add Full Page
-                    </button>
+                <div style={{ padding: '0.75rem', display: 'flex', gap: '0.4rem', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', justifyContent: 'center' }}>
+                    <button className={`btn-icon ${mode === 'select' ? 'active' : ''}`} onClick={() => setMode('select')} title="Seleccionar/Moure"><MousePointer2 size={18} /></button>
+                    <button className={`btn-icon ${mode === 'draw' ? 'active' : ''}`} onClick={() => setMode('draw')} title="Dibuixar Exercici"><Square size={18} /></button>
+                    {/* QR icon hidden */}
+                    <button className={`btn-icon ${mode === 'draw_ocr' ? 'active' : ''}`} onClick={() => setMode('draw_ocr')} title="Definir Nom (OCR)" style={{ color: mode === 'draw_ocr' ? '#eab308' : undefined }}><TextSelect size={18} /></button>
+                    <button className={`btn-icon ${mode === 'draw_total_score' ? 'active' : ''}`} onClick={() => setMode('draw_total_score')} title="Definir Nota Final" style={{ color: mode === 'draw_total_score' ? '#ef4444' : undefined }}><Award size={18} /></button>
+                    <button className="btn btn-secondary" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }} onClick={addFullPageExercise} title="Afegir pàgina sencera com exercici"><File size={14} /> + Pàgina</button>
                 </div>
 
-                <div style={{ padding: '1rem', flex: 1, overflowY: 'auto' }}>
-                    <h4 style={{ fontSize: '0.875rem', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-                        All Defined Exercises ({exercises.length})
-                    </h4>
-                    {exercises.length === 0 ? (
-                        <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>No exercises defined yet.</p>
-                    ) : (
-                        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                            {exercises.map((ex, idx) => {
-                                const isCurrentPageInvolved = ex.type === 'pages'
-                                    ? (ex as PagesExercise).pageIndexes.includes(currentPageIndex)
-                                    : (ex as any).pageIndex === currentPageIndex;
+                <div style={{ padding: '1rem', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+                    {/* Control Regions Section */}
+                    <section>
+                        <h4 style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                            <Settings size={12} /> Regions de Control
+                        </h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                            {['ocr_name', 'total_score'].map(type => {
+                                const reg = exercises.find(ex => ex.type === type);
+                                const label = type === 'ocr_name' ? '👤 Àrea del Nom' : '📊 Àrea de la Nota';
+                                const color = type === 'ocr_name' ? '#eab308' : '#ef4444';
 
                                 return (
-                                    <li key={ex.id} style={{
-                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem',
-                                        background: 'var(--bg-tertiary)', borderRadius: '0.5rem', border: isCurrentPageInvolved ? '1px solid var(--accent)' : '1px solid var(--border)'
+                                    <div key={type} style={{
+                                        padding: '0.5rem 0.75rem', borderRadius: '0.5rem',
+                                        background: reg ? `${color}10` : 'var(--bg-tertiary)',
+                                        border: reg ? `1px solid ${color}` : '1px dashed var(--border)',
+                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                                     }}>
-                                        <div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                    <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>
-                                                        {ex.type === 'qr_code' ? 'QR Area' : ex.type === 'total_score' ? 'Nota Final' : `Exercise ${idx + 1}`}
-                                                    </span>
-                                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                                        {ex.type === 'pages'
-                                                            ? `Full Pages: ${(ex as PagesExercise).pageIndexes.map(p => p + 1).join(', ')}`
-                                                            : ex.type === 'qr_code' ? `Localització a pàg ${(ex as any).pageIndex + 1}`
-                                                                : ex.type === 'total_score' ? `Localització a pàg ${(ex as any).pageIndex + 1}`
-                                                                    : `Crop on Page ${(ex as any).pageIndex + 1}`
-                                                        }
-                                                    </span>
-                                                </div>
-                                                <div style={{ display: 'flex', gap: '0.25rem' }}>
-                                                    {ex.type === 'pages' && !(ex as PagesExercise).pageIndexes.includes(currentPageIndex) && (
-                                                        <button className="btn-icon" onClick={() => addPageToExistingExercise(ex.id)} title="Add current page to this exercise" style={{ padding: '0.25rem' }}>
-                                                            <Plus size={16} />
-                                                        </button>
-                                                    )}
-                                                    <button className="btn-icon" onClick={() => removeExercise(ex.id)} title="Delete EX" style={{ color: 'var(--danger)', padding: '0.25rem' }}>
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                </div>
-                                            </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: reg ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{label}</span>
+                                            {reg && <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>Pàg. {(reg as any).pageIndex + 1}</span>}
+                                        </div>
+                                        {reg ? (
+                                            <button onClick={() => removeExercise(reg.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer' }}><Trash2 size={14} /></button>
+                                        ) : (
+                                            <button
+                                                onClick={() => setMode(type === 'ocr_name' ? 'draw_ocr' : type === 'total_score' ? 'draw_total_score' : 'draw_qr')}
+                                                className="btn btn-secondary" style={{ fontSize: '0.6rem', padding: '0.1rem 0.4rem' }}
+                                            >Definir</button>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </section>
 
-                                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
-                                                <input
-                                                    ref={el => inputRefs.current[ex.id] = el}
-                                                    type="text"
-                                                    placeholder="Name (e.g. Ex 1a)"
-                                                    value={ex.name || ''}
-                                                    onChange={e => updateExerciseMeta(ex.id, { name: e.target.value })}
-                                                    style={{
-                                                        flex: 1,
-                                                        background: 'var(--bg-primary)',
-                                                        border: '1px solid var(--border)',
-                                                        color: 'var(--text-primary)',
-                                                        padding: '0.25rem 0.5rem',
-                                                        borderRadius: '0.25rem',
-                                                        fontSize: '0.8rem'
-                                                    }}
-                                                />
-                                                <input
-                                                    type="number"
-                                                    placeholder="Max points"
-                                                    value={ex.maxScore || ''}
-                                                    onChange={e => updateExerciseMeta(ex.id, { maxScore: parseFloat(e.target.value) || undefined })}
-                                                    style={{
-                                                        width: '80px',
-                                                        background: 'var(--bg-primary)',
-                                                        border: '1px solid var(--border)',
-                                                        color: 'var(--text-primary)',
-                                                        padding: '0.25rem 0.5rem',
-                                                        borderRadius: '0.25rem',
-                                                        fontSize: '0.8rem'
-                                                    }}
-                                                    min="0"
-                                                    step="0.25"
-                                                />
-                                            </div>
+                    {/* Gradable Exercises Section */}
+                    <section>
+                        <h4 style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                            <FileText size={12} /> Exercicis Corregibles
+                        </h4>
+                        {exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages').length === 0 ? (
+                            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Cap exercici definit.</p>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                {exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages').map((ex, idx) => {
+                                    const isCurrentPageInvolved = ex.type === 'pages'
+                                        ? (ex as PagesExercise).pageIndexes.includes(currentPageIndex)
+                                        : (ex as any).pageIndex === currentPageIndex;
 
-                                            {/* Scoring mode toggle + rubric editor — only for scorable exercises */}
-                                            {(ex.type === 'crop' || ex.type === 'pages') && (
-                                                <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                                                    {/* Scoring mode pills */}
-                                                    <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
-                                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Mode:</span>
-                                                        {(['from_max', 'from_zero'] as const).map(m => (
-                                                            <button key={m}
-                                                                onClick={() => updateExerciseMeta(ex.id, {
-                                                                    scoringMode: m,
-                                                                    rubric: m === 'from_zero' ? (ex.rubric ?? []) : undefined,
-                                                                    maxScore: m === 'from_zero' ? undefined : ex.maxScore
-                                                                })}
-                                                                style={{
-                                                                    fontSize: '0.65rem', padding: '2px 8px', borderRadius: '10px',
-                                                                    border: 'none', cursor: 'pointer',
-                                                                    background: (ex.scoringMode ?? 'from_max') === m ? 'var(--accent)' : 'var(--bg-primary)',
-                                                                    color: (ex.scoringMode ?? 'from_max') === m ? 'white' : 'var(--text-secondary)'
-                                                                }}
-                                                            >
-                                                                {m === 'from_max' ? '↓ des del màx' : '↑ des de zero'}
-                                                            </button>
-                                                        ))}
+                                    const isSelectedInList = ex.id === selectedId;
+
+                                    return (
+                                        <div
+                                            key={ex.id}
+                                            onClick={() => {
+                                                if (ex.type === 'crop') {
+                                                    setCurrentPageIndex((ex as any).pageIndex);
+                                                }
+                                                setSelectedId(ex.id);
+                                            }}
+                                            style={{
+                                                padding: '0.75rem', background: isSelectedInList ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-tertiary)', borderRadius: '0.5rem',
+                                                border: isSelectedInList ? '2px solid var(--accent)' : (isCurrentPageInvolved ? '1px solid var(--accent)' : '1px solid var(--border)'),
+                                                display: 'flex', flexDirection: 'column', gap: '0.5rem',
+                                                transition: 'all 0.2s ease',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flex: 1 }}>
+                                                    <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: ex.type === 'pages' ? 'var(--accent)' : '#6366f1', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 800 }}>{idx + 1}</div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: '2px' }}>
+                                                        <span style={{ fontSize: '0.55rem', fontWeight: 800, color: ex.type === 'pages' ? 'var(--accent)' : '#6366f1', textTransform: 'uppercase' }}>
+                                                            {ex.type === 'pages' ? '📄 Exercici de Pàgina' : '✂️ Exercici de Retall'}
+                                                        </span>
+                                                        <input
+                                                            ref={el => { inputRefs.current[ex.id] = el; }}
+                                                            type="text" value={ex.name || ''} placeholder="Nom exercici"
+                                                            onChange={e => updateExerciseMeta(ex.id, { name: e.target.value })}
+                                                            style={{ width: '100%', background: 'var(--bg-primary)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '0.2rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem' }}
+                                                        />
                                                     </div>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '0.2rem', marginLeft: '0.4rem' }}>
+                                                    <button onClick={() => removeExercise(ex.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer' }} title="Eliminar exercici"><Trash2 size={14} /></button>
+                                                </div>
+                                            </div>
 
-                                                    {/* Rubric items editor */}
-                                                    {ex.scoringMode === 'from_zero' && (
-                                                        <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '0.375rem', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                                                            <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Ítems de rúbrica</span>
-                                                            {(ex.rubric ?? []).map((item, ri) => (
-                                                                <div key={item.id} style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
-                                                                    <input
-                                                                        type="text"
-                                                                        value={item.label}
-                                                                        placeholder="Descripció"
-                                                                        onChange={e => {
-                                                                            const newRubric = (ex.rubric ?? []).map((it, i) => i === ri ? { ...it, label: e.target.value } : it);
-                                                                            updateExerciseMeta(ex.id, { rubric: newRubric });
-                                                                        }}
-                                                                        style={{ flex: 1, fontSize: '0.75rem', padding: '2px 4px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: '3px', color: 'var(--text-primary)' }}
-                                                                    />
-                                                                    <input
-                                                                        type="number"
-                                                                        step="0.01"
-                                                                        value={item.points}
-                                                                        onChange={e => {
-                                                                            const newRubric = (ex.rubric ?? []).map((it, i) => i === ri ? { ...it, points: parseFloat(e.target.value) || 0 } : it);
-                                                                            updateExerciseMeta(ex.id, { rubric: newRubric });
-                                                                        }}
-                                                                        style={{ width: '52px', fontSize: '0.75rem', padding: '2px 4px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: '3px', color: 'var(--text-primary)', textAlign: 'right' }}
-                                                                    />
-                                                                    <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>pt</span>
-                                                                    <button
-                                                                        onClick={() => updateExerciseMeta(ex.id, { rubric: (ex.rubric ?? []).filter((_, i) => i !== ri) })}
-                                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: '0.8rem', padding: '0 2px' }}
-                                                                    >✕</button>
-                                                                </div>
-                                                            ))}
-                                                            <button
-                                                                onClick={() => {
-                                                                    const newItem: RubricItem = { id: `ri_${Date.now()}`, label: '', points: 0.5 };
-                                                                    updateExerciseMeta(ex.id, { rubric: [...(ex.rubric ?? []), newItem] });
-                                                                }}
-                                                                style={{ fontSize: '0.7rem', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: '2px 0' }}
-                                                            >+ Afegir ítem</button>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Two-page crop toggle — only for pages */}
-                                                    {ex.type === 'pages' && (
-                                                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={(ex as any).spansTwoPages === true}
-                                                                onChange={e => {
-                                                                    const isChecked = e.target.checked;
-                                                                    setExercises(prev => prev.map(pEx => {
-                                                                        if (pEx.id === ex.id && pEx.type === 'pages') {
-                                                                            let newPages = [...pEx.pageIndexes];
-                                                                            if (isChecked) {
-                                                                                // Add next page if not already there and within bounds
-                                                                                const lastPage = Math.max(...newPages);
-                                                                                if (lastPage + 1 < pagesPerExam && !newPages.includes(lastPage + 1)) {
-                                                                                    newPages.push(lastPage + 1);
-                                                                                    newPages.sort((a, b) => a - b);
-                                                                                }
-                                                                            }
-                                                                            return { ...pEx, pageIndexes: newPages, spansTwoPages: isChecked };
+                                            {ex.type === 'pages' && (
+                                                <div style={{ marginLeft: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', alignItems: 'center' }}>
+                                                        <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 600 }}>PÀGINES:</span>
+                                                        {(ex as PagesExercise).pageIndexes.map(pIdx => (
+                                                            <div key={pIdx} style={{
+                                                                display: 'flex', alignItems: 'center', gap: '2px',
+                                                                background: pIdx === currentPageIndex ? 'var(--accent)' : 'var(--bg-primary)',
+                                                                color: pIdx === currentPageIndex ? 'white' : 'var(--text-primary)',
+                                                                padding: '1px 4px', borderRadius: '3px', fontSize: '0.65rem', border: '1px solid var(--border)'
+                                                            }}>
+                                                                {pIdx + 1}
+                                                                <button
+                                                                    onClick={() => {
+                                                                        const newPages = (ex as PagesExercise).pageIndexes.filter(p => p !== pIdx);
+                                                                        if (newPages.length > 0) {
+                                                                            updateExerciseMeta(ex.id, { pageIndexes: newPages });
+                                                                        } else {
+                                                                            removeExercise(ex.id);
                                                                         }
-                                                                        return pEx;
-                                                                    }));
+                                                                    }}
+                                                                    style={{ background: 'none', border: 'none', color: pIdx === currentPageIndex ? 'white' : 'var(--danger)', padding: 0, cursor: 'pointer', fontSize: '0.6rem', marginLeft: '2px', display: 'flex' }}
+                                                                >
+                                                                    ✕
+                                                                </button>
+                                                            </div>
+                                                        ))}
+
+                                                        {!(ex as PagesExercise).pageIndexes.includes(currentPageIndex) && (
+                                                            <button
+                                                                onClick={() => addPageToExistingExercise(ex.id)}
+                                                                style={{
+                                                                    background: 'var(--bg-secondary)', border: '1px dashed var(--accent)',
+                                                                    borderRadius: '3px', fontSize: '0.65rem', padding: '1px 5px',
+                                                                    cursor: 'pointer', color: 'var(--accent)', fontWeight: 600,
+                                                                    display: 'flex', alignItems: 'center', gap: '2px'
                                                                 }}
-                                                            />
-                                                            Abasta 2 pàgines simultànies
-                                                        </label>
-                                                    )}
+                                                                title={`Afegir la pàgina ${currentPageIndex + 1} actual`}
+                                                            >
+                                                                <Plus size={10} /> Afegir pàg. {currentPageIndex + 1}
+                                                            </button>
+                                                        )}
+
+                                                        <button
+                                                            onClick={() => {
+                                                                const pStr = window.prompt("Número de pàgina a afegir (1 a " + pagesPerExam + "):");
+                                                                if (pStr) {
+                                                                    const pNum = parseInt(pStr);
+                                                                    if (!isNaN(pNum) && pNum >= 1 && pNum <= pagesPerExam) {
+                                                                        const pIdx = pNum - 1;
+                                                                        const currentPages = (ex as PagesExercise).pageIndexes;
+                                                                        if (!currentPages.includes(pIdx)) {
+                                                                            updateExerciseMeta(ex.id, { pageIndexes: [...currentPages, pIdx].sort((a, b) => a - b) });
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }}
+                                                            style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '3px', fontSize: '0.65rem', padding: '1px 4px', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                                                            title="Afegir pàgina per número"
+                                                        >
+                                                            <Plus size={10} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingLeft: '1.5rem' }}>
+                                                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Màx:</span>
+                                                <NumericInput value={ex.maxScore} onChange={val => updateExerciseMeta(ex.id, { maxScore: val })} style={{ width: '40px' }} />
+
+                                                {ex.type === 'crop' && (
+                                                    <button
+                                                        onClick={() => {
+                                                            const pagesEx: PagesExercise = {
+                                                                id: ex.id,
+                                                                type: 'pages',
+                                                                name: ex.name,
+                                                                maxScore: ex.maxScore,
+                                                                scoringMode: ex.scoringMode,
+                                                                rubric: ex.rubric,
+                                                                pageIndexes: [(ex as any).pageIndex]
+                                                            };
+                                                            setExercises(prev => prev.map(e => e.id === ex.id ? pagesEx : e));
+                                                        }}
+                                                        style={{ background: 'var(--bg-secondary)', border: '1px solid var(--accent)', borderRadius: '4px', fontSize: '0.6rem', padding: '2px 6px', cursor: 'pointer', color: 'var(--accent)', fontWeight: 600 }}
+                                                        title="Convertir aquest retall en un exercici de pàgina sencera (permet afegir més pàgines)"
+                                                    >
+                                                        PASSAR A PÀGINES
+                                                    </button>
+                                                )}
+
+                                                {ex.type === 'pages' && (
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer', marginLeft: '0.2rem' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={(ex as any).spansTwoPages || false}
+                                                            onChange={e => updateExerciseMeta(ex.id, { spansTwoPages: e.target.checked })}
+                                                        />
+                                                        <span style={{ fontSize: '0.6rem', fontWeight: 600 }}>Vista 2p</span>
+                                                    </label>
+                                                )}
+
+                                                <div style={{ flex: 1 }}></div>
+
+                                                <div style={{ display: 'flex', gap: '0.2rem' }}>
+                                                    {(['from_max', 'from_zero'] as const).map(m => (
+                                                        <button key={m}
+                                                            onClick={() => updateExerciseMeta(ex.id, { scoringMode: m })}
+                                                            style={{
+                                                                fontSize: '0.6rem', padding: '2px 5px', borderRadius: '4px', border: 'none', cursor: 'pointer',
+                                                                background: (ex.scoringMode ?? 'from_max') === m ? 'var(--accent)' : 'var(--bg-primary)',
+                                                                color: (ex.scoringMode ?? 'from_max') === m ? 'white' : 'var(--text-secondary)'
+                                                            }}
+                                                        >{m === 'from_max' ? 'Max' : 'Rúb'}</button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {ex.scoringMode === 'from_zero' && (
+                                                <div style={{ marginLeft: '1.5rem', padding: '0.4rem', background: 'var(--bg-primary)', borderRadius: '4px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                                                    {(ex.rubric ?? []).map((item, ri) => (
+                                                        <div key={item.id} style={{ display: 'flex', gap: '0.2rem', alignItems: 'center' }}>
+                                                            <input type="text" value={item.label} placeholder="Ítem" onChange={e => {
+                                                                const newRubric = (ex.rubric ?? []).map((it, i) => i === ri ? { ...it, label: e.target.value } : it);
+                                                                updateExerciseMeta(ex.id, { rubric: newRubric });
+                                                            }} style={{ flex: 1, fontSize: '0.65rem', padding: '1px 3px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: '2px', color: 'var(--text-primary)' }} />
+                                                            <NumericInput value={item.points} onChange={val => {
+                                                                if (val === undefined) return;
+                                                                const newRubric = (ex.rubric ?? []).map((it, i) => i === ri ? { ...it, points: val } : it);
+                                                                updateExerciseMeta(ex.id, { rubric: newRubric });
+                                                            }} style={{ width: '35px', padding: '1px' }} />
+                                                            <button onClick={() => updateExerciseMeta(ex.id, { rubric: (ex.rubric ?? []).filter((_, i) => i !== ri) })} style={{ background: 'none', border: 'none', color: 'var(--danger)', fontSize: '0.7rem', padding: 0 }}>✕</button>
+                                                        </div>
+                                                    ))}
+                                                    <button onClick={() => updateExerciseMeta(ex.id, { rubric: [...(ex.rubric ?? []), { id: `ri_${Date.now()}`, label: '', points: 0.5 }] })} style={{ fontSize: '0.6rem', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>+ Ítem</button>
                                                 </div>
                                             )}
                                         </div>
-                                    </li>
-                                )
-                            })}
-                        </ul>
-                    )}
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </section>
                 </div>
 
                 <div style={{ padding: '1rem', borderTop: '1px solid var(--border)' }}>
                     <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => onComplete(exercises)}>
-                        <Check size={18} /> Finish Setup
+                        <Check size={18} /> Finalitzar Configuració
                     </button>
                 </div>
             </div>
@@ -601,6 +688,18 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
                             onTouchMove={handleTouchMove}
                             onTouchEnd={handleTouchEnd}
                             onWheel={handleWheel}
+                            onClick={(e) => {
+                                // Deselect when clicking on empty area
+                                if (e.target === e.target.getStage()) {
+                                    setSelectedId(null);
+                                }
+                            }}
+                            onTap={(e) => {
+                                // Deselect when tapping on empty area
+                                if (e.target === e.target.getStage()) {
+                                    setSelectedId(null);
+                                }
+                            }}
                             draggable={mode === 'select'}
                             onDragEnd={(e) => {
                                 setStagePos({ x: e.target.x(), y: e.target.y() });
@@ -617,11 +716,38 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
 
                                 {currentPageRegions.map((region) => {
                                     const { fill, stroke, label } = getRegionStyle(region.type);
+                                    const isSelected = region.id === selectedId;
+
                                     return (
-                                        <Group key={region.id}>
+                                        <Group
+                                            key={region.id}
+                                            draggable={mode === 'select'}
+                                            onClick={(e) => {
+                                                if (mode === 'select') {
+                                                    e.cancelBubble = true;
+                                                    setSelectedId(region.id);
+                                                }
+                                            }}
+                                            onTap={(e) => {
+                                                if (mode === 'select') {
+                                                    e.cancelBubble = true;
+                                                    setSelectedId(region.id);
+                                                }
+                                            }}
+                                            onDragEnd={(e) => {
+                                                const x = e.target.x();
+                                                const y = e.target.y();
+                                                setExercises(prev => prev.map(ex => ex.id === region.id ? { ...ex, x, y } : ex));
+                                                e.target.x(0); // Reset local pos because we update exercise state
+                                                e.target.y(0);
+                                            }}
+                                            x={region.x}
+                                            y={region.y}
+                                        >
                                             <Rect
-                                                x={region.x}
-                                                y={region.y}
+                                                name="regionRect"
+                                                x={0}
+                                                y={0}
                                                 width={region.width}
                                                 height={region.height}
                                                 fill={fill}
@@ -629,8 +755,8 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
                                                 strokeWidth={2 / stageScale}
                                             />
                                             <Rect
-                                                x={region.x}
-                                                y={region.y - (24 / stageScale)}
+                                                x={0}
+                                                y={-(24 / stageScale)}
                                                 width={Math.max(80, label.length * 8 + 16) / stageScale}
                                                 height={24 / stageScale}
                                                 fill={stroke}
@@ -638,27 +764,72 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
                                             <Text
                                                 text={label}
                                                 fill="white"
-                                                x={region.x + (8 / stageScale)}
-                                                y={region.y - (18 / stageScale)}
+                                                x={8 / stageScale}
+                                                y={-(18 / stageScale)}
                                                 fontSize={12 / stageScale}
                                                 fontFamily="system-ui"
                                             />
+
+                                            {isSelected && mode === 'select' && (
+                                                <Transformer
+                                                    ref={(node) => {
+                                                        if (node && node.getNode() && node.getNode().getStage()) {
+                                                            const parent = node.getParent();
+                                                            if (parent) {
+                                                                const rectNode = parent.findOne('.regionRect');
+                                                                if (rectNode) node.nodes([rectNode]);
+                                                            }
+                                                        }
+                                                    }}
+                                                    boundBoxFunc={(oldBox, newBox) => {
+                                                        if (newBox.width < 10 || newBox.height < 10) return oldBox;
+                                                        return newBox;
+                                                    }}
+                                                    onTransformEnd={(e) => {
+                                                        const node = e.target;
+                                                        const scaleX = node.scaleX();
+                                                        const scaleY = node.scaleY();
+                                                        const newWidth = Math.max(10, node.width() * scaleX);
+                                                        const newHeight = Math.max(10, node.height() * scaleY);
+
+                                                        // Update the data model
+                                                        setExercises(prev => prev.map(ex => ex.id === region.id ? {
+                                                            ...ex,
+                                                            width: newWidth,
+                                                            height: newHeight
+                                                        } : ex));
+
+                                                        // Reset scale back to 1 since we apply it to width/height
+                                                        node.scaleX(1);
+                                                        node.scaleY(1);
+                                                    }}
+                                                    ignoreStroke={true}
+                                                    rotateEnabled={false}
+                                                    keepRatio={false}
+                                                    borderStroke="#3b82f6"
+                                                    anchorSize={12 / stageScale}
+                                                />
+                                            )}
                                         </Group>
-                                    )
+                                    );
                                 })}
 
-                                {isDrawing && newCropRef && (
-                                    <Rect
-                                        x={newCropRef.x || 0}
-                                        y={newCropRef.y || 0}
-                                        width={newCropRef.width || 0}
-                                        height={newCropRef.height || 0}
-                                        fill={getRegionStyle(mode === 'draw' ? 'crop' : 'total_score').fill}
-                                        stroke={getRegionStyle(mode === 'draw' ? 'crop' : 'total_score').stroke}
-                                        strokeWidth={2 / stageScale}
-                                        dash={[5 / stageScale, 5 / stageScale]}
-                                    />
-                                )}
+                                {isDrawing && newCropRef && (() => {
+                                    const typeForStyle = mode === 'draw' ? 'crop' : mode === 'draw_qr' ? 'qr_code' : mode === 'draw_ocr' ? 'ocr_name' : 'total_score';
+                                    const { fill, stroke } = getRegionStyle(typeForStyle);
+                                    return (
+                                        <Rect
+                                            x={newCropRef.x || 0}
+                                            y={newCropRef.y || 0}
+                                            width={newCropRef.width || 0}
+                                            height={newCropRef.height || 0}
+                                            fill={fill}
+                                            stroke={stroke}
+                                            strokeWidth={2 / stageScale}
+                                            dash={[5 / stageScale, 5 / stageScale]}
+                                        />
+                                    );
+                                })()}
                             </Layer>
                         </Stage>
                     </div>
@@ -669,6 +840,6 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
                     </div>
                 )}
             </div>
-        </div>
+        </div >
     );
 }

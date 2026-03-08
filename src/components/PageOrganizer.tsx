@@ -18,8 +18,86 @@ interface Props {
     debugLogs?: string[];
 }
 
+// Helper for natural number input (handles commas, dots, negative signs, etc)
+function NumericInput({ value, onChange, style, placeholder = "" }: {
+    value: number | undefined,
+    onChange: (val: number | undefined) => void,
+    style?: React.CSSProperties,
+    placeholder?: string
+}) {
+    const [tempValue, setTempValue] = useState<string>(value !== undefined ? value.toString().replace('.', ',') : "");
+
+    useEffect(() => {
+        if (value !== undefined) {
+            const currentStr = value.toString().replace('.', ',');
+            if (parseFloat(tempValue.replace(',', '.')) !== value) {
+                setTempValue(currentStr);
+            }
+        } else if (tempValue !== "") {
+            setTempValue("");
+        }
+    }, [value]);
+
+    return (
+        <input
+            type="text"
+            inputMode="decimal"
+            placeholder={placeholder}
+            value={tempValue}
+            onChange={(e) => {
+                const val = e.target.value.replace('.', ',');
+                if (val === "" || val === "-" || /^-?\d*,?\d*$/.test(val)) {
+                    setTempValue(val);
+                    const parsed = parseFloat(val.replace(',', '.'));
+                    if (!isNaN(parsed)) {
+                        onChange(parsed);
+                    } else if (val === "" || val === "-") {
+                        onChange(undefined);
+                    }
+                }
+            }}
+            onBlur={() => {
+                const parsed = parseFloat(tempValue.replace(',', '.'));
+                if (isNaN(parsed)) {
+                    setTempValue(value !== undefined ? value.toString().replace('.', ',') : "");
+                    onChange(value);
+                } else {
+                    setTempValue(parsed.toString().replace('.', ','));
+                    onChange(parsed);
+                }
+            }}
+            style={{
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border)',
+                borderRadius: '4px',
+                color: 'var(--text-primary)',
+                padding: '0.2rem 0.3rem',
+                fontSize: '0.75rem',
+                ...style
+            }}
+        />
+    );
+}
+
 export default function PageOrganizer({ pdfDoc, initialGroups, pagesPerExam, onConfirm, onBack, debugLogs = [] }: Props) {
     const [groups, setGroups] = useState<StudentGroup[]>(initialGroups);
+
+    const propagateOrder = (groupIdx: number) => {
+        if (!window.confirm("Vols aplicar aquest ordre de pàgines a TOTS els alumnes següents?")) return;
+        const templateOrder = groups[groupIdx].pageIndexes;
+        setGroups(prev => prev.map((g, i) => i > groupIdx ? { ...g, pageIndexes: [...templateOrder] } : g));
+    };
+
+    const shiftPages = (groupIdx: number, delta: number) => {
+        if (!window.confirm(`Vols desplaçar ${delta > 0 ? '+' : ''}${delta} totes les pàgines de TOTS els alumnes a partir d'aquest?`)) return;
+        const totalPdfPages = pdfDoc.numPages;
+        setGroups(prev => prev.map((g, i) => {
+            if (i >= groupIdx) {
+                return { ...g, pageIndexes: g.pageIndexes.map(p => Math.min(totalPdfPages, Math.max(1, p + delta))) };
+            }
+            return g;
+        }));
+    };
     const [thumbnails, setThumbnails] = useState<Record<number, string>>({});
     const [dragState, setDragState] = useState<{ fromGroup: number; fromPage: number } | null>(null);
     const [showLogs, setShowLogs] = useState(false);
@@ -268,23 +346,43 @@ export default function PageOrganizer({ pdfDoc, initialGroups, pagesPerExam, onC
                                         color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.9rem'
                                     }}
                                 />
+
+                                <div style={{ display: 'flex', gap: '0.3rem', marginRight: '1rem' }}>
+                                    <button
+                                        onClick={() => propagateOrder(gi)}
+                                        className="btn btn-secondary"
+                                        style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem' }}
+                                        title="Copia aquest ordre de pàgines a tots els següents"
+                                    >
+                                        Propagar ordre 📋
+                                    </button>
+                                    <button
+                                        onClick={() => shiftPages(gi, -1)}
+                                        className="btn btn-secondary"
+                                        style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem' }}
+                                        title="Resta 1 a totes les pàgines de PDF d'aquest alumne i següents"
+                                    >
+                                        Shift -1 ⬅️
+                                    </button>
+                                    <button
+                                        onClick={() => shiftPages(gi, 1)}
+                                        className="btn btn-secondary"
+                                        style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem' }}
+                                        title="Suma 1 a totes les pàgines de PDF d'aquest alumne i següents"
+                                    >
+                                        Shift +1 ➡️
+                                    </button>
+                                </div>
+
                                 {/* Editable page count with cascade */}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
                                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>pàg:</span>
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        max={999}
-                                        key={`pgcount-${gi}-${group.pageIndexes.length}`}
-                                        defaultValue={group.pageIndexes.length}
-                                        title="Canvia per recalcular totes les files inferiors (Enter o clic fora)"
-                                        onBlur={e => {
-                                            const n = parseInt(e.target.value);
-                                            if (!isNaN(n) && n > 0 && n !== group.pageIndexes.length) recascadeFromGroup(gi, n);
-                                        }}
-                                        onKeyDown={e => {
-                                            if (e.key === 'Enter') { (e.target as HTMLInputElement).blur(); }
-                                            if (e.key === 'Escape') { (e.target as HTMLInputElement).value = String(group.pageIndexes.length); (e.target as HTMLInputElement).blur(); }
+                                    <NumericInput
+                                        value={group.pageIndexes.length}
+                                        onChange={val => {
+                                            if (val !== undefined && val > 0 && val !== group.pageIndexes.length) {
+                                                recascadeFromGroup(gi, val);
+                                            }
                                         }}
                                         style={{
                                             width: '48px', padding: '0.15rem 0.25rem', fontSize: '0.75rem',
@@ -334,23 +432,12 @@ export default function PageOrganizer({ pdfDoc, initialGroups, pagesPerExam, onC
                                                 padding: '1px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px'
                                             }}>
                                                 <span>ex.</span>
-                                                <input
-                                                    type="number"
-                                                    min={1}
-                                                    max={99}
-                                                    key={`slot-${gi}-${pi}-${absPage}`}
-                                                    defaultValue={pi + 1}
-                                                    title="Edita el número d'examen (Enter o clic fora)"
-                                                    onClick={e => e.stopPropagation()}
-                                                    onBlur={e => {
-                                                        const newSlot = parseInt(e.target.value);
-                                                        if (!isNaN(newSlot) && newSlot >= 1 && newSlot !== pi + 1) rebaseFromPage(gi, pi, newSlot - 1);
-                                                        else e.target.value = String(pi + 1);
-                                                    }}
-                                                    onKeyDown={e => {
-                                                        e.stopPropagation();
-                                                        if (e.key === 'Enter') { (e.target as HTMLInputElement).blur(); }
-                                                        if (e.key === 'Escape') { (e.target as HTMLInputElement).value = String(pi + 1); (e.target as HTMLInputElement).blur(); }
+                                                <NumericInput
+                                                    value={pi + 1}
+                                                    onChange={val => {
+                                                        if (val !== undefined && val >= 1 && val !== pi + 1) {
+                                                            rebaseFromPage(gi, pi, val - 1);
+                                                        }
                                                     }}
                                                     style={{
                                                         width: '28px', background: 'transparent',

@@ -1,24 +1,38 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+
+declare global {
+    interface Window {
+        stampDebugged?: Record<string, string>;
+    }
+}
 import { Stage, Layer, Image as KonvaImage, Line, Rect, Group, Text, Transformer } from 'react-konva';
 import {
     ChevronLeft, ChevronRight, PenTool, Highlighter, MousePointer2,
-    Undo, Trash2, Type, Plus, Pencil, Check, X, Download, Loader2, Moon, Sun
+    Undo, Trash2, Type, Plus, Pencil, Check, X, Download, Loader2, Moon, Sun, AlertTriangle, RefreshCw
 } from 'lucide-react';
-import type { PDFDocumentProxy } from '../utils/pdfUtils';
+// import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import { exportAnnotatedPDF, exportOriginalLayoutPDF } from '../utils/pdfExport';
-import type { Student, ExerciseDef, AnnotationStore, Annotation, PenAnnotation, HighlighterAnnotation, ImageAnnotation, TextAnnotation, ToolType, PresetHighlighter, PenColor, RubricCountStore, AnnotationComment } from '../types';
+import type { Student, ExerciseDef, AnnotationStore, Annotation, PenAnnotation, HighlighterAnnotation, ImageAnnotation, TextAnnotation, ToolType, PresetHighlighter, PenColor, RubricCountStore, AnnotationComment, HighlighterLegendAnnotation } from '../types';
 
 interface Props {
-    pdfDoc: PDFDocumentProxy;
+    pdfDoc: any; // PDFDocumentProxy
     students: Student[];
     exercises: ExerciseDef[];
     annotations: AnnotationStore;
     rubricCounts: RubricCountStore;
+    commentBank: AnnotationComment[];
+    targetMaxScore: number;
+    onUpdateCommentBank: (bank: AnnotationComment[]) => void;
+    onUpdateTargetMaxScore: (score: number) => void;
     onUpdateAnnotations: (studentId: string, exerciseId: string, annotations: Annotation[]) => void;
     onUpdateRubricCounts: (studentId: string, exerciseId: string, itemId: string, delta: number) => void;
     onUpdateExercise: (exercise: ExerciseDef) => void;
     onBack?: () => void;
+    studentIdx: number;
+    exerciseIdx: number;
+    onUpdateStudentIdx: (idx: number) => void;
+    onUpdateExerciseIdx: (idx: number) => void;
 }
 
 
@@ -40,29 +54,95 @@ interface RenderedPage {
     xOffset?: number;
 }
 
-export default function CorrectionView({ pdfDoc, students, exercises, annotations, rubricCounts, onUpdateAnnotations, onUpdateRubricCounts, onUpdateExercise, onBack }: Props) {
-    const [studentIdx, setStudentIdx] = useState(0);
-    const [exerciseIdx, setExerciseIdx] = useState(0);
-    const [renderedPages, setRenderedPages] = useState<RenderedPage[]>([]);
+// Helper for natural number input (handles commas, dots, negative signs, etc)
+function NumericInput({ value, onChange, style, placeholder = "" }: {
+    value: number | undefined,
+    onChange: (val: number | undefined) => void,
+    style?: React.CSSProperties,
+    placeholder?: string
+}) {
+    const [tempValue, setTempValue] = useState<string>(value !== undefined ? value.toString().replace('.', ',') : "");
 
-    const [tool, setTool] = useState<ToolType>('pen');
-    const [penColor, setPenColor] = useState<PenColor>('#ef4444');
-    const [defaultTextColor, setDefaultTextColor] = useState<string>('#111827');
-    const [penWidth, setPenWidth] = useState<number>(3);
-    const [penOpacity, setPenOpacity] = useState<number>(1);
+    useEffect(() => {
+        if (value !== undefined) {
+            const currentStr = value.toString().replace('.', ',');
+            if (parseFloat(tempValue.replace(',', '.')) !== value) {
+                setTempValue(currentStr);
+            }
+        } else if (tempValue !== "") {
+            setTempValue("");
+        }
+    }, [value]);
+
+    return (
+        <input
+            type="text"
+            inputMode="decimal"
+            placeholder={placeholder}
+            value={tempValue}
+            onChange={(e) => {
+                const val = e.target.value.replace('.', ',');
+                // Allow intermediate states: empty, just minus, or numbers with one comma
+                if (val === "" || val === "-" || /^-?\d*,?\d*$/.test(val)) {
+                    setTempValue(val);
+                    const parsed = parseFloat(val.replace(',', '.'));
+                    if (!isNaN(parsed)) {
+                        onChange(parsed);
+                    } else if (val === "" || val === "-") {
+                        onChange(undefined);
+                    }
+                }
+            }}
+            onBlur={() => {
+                const parsed = parseFloat(tempValue.replace(',', '.'));
+                if (isNaN(parsed)) {
+                    setTempValue(value !== undefined ? value.toString().replace('.', ',') : "");
+                    onChange(value);
+                } else {
+                    setTempValue(parsed.toString().replace('.', ','));
+                    onChange(parsed);
+                }
+            }}
+            style={{
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border)',
+                borderRadius: '4px',
+                color: 'var(--text-primary)',
+                padding: '0.2rem 0.3rem',
+                fontSize: '0.75rem',
+                ...style
+            }}
+        />
+    );
+}
+
+export default function CorrectionView({
+    pdfDoc, students, exercises, annotations, rubricCounts,
+    commentBank, targetMaxScore, onUpdateCommentBank, onUpdateTargetMaxScore,
+    onUpdateAnnotations, onUpdateRubricCounts, onUpdateExercise, onBack,
+    studentIdx, exerciseIdx, onUpdateStudentIdx, onUpdateExerciseIdx
+}: Props) {
+    const [renderedPages, setRenderedPages] = useState<RenderedPage[]>([]);
+    const [isPageLoading, setIsPageLoading] = useState(false);
+
+    const [tool, setTool] = useState<ToolType>(() => (localStorage.getItem('correction-last-tool') as ToolType) || 'pen');
+    const [penColor, setPenColor] = useState<PenColor>(() => localStorage.getItem('correction-last-pen-color') || '#ef4444');
+    const [highlighterColor, setHighlighterColor] = useState<string>(() => localStorage.getItem('correction-last-h-color') || 'rgba(253, 224, 71, 0.4)');
+    const [defaultTextColor] = useState<string>('#111827');
+    const [penWidth, setPenWidth] = useState<number>(() => Number(localStorage.getItem('correction-last-pen-width')) || 3);
+    const [penOpacity, setPenOpacity] = useState<number>(() => Number(localStorage.getItem('correction-last-pen-opacity')) || 1);
     const [isDrawing, setIsDrawing] = useState(false);
+
+    // Save settings on change
+    useEffect(() => { localStorage.setItem('correction-last-tool', tool); }, [tool]);
+    useEffect(() => { localStorage.setItem('correction-last-pen-color', penColor); }, [penColor]);
+    useEffect(() => { localStorage.setItem('correction-last-h-color', highlighterColor); }, [highlighterColor]);
+    useEffect(() => { localStorage.setItem('correction-last-pen-width', String(penWidth)); }, [penWidth]);
+    useEffect(() => { localStorage.setItem('correction-last-pen-opacity', String(penOpacity)); }, [penOpacity]);
     const [isExporting, setIsExporting] = useState(false);
     const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
 
-    // Comment bank
-    const [commentBank, setCommentBank] = useState<AnnotationComment[]>([
-        { text: 'Correcte!', score: undefined, colorMode: 'neutral' },
-        { text: 'Revisa el procediment', score: -0.25, colorMode: 'score' },
-        { text: 'Error de signe', score: -0.1, colorMode: 'score' },
-        { text: 'Falta demostraci\u00f3', score: -0.5, colorMode: 'score' },
-        { text: 'Bona idea, per\u00f2 incorrecte', score: undefined, colorMode: 'neutral' },
-        { text: 'Error aritm\u00e8tic', score: -0.25, colorMode: 'score' },
-    ]);
+    // Comment bank states
     const [newComment, setNewComment] = useState('');
     const [newCommentScore, setNewCommentScore] = useState<string>('');
     const [newCommentColorMode, setNewCommentColorMode] = useState<'neutral' | 'score' | 'custom'>('neutral');
@@ -71,6 +151,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
     const [commentBankHeight, setCommentBankHeight] = useState(160);
     const [draggingComment, setDraggingComment] = useState<string | null>(null);
     const [editingBankComment, setEditingBankComment] = useState<number | null>(null);
+    const [pendingStampComment, setPendingStampComment] = useState<any | null>(null);
 
     // Highlighters
     const [presets, setPresets] = useState<PresetHighlighter[]>(DEFAULT_HIGHLIGHT_PRESETS);
@@ -84,27 +165,27 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
 
     // Selection & Editing state
     const [selectedId, setSelectedId] = useState<string | null>(null);
-    const [editingTextNode, setEditingTextNode] = useState<{ id: string, text: string, x: number, y: number } | null>(null);
+    const [editingTextNode, setEditingTextNode] = useState<{ id: string, text: string, x: number, y: number, width?: number, height?: number } | null>(null);
 
     // Zoom & Pan state
     const [stageScale, setStageScale] = useState(1);
     const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
-    const [targetMaxScore, setTargetMaxScore] = useState<number>(10);
     const [scoreStampSize, setScoreStampSize] = useState(24);
     const [history, setHistory] = useState<Annotation[][]>([]);
+    const [highlighterLabelMode, setHighlighterLabelMode] = useState<'individual' | 'legend'>('individual');
     const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('correction-dark-mode');
         return saved ? JSON.parse(saved) : window.matchMedia('(prefers-color-scheme: dark)').matches;
     });
+    const [pendingStampChange, setPendingStampChange] = useState<{ x: number, y: number, scale: number } | null>(null);
     const transformerRef = useRef<any>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const isErasingSessionRef = useRef(false);
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', isDarkMode ? 'dark' : 'light');
         localStorage.setItem('correction-dark-mode', JSON.stringify(isDarkMode));
     }, [isDarkMode]);
-
-
 
     const updateAnnotationsWithHistory = (newAnns: Annotation[]) => {
         setHistory(prev => [...prev.slice(-19), currentAnnotations]); // Limit history to 20 steps
@@ -119,7 +200,35 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
         }
     };
 
-    const gradableExercises = exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages');
+    const handleEraserAtPos = (actualPos: { x: number, y: number }) => {
+        const eraserRadius = 20 / stageScale;
+        const newAnnots = currentAnnotations.filter(ann => {
+            if (ann.type === 'pen') {
+                for (let i = 0; i < ann.points.length; i += 2) {
+                    const dist = Math.sqrt(Math.pow(ann.points[i] - actualPos.x, 2) + Math.pow(ann.points[i + 1] - actualPos.y, 2));
+                    if (dist < eraserRadius) return false;
+                }
+            } else if (ann.type === 'highlighter' || ann.type === 'image') {
+                if (actualPos.x >= ann.x && actualPos.x <= ann.x + ann.width &&
+                    actualPos.y >= ann.y && actualPos.y <= ann.y + ann.height) return false;
+            } else if (ann.type === 'text') {
+                const fontSize = (ann.fontSize || 18) * 1.5;
+                if (actualPos.x >= ann.x && actualPos.x <= ann.x + (ann.text.length * fontSize * 0.6) &&
+                    actualPos.y >= ann.y - fontSize && actualPos.y <= ann.y + fontSize) return false;
+            }
+            return true;
+        });
+
+        if (newAnnots.length !== currentAnnotations.length) {
+            if (!isErasingSessionRef.current) {
+                setHistory(prev => [...prev.slice(-19), currentAnnotations]);
+                isErasingSessionRef.current = true;
+            }
+            onUpdateAnnotations(currentStudent.id, currentExercise.id, newAnnots);
+        }
+    };
+
+    const gradableExercises = exercises.filter((ex: ExerciseDef) => ex.type === 'crop' || ex.type === 'pages');
     const currentStudent = students[studentIdx];
     const currentExercise = gradableExercises[exerciseIdx];
     const currentAnnotations = (currentStudent && currentExercise)
@@ -131,10 +240,10 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
         : {};
 
     const rubricBase = (currentExercise?.scoringMode === 'from_zero' && currentExercise?.rubric)
-        ? (currentExercise.rubric ?? []).reduce((sum, item) => sum + item.points * (currentExRubricCounts[item.id] ?? 0), 0)
+        ? (currentExercise.rubric ?? []).reduce((sum: number, item: any) => sum + item.points * (currentExRubricCounts[item.id] ?? 0), 0)
         : null;
 
-    const highlightAdjustment = currentAnnotations.reduce((sum, ann) => {
+    const highlightAdjustment = currentAnnotations.reduce((sum: number, ann: any) => {
         if (ann.type === 'highlighter' && typeof ann.points === 'number') return sum + ann.points;
         if (ann.type === 'text' && typeof ann.score === 'number') return sum + ann.score;
         return sum;
@@ -145,20 +254,113 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
             ? rubricBase + highlightAdjustment
             : currentExercise.maxScore !== undefined
                 ? currentExercise.maxScore + highlightAdjustment
-                : null
+                : 0 // Default to 0 instead of null for gradable exercises
         : null;
 
-    const totalStudentScore = currentStudent ? gradableExercises.reduce((acc, ex) => {
+    const scoreStampData = useMemo(() => {
+        if (!renderedPages.length || computedScore === null || !currentExercise) return null;
+
+        const totalPossible = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+        const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
+        const scaledExScore = Math.round(computedScore * currentFactor * 100) / 100;
+        const scaledExMax = (currentExercise.maxScore ?? 10) * currentFactor;
+
+        const formatP = (p: number) => {
+            const s = Math.round(p * currentFactor * 100) / 100;
+            return (s > 0 ? '+' : '') + s;
+        };
+
+        const rubricSumm = (currentExercise.rubric || [])
+            .filter(item => (currentExRubricCounts[item.id] || 0) > 0)
+            .map(item => `${item.label}${currentExRubricCounts[item.id] > 1 ? ` (x${currentExRubricCounts[item.id]})` : ''} (${formatP(item.points * currentExRubricCounts[item.id])})`)
+            .join(', ');
+
+        const groupRepetitions = (items: { label: string, pts?: number }[]) => {
+            const map = new Map<string, { count: number, pts?: number }>();
+            for (const item of items) {
+                const key = item.label;
+                if (map.has(key)) {
+                    const existing = map.get(key)!;
+                    map.set(key, { count: existing.count + 1, pts: (existing.pts || 0) + (item.pts || 0) });
+                } else {
+                    map.set(key, { count: 1, pts: item.pts });
+                }
+            }
+            return Array.from(map.entries()).map(([label, data]) => {
+                return `${label}${data.count > 1 ? ` (x${data.count})` : ''}${data.pts !== undefined ? ` (${formatP(data.pts)})` : ''}`;
+            }).join(', ');
+        };
+
+        const highlightItems = currentAnnotations
+            .filter(ann => ann.type === 'highlighter' && (ann as any).points !== undefined)
+            .map(ann => ({ label: ((ann as any).label || 'Marc').trim(), pts: (ann as any).points as number }));
+        const highlightSumm = groupRepetitions(highlightItems);
+
+        const scoredCommItems = currentAnnotations
+            .filter(ann => ann.type === 'text' && (ann as any).text.trim().length > 0 && (ann as any).score !== undefined)
+            .map(ann => ({ label: (ann as any).text.trim(), pts: (ann as any).score as number }));
+        const scoredCommSumm = groupRepetitions(scoredCommItems);
+
+        const pureCommItems = currentAnnotations
+            .filter(ann => ann.type === 'text' && (ann as any).text.trim().length > 0 && (ann as any).score === undefined)
+            .map(ann => ({ label: (ann as any).text.trim() }));
+        const pureCommSumm = groupRepetitions(pureCommItems);
+
+        const lines = [
+            rubricSumm ? `Rúbrica: ${rubricSumm}` : '',
+            highlightSumm ? `Fluorescents: ${highlightSumm}` : '',
+            scoredCommSumm ? `Comentaris (+pts): ${scoredCommSumm}` : '',
+            pureCommSumm ? `Comentaris: ${pureCommSumm}` : ''
+        ].filter(Boolean);
+
+        const stampStorage = currentAnnotations.find(a => a.id === 'system_score_stamp') as TextAnnotation | undefined;
+        const lastPage = renderedPages[renderedPages.length - 1];
+
+        // Robust layout-aware dimensions
+        const totalW = Math.max(...renderedPages.map(p => (p.xOffset ?? 0) + p.width));
+        const totalH = Math.max(...renderedPages.map(p => p.yOffset + p.height));
+
+        const defaultStampX = (lastPage.width > 600) ? (lastPage.width - 550) : 20;
+        const defaultStampY = (totalH > 100) ? (totalH - 80) : 10;
+
+        let x = stampStorage?.x ?? currentExercise.stampX ?? defaultStampX;
+        let y = stampStorage?.y ?? currentExercise.stampY ?? defaultStampY;
+        const scale = stampStorage?.width ? (stampStorage.width / 500) : (currentExercise.stampScale ?? 1);
+
+        // Clamp coordinates within bounds (safety)
+        x = Math.max(0, Math.min(x, totalW - 100));
+        y = Math.max(0, Math.min(y, totalH - 50));
+
+        const linesCount = lines.length;
+        const height = (scoreStampSize * 1.5) + (linesCount > 0 ? (linesCount * scoreStampSize * 0.75 * 1.2) + scoreStampSize * 0.5 : 0);
+
+        console.log(`[STAMP DEBUG] Ex: ${currentExercise.name}, x: ${x}, y: ${y}, totalH: ${totalH}, score: ${scaledExScore}, lines: ${linesCount}`);
+
+        return {
+            x, y, scale, height, scaledExScore, scaledExMax, lines
+        };
+    }, [
+        renderedPages, computedScore, currentExercise, currentAnnotations,
+        currentExRubricCounts, targetMaxScore, gradableExercises, scoreStampSize
+    ]);
+
+    const totalStudentScore = currentStudent ? gradableExercises.reduce((acc: number, ex: ExerciseDef) => {
         const exAnns = annotations[currentStudent.id]?.[ex.id] || [];
-        const exPoints = exAnns.reduce((sum, ann) => {
+        const exRubric = rubricCounts[currentStudent.id]?.[ex.id] || {};
+        const exAdjustment = exAnns.reduce((sum: number, ann: any) => {
             if (ann.type === 'highlighter' && typeof ann.points === 'number') return sum + ann.points;
             if (ann.type === 'text' && typeof ann.score === 'number') return sum + ann.score;
             return sum;
         }, 0);
-        const exRubric = ex.scoringMode === 'from_zero' && ex.rubric
-            ? ex.rubric.reduce((s, item) => s + item.points * (rubricCounts?.[currentStudent.id]?.[ex.id]?.[item.id] ?? 0), 0)
-            : (ex.maxScore ?? 0);
-        return acc + exRubric + exPoints;
+
+        let exScore = 0;
+        if (ex.scoringMode === 'from_zero' && ex.rubric) {
+            const rb = ex.rubric.reduce((sum: number, item: any) => sum + item.points * (exRubric[item.id] ?? 0), 0);
+            exScore = rb + exAdjustment;
+        } else {
+            exScore = (ex.maxScore || 0) + exAdjustment;
+        }
+        return acc + Math.max(0, exScore);
     }, 0) : 0;
 
     // Fix JS float weirdness (like 0.1+0.2=0.3000000004)
@@ -171,6 +373,10 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
     }, [editingTextNode]);
 
     useEffect(() => {
+        setSelectedId(null);
+    }, [studentIdx, exerciseIdx]);
+
+    useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
@@ -179,6 +385,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
             if (key === 'p') setTool('pen');
             if (key === 't') setTool('text');
             if (key === 'h') setTool('highlighter');
+            if (key === 'x') setTool('eraser');
 
             if (/^[1-9]$/.test(key)) {
                 const idx = parseInt(key) - 1;
@@ -226,13 +433,17 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
 
             // Navigation
             if (key === ' ' || key === 'arrowright') {
-                if (studentIdx < students.length - 1) setStudentIdx(s => s + 1);
+                e.preventDefault();
+                if (studentIdx < students.length - 1) onUpdateStudentIdx(studentIdx + 1);
             } else if (key === 'arrowleft') {
-                if (studentIdx > 0) setStudentIdx(s => s - 1);
+                e.preventDefault();
+                if (studentIdx > 0) onUpdateStudentIdx(studentIdx - 1);
             } else if (key === 'arrowdown') {
-                if (exerciseIdx < exercises.length - 1) setExerciseIdx(c => c + 1);
+                e.preventDefault();
+                if (exerciseIdx < gradableExercises.length - 1) onUpdateExerciseIdx(exerciseIdx + 1);
             } else if (key === 'arrowup') {
-                if (exerciseIdx > 0) setExerciseIdx(c => c - 1);
+                e.preventDefault();
+                if (exerciseIdx > 0) onUpdateExerciseIdx(exerciseIdx - 1);
             }
         };
 
@@ -245,103 +456,168 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
     const lastDistRef = useRef<number>(0);
 
     useEffect(() => {
-        if (!currentStudent || !currentExercise) return;
+        if (!currentStudent || !currentExercise || !pdfDoc) return;
 
         setSelectedId(null);
         setEditingTextNode(null);
+        setRenderedPages([]); // Clear old pages immediately to avoid ghost rendering during transition
+        setIsPageLoading(true);
+
+        let isMounted = true;
 
         const loadExerciseRegions = async () => {
-            setRenderedPages([]);
-            setStageScale(1);
-            setStagePos({ x: 0, y: 0 });
+            if (!containerRef.current) {
+                if (isMounted) setTimeout(loadExerciseRegions, 50);
+                return;
+            }
 
             const images: RenderedPage[] = [];
             let currentYOffset = 0;
 
-            if (currentExercise.type === 'crop') {
-                const actualPageIndex = currentStudent.pageIndexes[currentExercise.pageIndex];
-                if (actualPageIndex === undefined || actualPageIndex === -1) return;
+            try {
+                if (currentExercise.type === 'crop') {
+                    let actualPageIndex = currentStudent.pageIndexes[currentExercise.pageIndex];
 
-                const renderCropPage = async (absPage: number, yOff: number) => {
-                    const canvas = document.createElement('canvas');
-                    const dimensions = await renderPDFPageToCanvas(pdfDoc, absPage, canvas, 2.5);
-                    if (!dimensions) return null;
-                    const cropCanvas = document.createElement('canvas');
-                    cropCanvas.width = currentExercise.width;
-                    cropCanvas.height = currentExercise.height;
-                    const ctx = cropCanvas.getContext('2d');
-                    if (!ctx) return null;
-                    ctx.drawImage(canvas,
-                        currentExercise.x, currentExercise.y, currentExercise.width, currentExercise.height,
-                        0, 0, currentExercise.width, currentExercise.height);
-                    const img = new Image();
-                    img.src = cropCanvas.toDataURL('image/png');
-                    await new Promise(r => img.onload = r);
-                    return { img, width: currentExercise.width, height: currentExercise.height, yOffset: yOff, xOffset: 0 };
-                };
+                    if ((actualPageIndex === undefined || actualPageIndex === -1) && currentStudent.pageIndexes.length > 0 && currentExercise.pageIndex > 0) {
+                        const baseIndex = currentStudent.pageIndexes.find(p => p > 0) || 1;
+                        const guessedIndex = baseIndex + currentExercise.pageIndex;
+                        if (guessedIndex <= pdfDoc.numPages) {
+                            actualPageIndex = guessedIndex;
+                            console.log(`[DEBUG] CROP Exercise: guessed page index ${guessedIndex}`);
+                        }
+                    }
 
-                const page1 = await renderCropPage(actualPageIndex, 0);
-                if (page1) {
-                    images.push(page1);
-                }
+                    console.log(`[DEBUG] CROP Exercise: exercise.pageIndex=${currentExercise.pageIndex}, mapped actualPageIndex=${actualPageIndex}`);
+                    if (actualPageIndex !== undefined && actualPageIndex >= 1 && actualPageIndex <= pdfDoc.numPages && !isNaN(actualPageIndex)) {
+                        console.log(`[DEBUG] Attempting to render crop on page ${actualPageIndex}`);
+                        const canvas = document.createElement('canvas');
+                        const dimensions = await renderPDFPageToCanvas(pdfDoc, actualPageIndex, canvas, 2.5);
+                        if (dimensions) {
+                            const cropCanvas = document.createElement('canvas');
+                            cropCanvas.width = currentExercise.width;
+                            cropCanvas.height = currentExercise.height;
+                            const ctx = cropCanvas.getContext('2d');
+                            if (ctx) {
+                                ctx.drawImage(canvas,
+                                    currentExercise.x, currentExercise.y, currentExercise.width, currentExercise.height,
+                                    0, 0, currentExercise.width, currentExercise.height);
+                                const img = new Image();
+                                img.src = cropCanvas.toDataURL('image/png');
+                                await new Promise(r => img.onload = r);
+                                images.push({ img, width: currentExercise.width, height: currentExercise.height, yOffset: 0, xOffset: 0 });
+                            }
+                        }
+                    }
+                } else if (currentExercise.type === 'pages') {
+                    const spansTwoPages = (currentExercise as any).spansTwoPages;
 
-            } else if (currentExercise.type === 'pages') {
-                const spansTwoPages = (currentExercise as any).spansTwoPages;
+                    for (let i = 0; i < currentExercise.pageIndexes.length; i++) {
+                        const pageIdx = currentExercise.pageIndexes[i];
+                        let actualPageIndex = currentStudent.pageIndexes[pageIdx];
 
-                for (let i = 0; i < currentExercise.pageIndexes.length; i++) {
-                    const pageIdx = currentExercise.pageIndexes[i];
-                    const actualPageIndex = currentStudent.pageIndexes[pageIdx];
-                    if (actualPageIndex === undefined || actualPageIndex === -1) continue;
+                        // Fallback: If student has e.g. only 1 page assigned but the exercise is multi-page,
+                        // try to load the logical next pages from the PDF if available.
+                        if ((actualPageIndex === undefined || actualPageIndex === -1) && currentStudent.pageIndexes.length > 0 && pageIdx > 0) {
+                            const baseIndex = currentStudent.pageIndexes.find(p => p > 0) || 1;
+                            const guessedIndex = baseIndex + pageIdx;
+                            if (guessedIndex <= pdfDoc.numPages) {
+                                actualPageIndex = guessedIndex;
+                                console.log(`[DEBUG] PAGES Exercise: guessed page index ${guessedIndex}`);
+                            }
+                        }
 
-                    const canvas = document.createElement('canvas');
-                    const dimensions = await renderPDFPageToCanvas(pdfDoc, actualPageIndex, canvas, 2.5);
-                    if (dimensions) {
-                        const img = new Image();
-                        img.src = canvas.toDataURL('image/png');
-                        await new Promise(r => img.onload = r);
+                        console.log(`[DEBUG] PAGES Exercise loop ${i}: mapped actualPageIndex=${actualPageIndex} for pageIdx=${pageIdx}`);
 
-                        const isRightSide = spansTwoPages && i % 2 !== 0;
-                        const xOffset = isRightSide ? dimensions.width + 20 : 0;
+                        if (actualPageIndex === undefined || actualPageIndex < 1 || actualPageIndex > pdfDoc.numPages || isNaN(actualPageIndex)) {
+                            console.log(`[DEBUG] Skipping invalid page: ${actualPageIndex}`);
+                            continue;
+                        }
 
-                        images.push({ img, width: dimensions.width, height: dimensions.height, xOffset, yOffset: currentYOffset });
+                        console.log(`[DEBUG] Attempting to render page on ${actualPageIndex}`);
+                        const canvas = document.createElement('canvas');
+                        const dimensions = await renderPDFPageToCanvas(pdfDoc, actualPageIndex, canvas, 2.5);
+                        if (dimensions) {
+                            const img = new Image();
+                            img.src = canvas.toDataURL('image/png');
+                            await new Promise(r => img.onload = r);
 
-                        if (!spansTwoPages || isRightSide) {
-                            currentYOffset += dimensions.height + 20;
+                            const isRightSide = spansTwoPages && i % 2 !== 0;
+                            const xOffset = isRightSide ? dimensions.width + 20 : 0;
+
+                            images.push({ img, width: dimensions.width, height: dimensions.height, xOffset, yOffset: currentYOffset });
+
+                            if (!spansTwoPages || isRightSide) {
+                                currentYOffset += dimensions.height + 20;
+                            }
                         }
                     }
                 }
+
+                if (!isMounted) return;
+
+                if (images.length > 0 && containerRef.current) {
+                    const totalWidth = ((currentExercise.type === 'pages' && (currentExercise as any).spansTwoPages && images.length > 1)
+                        ? images.filter(i => i.xOffset === 0)[0]?.width + Math.max(...images.filter(i => i.xOffset !== 0).map(i => i.width), 0) + 20
+                        : Math.max(...images.map(img => img.width)));
+
+                    const totalHeight = Math.max(...images.map(img => img.yOffset + img.height));
+
+                    const containerWidth = containerRef.current.clientWidth;
+                    const containerHeight = containerRef.current.clientHeight;
+
+                    const padding = 40;
+                    const targetScaleX = (containerWidth - padding) / totalWidth;
+                    const targetScaleY = (containerHeight - padding) / totalHeight;
+                    const targetScale = Math.min(targetScaleX, targetScaleY, 1.2);
+
+                    setStageScale(targetScale);
+                    setStagePos({
+                        x: (containerWidth - (totalWidth * targetScale)) / 2,
+                        y: Math.max(20, (containerHeight - (totalHeight * targetScale)) / 2)
+                    });
+                }
+
+                setRenderedPages(images);
+            } catch (err) {
+                console.error("Error loading exercise regions:", err);
+            } finally {
+                setIsPageLoading(false);
             }
-
-            if (images.length > 0 && containerRef.current) {
-                // If spanning two pages, the total width is double plus gap. Otherwise just max width.
-                const totalWidth = ((currentExercise.type === 'pages' && (currentExercise as any).spansTwoPages && images.length > 1)
-                    ? images.filter(i => i.xOffset === 0)[0]?.width + Math.max(...images.filter(i => i.xOffset !== 0).map(i => i.width), 0) + 20
-                    : Math.max(...images.map(img => img.width)));
-
-                // Total height calculates the maximum Y offset plus height.
-                const totalHeight = Math.max(...images.map(img => img.yOffset + img.height));
-
-                const containerWidth = containerRef.current.clientWidth;
-                const containerHeight = containerRef.current.clientHeight;
-
-                const padding = 40;
-                const targetScaleX = (containerWidth - padding) / totalWidth;
-                const targetScaleY = (containerHeight - padding) / totalHeight;
-                const targetScale = Math.min(targetScaleX, targetScaleY, 1.2);
-
-                setStageScale(targetScale);
-                setStagePos({
-                    x: (containerWidth - (totalWidth * targetScale)) / 2,
-                    y: Math.max(20, (containerHeight - (totalHeight * targetScale)) / 2)
-                });
-            }
-
-            setRenderedPages(images);
         };
 
-        // Small delay to ensure container is fully rendered for dimensions
-        setTimeout(loadExerciseRegions, 100);
-    }, [studentIdx, exerciseIdx, students, exercises, pdfDoc]);
+        loadExerciseRegions();
+
+        return () => { isMounted = false; };
+    }, [
+        studentIdx,
+        exerciseIdx,
+        pdfDoc,
+        currentExercise?.id,
+        currentExercise?.type,
+        (currentExercise as any)?.pageIndex,
+        (currentExercise as any)?.pageIndexes ? JSON.stringify((currentExercise as any).pageIndexes) : '',
+        (currentExercise as any)?.x, (currentExercise as any)?.y, (currentExercise as any)?.width, (currentExercise as any)?.height,
+        (currentExercise as any)?.spansTwoPages,
+        currentStudent?.pageIndexes ? currentStudent.pageIndexes.join(',') : ''
+    ]);
+
+    // Auto-add legend if mode is on and missing
+    useEffect(() => {
+        if (highlighterLabelMode === 'legend' && currentStudent && currentExercise) {
+            const hasLegend = currentAnnotations.some(a => a.type === 'highlighter_legend');
+            if (!hasLegend) {
+                const newLegend: HighlighterLegendAnnotation = {
+                    id: `legend_${Date.now()}`,
+                    type: 'highlighter_legend',
+                    x: currentExercise.type === 'crop' ? 20 : 50,
+                    y: currentExercise.type === 'crop' ? 20 : 50,
+                    scale: 1.2
+                };
+                // Use onUpdateAnnotations directly to avoid polluting history for each exercise transition
+                onUpdateAnnotations(currentStudent.id, currentExercise.id, [...currentAnnotations, newLegend]);
+            }
+        }
+    }, [highlighterLabelMode, currentExercise?.id, currentStudent?.id, currentAnnotations.length]);
 
     // Paste handling API
     useEffect(() => {
@@ -371,17 +647,23 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                 }
                             }
 
-                            const newAnnotation: ImageAnnotation = {
-                                id: `img_${Date.now()}`,
-                                type: 'image',
-                                x: pasteX,
-                                y: pasteY,
-                                width: 150,
-                                height: 150,
-                                dataUrl
-                            };
+                            const img = new Image();
+                            img.onload = () => {
+                                const newId = `img_${Date.now()}`;
+                                const newAnnotation: ImageAnnotation = {
+                                    id: newId,
+                                    type: 'image',
+                                    x: pasteX,
+                                    y: pasteY,
+                                    width: img.width / 2, // Default to a reasonable size (half of natural)
+                                    height: img.height / 2,
+                                    dataUrl
+                                };
 
-                            onUpdateAnnotations(currentStudent.id, currentExercise.id, [...currentAnnotations, newAnnotation]);
+                                updateAnnotationsWithHistory([...currentAnnotations, newAnnotation] as Annotation[]);
+                                setTimeout(() => setSelectedId(newId), 50);
+                            };
+                            img.src = dataUrl;
                         };
                         reader.readAsDataURL(blob);
                     }
@@ -391,22 +673,65 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
 
         window.addEventListener('paste', handlePaste);
         return () => window.removeEventListener('paste', handlePaste);
-    }, [currentStudent, currentExercise, currentAnnotations, editingTextNode, onUpdateAnnotations]);
+    }, [currentStudent, currentExercise, currentAnnotations, editingTextNode, onUpdateAnnotations, stagePos, stageScale]);
 
-    // Keyboard shortcuts (Escape for deselection)
+    // Keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            // Ignore if typing in input/textarea
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
             if (e.key === 'Escape') {
                 if (editingTextNode) {
                     commitTextEdit();
                 } else {
                     setSelectedId(null);
                 }
+                return;
+            }
+
+            // Tools shortcuts
+            const key = e.key.toLowerCase();
+            if (key === 'v') setTool('select');
+            else if (key === 'p') { setTool('pen'); setSelectedId(null); }
+            else if (key === 'x') { setTool('eraser'); setSelectedId(null); }
+            else if (key === 't') { setTool('text'); setSelectedId(null); }
+            else if (key === 'h') { setTool('highlighter'); setActivePresetId(null); setSelectedId(null); }
+
+            // Colors shortcuts
+            const presetColors = ['#ef4444', '#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#000000'];
+            const colorKeys = ['q', 'w', 'e', 'r', 'a', 's'];
+            const cIdx = colorKeys.indexOf(key);
+            if (cIdx !== -1) {
+                const presetColor = presetColors[cIdx];
+                setTool(prev => {
+                    if (prev === 'highlighter') {
+                        const hex = presetColor;
+                        const r = parseInt(hex.slice(1, 3), 16);
+                        const g = parseInt(hex.slice(3, 5), 16);
+                        const b = parseInt(hex.slice(5, 7), 16);
+                        setHighlighterColor(`rgba(${r}, ${g}, ${b}, 0.4)`);
+                        return 'highlighter';
+                    }
+                    setPenColor(presetColor as PenColor);
+                    return 'pen';
+                });
+            }
+
+            // Undo and Delete shortcuts are already handled normally or could be here
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (selectedId && !editingTextNode) {
+                    deleteSelected();
+                }
+            }
+            if ((e.ctrlKey || e.metaKey) && key === 'z') {
+                e.preventDefault();
+                handleUndo();
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [editingTextNode, selectedId]);
+    }, [editingTextNode, selectedId, tool, history, selectedId]);
 
     const startResizing = (e: React.MouseEvent) => {
         e.preventDefault();
@@ -434,7 +759,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
             return;
         }
 
-        if (tool === 'select') return;
+        if (tool === 'select' && !pendingStampComment) return;
 
         const stage = e.target.getStage();
         const pos = stage.getPointerPosition();
@@ -445,15 +770,61 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
         const actualX = actualPos.x;
         const actualY = actualPos.y;
 
+        if (pendingStampComment) {
+            const textColor = pendingStampComment.colorMode === 'custom'
+                ? pendingStampComment.customColor
+                : pendingStampComment.score !== undefined
+                    ? (pendingStampComment.score > 0 ? (isDarkMode ? '#34d399' : '#059669') : pendingStampComment.score < 0 ? (isDarkMode ? '#f87171' : '#dc2626') : defaultTextColor)
+                    : defaultTextColor;
+
+            const bgFill = pendingStampComment.colorMode === 'custom'
+                ? (isDarkMode ? `${pendingStampComment.customColor}30` : `${pendingStampComment.customColor}15`)
+                : pendingStampComment.score !== undefined
+                    ? (pendingStampComment.score > 0 ? (isDarkMode ? '#064e3b' : '#10b98115') : pendingStampComment.score < 0 ? (isDarkMode ? '#7f1d1d' : '#ef444415') : 'rgba(255,255,255,0.7)')
+                    : 'rgba(255,255,255,0.7)';
+
+            const newAnn: TextAnnotation = {
+                id: `ann_${Date.now()}`,
+                type: 'text',
+                text: pendingStampComment.text,
+                x: actualPos.x,
+                y: actualPos.y,
+                color: textColor || defaultTextColor, // Fallback safety
+                bgFill,
+                fontSize: commentDefaultSize,
+                score: pendingStampComment.score
+            };
+
+            const newAnnots = [...currentAnnotations, newAnn];
+            if (!isErasingSessionRef.current) {
+                setHistory(prev => [...prev.slice(-19), currentAnnotations]);
+            }
+            onUpdateAnnotations(currentStudent.id, currentExercise.id, newAnnots);
+            setSelectedId(newAnn.id);
+            setPendingStampComment(null);
+            setTool('select');
+            return;
+        }
+
+        if (tool === 'eraser') {
+            isErasingSessionRef.current = false; // Reset for new session
+            handleEraserAtPos(actualPos);
+            setIsDrawing(true); // Treat eraser like drawing for drag support
+            return;
+        }
+
         if (tool === 'text') {
             const newId = `text_${Date.now()}`;
             setEditingTextNode({
                 id: newId,
                 text: '',
                 x: actualX,
-                y: actualY
+                y: actualY,
+                width: 0,
+                height: 0
             });
             setSelectedId(newId);
+            setIsDrawing(true);
             return;
         }
 
@@ -479,7 +850,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                 y: actualPos.y,
                 width: 0,
                 height: 0,
-                color: activePreset ? activePreset.color : 'rgba(253, 224, 71, 0.4)',
+                color: activePreset ? activePreset.color : highlighterColor,
                 presetId: activePreset?.id,
                 points: activePreset?.points,
                 label: activePreset?.label,
@@ -490,7 +861,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
     };
 
     const handleMouseMove = (e: any) => {
-        if (!isDrawing || tool === 'select' || tool === 'text') return;
+        if (!isDrawing && tool !== 'eraser') return;
 
         const stage = e.target.getStage();
         const pos = stage.getPointerPosition();
@@ -498,6 +869,13 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
 
         const transform = stage.getAbsoluteTransform().copy().invert();
         const actualPos = transform.point(pos);
+
+        if (tool === 'eraser') {
+            handleEraserAtPos(actualPos);
+            return;
+        }
+
+        if (!isDrawing || tool === 'select') return;
 
         const annots = [...currentAnnotations];
         const lastAnnot = annots[annots.length - 1];
@@ -518,6 +896,23 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
             hl.y = Math.min(startY, actualPos.y);
             hl.width = Math.abs(actualPos.x - startX);
             hl.height = Math.abs(actualPos.y - startY);
+        } else if (tool === 'text' && editingTextNode) {
+            setEditingTextNode(prev => {
+                if (!prev) return null;
+                const startX = (prev as any).startX !== undefined ? (prev as any).startX : prev.x;
+                const startY = (prev as any).startY !== undefined ? (prev as any).startY : prev.y;
+
+                return {
+                    ...prev,
+                    startX: startX,
+                    startY: startY,
+                    x: Math.min(startX, actualPos.x),
+                    y: Math.min(startY, actualPos.y),
+                    width: Math.abs(actualPos.x - startX),
+                    height: Math.abs(actualPos.y - startY)
+                };
+            });
+            return; // Don't fall through to currentAnnotations update yet
         }
 
         annots[annots.length - 1] = lastAnnot;
@@ -609,19 +1004,25 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
             });
 
             lastDistRef.current = dist;
+        } else {
+            handleMouseMove(e);
         }
     };
 
     const handleTouchEnd = () => {
         lastDistRef.current = 0;
-        if (isDrawing) {
-            setIsDrawing(false);
-        }
+        handleMouseUp();
     };
 
     const handleMouseUp = () => {
         if (isDrawing) {
             setIsDrawing(false);
+            if (tool === 'text' && editingTextNode) {
+                // If it was a tiny drag, give it a default minimum size
+                if ((editingTextNode.width || 0) < 10 && (editingTextNode.height || 0) < 10) {
+                    setEditingTextNode(prev => prev ? { ...prev, width: 200, height: 60 } : null);
+                }
+            }
         }
     };
 
@@ -645,6 +1046,8 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                     type: 'text',
                     x: editingTextNode.x,
                     y: editingTextNode.y,
+                    width: editingTextNode.width,
+                    height: editingTextNode.height,
                     text: editingTextNode.text,
                     color: defaultTextColor,
                     fontSize: commentDefaultSize
@@ -702,13 +1105,17 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                         return base + (p - base) * scale;
                     });
                     return { ...a, points: scaledPoints } as PenAnnotation;
-                } else if (a.type === 'highlighter' || a.type === 'image') {
+                } else if (a.type === 'highlighter' || a.type === 'image' || a.type === 'text' || a.type === 'highlighter_legend') {
+                    // For image we allow scaling, for text/highlighter onTransform has already reset scale to 1 and modified width
+                    if (a.type === 'highlighter_legend') {
+                        return { ...a, x: node.x(), y: node.y(), scale: (a.scale || 1) * scaleX } as HighlighterLegendAnnotation;
+                    }
                     return {
                         ...a,
                         x: node.x(),
                         y: node.y(),
-                        width: Math.abs(node.width() * scaleX),
-                        height: Math.abs(node.height() * scaleY),
+                        width: Math.abs((a.width || (a.type === 'text' ? 200 : 100)) * scaleX),
+                        height: Math.abs((a.height || (a.type === 'text' ? 50 : 30)) * scaleY),
                     } as any;
                 }
             }
@@ -717,6 +1124,43 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
         node.scaleX(1);
         node.scaleY(1);
         updateAnnotationsWithHistory(newAnnots);
+    };
+
+    const handleTransform = (e: any) => {
+        const node = e.target;
+        const isTextGroup = node.hasName('text-group');
+        const isHighlighterGroup = node.hasName('highlighter-group');
+
+        const isStampGroup = node.hasName('stamp-group');
+
+        if (isTextGroup || isHighlighterGroup || isStampGroup) {
+            const scaleX = node.scaleX();
+            const scaleY = node.scaleY();
+            node.scaleX(1);
+            node.scaleY(1);
+
+            const newWidth = Math.max(20, node.width() * scaleX);
+            const newHeight = Math.max(20, node.height() * scaleY);
+
+            node.width(newWidth);
+            node.height(newHeight);
+
+            if (isTextGroup) {
+                const textNodes = node.find('Text');
+                textNodes.forEach((t: any) => t.width(newWidth));
+                const rectNode = node.findOne('Rect');
+                if (rectNode) {
+                    rectNode.width(newWidth + 8);
+                    rectNode.height(newHeight + 8);
+                }
+            } else if (isHighlighterGroup) {
+                const rectNode = node.findOne('Rect');
+                if (rectNode) {
+                    rectNode.width(newWidth);
+                    rectNode.height(newHeight);
+                }
+            }
+        }
     };
 
     useEffect(() => {
@@ -731,10 +1175,145 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
         }
     }, [selectedId, currentAnnotations]);
 
-    if (!currentStudent || !currentExercise) return <div>No exercises or students found.</div>;
+
+    if (!currentStudent || !currentExercise) {
+        return (
+            <div style={{
+                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                background: 'var(--bg-primary)', position: 'relative', overflow: 'hidden'
+            }}>
+                {/* CSS Confetti */}
+                <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                    {[...Array(50)].map((_, i) => (
+                        <div key={i} className="confetti" style={{
+                            left: `${Math.random() * 100}%`,
+                            animationDelay: `${Math.random() * 3}s`,
+                            background: ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][Math.floor(Math.random() * 6)]
+                        }} />
+                    ))}
+                </div>
+
+                <div style={{
+                    textAlign: 'center', zIndex: 10, padding: '2rem', background: 'var(--bg-secondary)',
+                    borderRadius: '2rem', border: '1px solid var(--border)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                    animation: 'float 6s ease-in-out infinite'
+                }}>
+                    <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🏆</div>
+                    <h1 style={{ fontSize: '2.5rem', fontWeight: 900, marginBottom: '0.5rem', background: 'linear-gradient(to right, #6366f1, #ec4899)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                        HAS ACABAT!
+                    </h1>
+                    <p style={{ fontSize: '1.2rem', color: 'var(--text-secondary)', maxWidth: '400px' }}>
+                        Has completat tota la correcció. Tots els alumnes tenen els seus exercicis revisats!
+                    </p>
+                    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '2rem' }}>
+                        <button onClick={() => onUpdateStudentIdx(0)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.5rem' }}>
+                            <RefreshCw size={18} /> Tornar a començar
+                        </button>
+                        {onBack && (
+                            <button onClick={onBack} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '0.75rem 1.5rem', borderRadius: '0.5rem', cursor: 'pointer' }}>
+                                Sortir
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                <style>{`
+                    @keyframes float {
+                        0% { transform: translateY(0px); }
+                        50% { transform: translateY(-20px); }
+                        100% { transform: translateY(0px); }
+                    }
+                    .confetti {
+                        position: absolute;
+                        top: -10px;
+                        width: 10px;
+                        height: 10px;
+                        opacity: 0.7;
+                        border-radius: 2px;
+                        animation: confettiFall 4s linear infinite;
+                    }
+                    @keyframes confettiFall {
+                        0% { transform: rotate(0) translateY(0); }
+                        100% { transform: rotate(720deg) translateY(100vh); }
+                    }
+                `}</style>
+            </div>
+        );
+    }
 
     return (
         <div style={{ display: 'flex', width: '100%', flex: 1, flexDirection: 'column', minHeight: 0 }}>
+            {/* Confirm Move Dialog Overlay */}
+            {pendingStampChange && (
+                <div style={{
+                    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                    background: 'var(--bg-secondary)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border)',
+                    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+                    zIndex: 2000, display: 'flex', flexDirection: 'column', gap: '1rem', width: '320px',
+                    animation: 'slideUp 0.3s ease-out'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <AlertTriangle style={{ color: 'var(--accent)' }} size={24} />
+                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>Guardar Posició</h3>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                        Vols que aquesta posició s'apliqui a tots els alumnes per defecte en aquest exercici?
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                        <button
+                            onClick={() => {
+                                onUpdateExercise({
+                                    ...currentExercise,
+                                    stampX: pendingStampChange.x,
+                                    stampY: pendingStampChange.y,
+                                    stampScale: pendingStampChange.scale
+                                });
+                                setPendingStampChange(null);
+                            }}
+                            className="btn-primary"
+                            style={{ padding: '0.6rem', fontSize: '0.85rem' }}
+                        >
+                            Per a TOTS els alumnes
+                        </button>
+                        <button
+                            onClick={() => {
+                                const newStorage: Annotation = {
+                                    id: 'system_score_stamp',
+                                    type: 'text',
+                                    text: '',
+                                    x: pendingStampChange.x,
+                                    y: pendingStampChange.y,
+                                    color: '#000',
+                                    fontSize: scoreStampSize,
+                                    width: 500 * pendingStampChange.scale,
+                                    height: 100 * pendingStampChange.scale
+                                };
+                                const filtered = currentAnnotations.filter(a => a.id !== 'system_score_stamp');
+                                updateAnnotationsWithHistory([...filtered, newStorage]);
+                                setPendingStampChange(null);
+                            }}
+                            style={{
+                                padding: '0.6rem', fontSize: '0.85rem', background: 'transparent',
+                                border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: '6px',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Només per a aquest alumne
+                        </button>
+                        <button
+                            onClick={() => setPendingStampChange(null)}
+                            style={{
+                                padding: '0.4rem', fontSize: '0.75rem', background: 'transparent',
+                                border: 'none', color: 'var(--text-secondary)', cursor: 'pointer',
+                                textDecoration: 'underline'
+                            }}
+                        >
+                            Cancel·lar
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Header Toolbar */}
             <div className="header" style={{ height: '70px', padding: '0 2rem', background: 'var(--bg-secondary)', borderBottom: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10, flexShrink: 0 }}>
                 {/* Left: Exercise Navigation */}
@@ -749,47 +1328,144 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                         <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>{exerciseIdx + 1} / {gradableExercises.length}</span>
                     </div>
                     <div style={{ display: 'flex', gap: '0.25rem' }}>
-                        <button className="btn-icon" onClick={() => setExerciseIdx(c => Math.max(0, c - 1))} disabled={exerciseIdx === 0}>
+                        <button className="btn-icon" onClick={() => onUpdateExerciseIdx(Math.max(0, exerciseIdx - 1))} disabled={exerciseIdx === 0}>
                             <ChevronLeft />
                         </button>
                         <select
                             value={exerciseIdx}
-                            onChange={(e) => setExerciseIdx(Number(e.target.value))}
-                            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '4px', padding: '0.25rem 0.5rem', fontSize: '0.85rem' }}
+                            onChange={(e) => onUpdateExerciseIdx(Number(e.target.value))}
+                            style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '4px', padding: '0.25rem 0.5rem', fontSize: '0.85rem' }}
                         >
-                            {gradableExercises.map((ex, i) => (
-                                <option key={ex.id} value={i}>
-                                    {ex.name || `Exercici ${i + 1}`}
-                                </option>
-                            ))}
+                            {gradableExercises.map((ex, i) => {
+                                const isCurrent = i === exerciseIdx;
+                                const isPages = ex.type === 'pages';
+                                const pInfo = isPages
+                                    ? (ex as any).pageIndexes.map((p: number) => p + 1).join(', ')
+                                    : (ex as any).pageIndex + 1;
+
+                                return (
+                                    <option key={ex.id} value={i}>
+                                        {isCurrent ? '👉 ' : ''}
+                                        {ex.name || `Exercici ${i + 1}`}
+                                        {` (Pàg${isPages ? 's' : ''}: ${pInfo})`}
+                                    </option>
+                                );
+                            })}
                         </select>
-                        <button className="btn-icon" onClick={() => setExerciseIdx(c => Math.min(gradableExercises.length - 1, c + 1))} disabled={exerciseIdx === gradableExercises.length - 1}>
+                        <button className="btn-icon" onClick={() => onUpdateExerciseIdx(Math.min(gradableExercises.length - 1, exerciseIdx + 1))} disabled={exerciseIdx === gradableExercises.length - 1}>
                             <ChevronRight />
                         </button>
                     </div>
+                    {currentExercise.type === 'pages' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'var(--bg-secondary)', padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--border)', marginLeft: '0.5rem' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={(currentExercise as any).spansTwoPages || false}
+                                    onChange={e => {
+                                        const newVal = e.target.checked;
+                                        if (renderedPages.length >= 2) {
+                                            const pages = renderedPages;
+                                            students.forEach(student => {
+                                                const studentAnns = annotations[student.id]?.[currentExercise.id] || [];
+                                                if (studentAnns.length === 0) return;
+
+                                                const migrated = studentAnns.map(ann => {
+                                                    const isPen = ann.type === 'pen';
+                                                    const ax = isPen ? (ann as any).points[0] : (ann as any).x;
+                                                    const ay = isPen ? (ann as any).points[1] : (ann as any).y;
+
+                                                    let pageIdx = 0, localX = ax, localY = ay, found = false;
+                                                    const wasSideBySide = !newVal;
+                                                    let curY = 0;
+                                                    for (let i = 0; i < pages.length; i++) {
+                                                        const p = pages[i];
+                                                        const isR = wasSideBySide && i % 2 !== 0;
+                                                        const xOff = isR ? pages[i - 1].width + 20 : 0;
+                                                        const yOff = curY;
+                                                        if (ax >= xOff && ax < xOff + p.width + 10 && ay >= yOff && ay < yOff + p.height + 10) {
+                                                            pageIdx = i; localX = ax - xOff; localY = ay - yOff; found = true; break;
+                                                        }
+                                                        if (!wasSideBySide || isR || i === pages.length - 1) curY += p.height + 20;
+                                                    }
+                                                    if (!found) return ann;
+
+                                                    let targetY = 0, newXOff = 0, curYN = 0;
+                                                    for (let i = 0; i <= pageIdx; i++) {
+                                                        const p = pages[i];
+                                                        const isR = newVal && i % 2 !== 0;
+                                                        newXOff = isR ? pages[i - 1].width + 20 : 0;
+                                                        targetY = curYN;
+                                                        if (!newVal || isR || i === pages.length - 1) curYN += p.height + 20;
+                                                    }
+                                                    const nx = localX + newXOff, ny = localY + targetY;
+                                                    if (isPen) {
+                                                        const dx = nx - ax, dy = ny - ay;
+                                                        return { ...ann, points: (ann as any).points.map((v: number, i: number) => i % 2 === 0 ? v + dx : v + dy) };
+                                                    }
+                                                    return { ...ann, x: nx, y: ny };
+                                                });
+                                                onUpdateAnnotations(student.id, currentExercise.id, migrated);
+                                            });
+                                        }
+
+                                        let updatedExercise = { ...currentExercise, spansTwoPages: newVal };
+                                        if (currentExercise.stampX !== undefined && currentExercise.stampY !== undefined && renderedPages.length >= 2) {
+                                            const pages = renderedPages;
+                                            const wasSideBySide = !newVal;
+                                            let curY = 0, foundIdx = -1, lX = currentExercise.stampX, lY = currentExercise.stampY;
+                                            for (let i = 0; i < pages.length; i++) {
+                                                const p = pages[i];
+                                                const isR = wasSideBySide && i % 2 !== 0;
+                                                const xOff = isR ? pages[i - 1].width + 20 : 0;
+                                                const yOff = curY;
+                                                if (currentExercise.stampX >= xOff && currentExercise.stampX < xOff + p.width + 10 && currentExercise.stampY >= yOff && currentExercise.stampY < yOff + p.height + 10) {
+                                                    foundIdx = i; lX = currentExercise.stampX - xOff; lY = currentExercise.stampY - yOff; break;
+                                                }
+                                                if (!wasSideBySide || isR || i === pages.length - 1) curY += p.height + 20;
+                                            }
+                                            if (foundIdx !== -1) {
+                                                let tY = 0, tXOff = 0, cYN = 0;
+                                                for (let i = 0; i <= foundIdx; i++) {
+                                                    const p = pages[i];
+                                                    const isR = newVal && i % 2 !== 0;
+                                                    tXOff = isR ? pages[i - 1].width + 20 : 0;
+                                                    tY = cYN;
+                                                    if (!newVal || isR || i === pages.length - 1) cYN += p.height + 20;
+                                                }
+                                                updatedExercise.stampX = lX + tXOff; updatedExercise.stampY = lY + tY;
+                                            }
+                                        }
+                                        onUpdateExercise(updatedExercise as any);
+                                    }}
+                                />
+                                <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-primary)' }}>VISTA 2 PÀGS</span>
+                            </label>
+                        </div>
+                    )}
                 </div>
 
                 {/* Center: Grade Tracker */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Grade tracker</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'var(--bg-tertiary)', padding: '0.1rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'var(--bg-secondary)', padding: '0.1rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border)' }}>
                             <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Màxim:</span>
-                            <input 
-                                type="number" step="0.5" value={targetMaxScore} 
-                                onChange={(e) => setTargetMaxScore(Number(e.target.value))}
+                            <NumericInput
+                                value={targetMaxScore}
+                                onChange={(v) => { if (v !== undefined) onUpdateTargetMaxScore(v); }}
                                 style={{ width: '40px', background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '0.7rem', fontWeight: 700, textAlign: 'center', padding: 0 }}
                             />
                         </div>
                     </div>
                     {(() => {
-                        const totalPossible = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
-                        const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
+                        const totalPossibleReal = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+                        const currentFactor = totalPossibleReal > 0 ? targetMaxScore / totalPossibleReal : 1;
                         const scaledScore = Math.round(roundedTotalStudentScore * currentFactor * 100) / 100;
-                        
+
                         return (
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0' }}>
-                                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent)' }}>Total: {roundedTotalStudentScore} pt</span>
+                                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent)' }}>Total: {roundedTotalStudentScore} / {totalPossibleReal} pt</span>
                                 <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--success)', marginTop: '-2px' }}>
                                     (Recalculat: {scaledScore} / {targetMaxScore})
                                 </span>
@@ -801,26 +1477,52 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                 {/* Right: Student Navigation & Export */}
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '1.5rem', justifyContent: 'flex-end' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        {/* Experimental Visual Snippet */}
+                        {currentStudent?.nameCropUrl && (
+                            <div style={{ position: 'relative', border: '1px solid var(--border)', borderRadius: '4px', overflow: 'hidden', background: 'white' }}>
+                                <img
+                                    src={currentStudent.nameCropUrl}
+                                    alt="Nom retallat"
+                                    style={{ height: '36px', width: 'auto', display: 'block' }}
+                                    title={`OCR: ${currentStudent.originalOcrName || (currentStudent.name.split(' (')[0])}`}
+                                />
+                                {currentStudent.originalOcrName && currentStudent.originalOcrName !== (currentStudent.name.split(' (')[0]) && (
+                                    <div
+                                        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: 'white', fontSize: '10px', textAlign: 'center' }}
+                                        title={`OCR original: ${currentStudent.originalOcrName}`}
+                                    >
+                                        OCR?
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                             <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600 }}>Alumne</span>
                             <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--accent)' }}>{studentIdx + 1} / {students.length}</span>
                         </div>
                         <div style={{ display: 'flex', gap: '0.25rem' }}>
-                            <button className="btn-icon" onClick={() => setStudentIdx(s => Math.max(0, s - 1))} disabled={studentIdx === 0}>
+                            <button className="btn-icon" onClick={() => onUpdateStudentIdx(Math.max(0, studentIdx - 1))} disabled={studentIdx === 0}>
                                 <ChevronLeft />
                             </button>
-                            <select
-                                value={studentIdx}
-                                onChange={(e) => setStudentIdx(Number(e.target.value))}
-                                style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '4px', padding: '0.25rem 0.5rem', fontSize: '0.85rem' }}
-                            >
-                                {students.map((st, i) => (
-                                    <option key={st.id} value={i}>
-                                        {st.name || `Alumne ${i + 1}`}
-                                    </option>
-                                ))}
-                            </select>
-                            <button className="btn-icon" onClick={() => setStudentIdx(s => Math.min(students.length - 1, s + 1))} disabled={studentIdx === students.length - 1}>
+                            <div style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                                <select
+                                    value={studentIdx}
+                                    onChange={(e) => onUpdateStudentIdx(Number(e.target.value))}
+                                    style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '4px', padding: '0.25rem 0.5rem', fontSize: '0.85rem', maxWidth: '200px' }}
+                                >
+                                    {students.map((st, i) => {
+                                        // Clean up names that might contain (ID...)
+                                        const cleanName = st.name.split(' (')[0] || `Alumne ${i + 1}`;
+                                        return (
+                                            <option key={st.id} value={i}>
+                                                {cleanName}
+                                            </option>
+                                        );
+                                    })}
+                                </select>
+                            </div>
+                            <button className="btn-icon" onClick={() => onUpdateStudentIdx(Math.min(students.length - 1, studentIdx + 1))} disabled={studentIdx === students.length - 1}>
                                 <ChevronRight />
                             </button>
                         </div>
@@ -864,7 +1566,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                             onClick={async () => {
                                 setIsExporting(true);
                                 setExportProgress({ done: 0, total: students.length * exercises.length });
-                                const totalPossible = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+                                const totalPossible = gradableExercises.reduce((acc: number, ex: ExerciseDef) => acc + (ex.maxScore ?? 10), 0);
                                 const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
                                 try {
                                     await exportAnnotatedPDF({
@@ -872,7 +1574,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                         scope: 'all',
                                         currentStudentIdx: studentIdx,
                                         scaleFactor: currentFactor,
-                                        onProgress: (d, t) => setExportProgress({ done: d, total: t })
+                                        onProgress: (d: number, t: number) => setExportProgress({ done: d, total: t })
                                     });
                                 } finally {
                                     setIsExporting(false);
@@ -897,7 +1599,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                             onClick={async () => {
                                 setIsExporting(true);
                                 setExportProgress({ done: 0, total: exercises.length });
-                                const totalPossible = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+                                const totalPossible = gradableExercises.reduce((acc: number, ex: ExerciseDef) => acc + (ex.maxScore ?? 10), 0);
                                 const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
                                 try {
                                     await exportOriginalLayoutPDF({
@@ -973,7 +1675,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
 
             <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 {/* Tool Left Sidebar */}
-                <div className="tool-sidebar" style={{ width: '92px', background: 'var(--bg-secondary)', borderRight: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '1fr 1fr', alignContent: 'start', justifyItems: 'center', padding: '1rem 0.5rem', gap: '0.5rem', flexShrink: 0, overflowY: 'auto', minHeight: 0 }}>
+                <div className="tool-sidebar" style={{ width: '92px', background: 'var(--bg-secondary)', borderRight: 'none', display: 'grid', gridTemplateColumns: '1fr 1fr', alignContent: 'start', justifyItems: 'center', padding: '1rem 0.5rem', gap: '0.5rem', flexShrink: 0, overflowY: 'auto', minHeight: 0 }}>
                     {/* Top Select Tool spans 2 cols for emphasis */}
                     <div style={{ gridColumn: 'span 2', display: 'flex', justifyContent: 'center', width: '100%' }}>
                         {[
@@ -992,16 +1694,46 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
 
                     {[
                         { id: 'pen' as ToolType, icon: <PenTool size={18} />, label: 'P', title: 'Boli (P)', onClick: () => { setTool('pen'); setSelectedId(null); } },
+                        { id: 'eraser' as ToolType, icon: <Trash2 size={18} />, label: 'X', title: 'Goma (X)', onClick: () => { setTool('eraser'); setSelectedId(null); } },
                         { id: 'text' as ToolType, icon: <Type size={18} />, label: 'T', title: 'Text (T)', onClick: () => { setTool('text'); setSelectedId(null); } },
                         { id: 'highlighter' as ToolType, icon: <Highlighter size={18} />, label: 'H', title: 'Destacador (H)', onClick: () => { setTool('highlighter'); setActivePresetId(null); setSelectedId(null); } },
                     ].map(btn => (
                         <button key={btn.id} className={`btn-icon ${tool === btn.id ? 'active' : ''}`}
                             onClick={btn.onClick} title={btn.title}
-                            style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px', padding: '6px 4px', width: '100%', gridColumn: btn.id === 'highlighter' ? 'span 2' : 'span 1' }}>
+                            style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px', padding: '6px 4px', width: '100%', gridColumn: (btn.id === 'highlighter' || btn.id === 'eraser') ? 'span 1' : 'span 1' }}>
                             {btn.icon}
                             <span style={{ fontSize: '0.55rem', opacity: 0.5, fontFamily: 'monospace' }}>{btn.label}</span>
                         </button>
                     ))}
+
+                    {/* Quick Legend toggle next to highlighters */}
+                    <button
+                        onClick={() => {
+                            if (highlighterLabelMode === 'legend') {
+                                setHighlighterLabelMode('individual');
+                            } else {
+                                setHighlighterLabelMode('legend');
+                                // Ensure a legend exists if it doesn't
+                                const hasLegend = currentAnnotations.some(a => a.type === 'highlighter_legend');
+                                if (!hasLegend) {
+                                    const newLegend: HighlighterLegendAnnotation = {
+                                        id: `legend_${Date.now()}`,
+                                        type: 'highlighter_legend',
+                                        x: 100,
+                                        y: 100,
+                                        scale: 1
+                                    };
+                                    updateAnnotationsWithHistory([...currentAnnotations, newLegend]);
+                                }
+                            }
+                        }}
+                        className={`btn-icon ${highlighterLabelMode === 'legend' ? 'active' : ''}`}
+                        title="Mode Llegenda (L)"
+                        style={{ gridColumn: 'span 2', padding: '4px', fontSize: '0.6rem', fontWeight: 800, textTransform: 'uppercase', display: 'flex', gap: '4px', alignItems: 'center' }}
+                    >
+                        <Plus size={14} style={{ transform: highlighterLabelMode === 'legend' ? 'rotate(45deg)' : 'none', transition: 'transform 0.2s' }} />
+                        Llegenda
+                    </button>
 
                     <div style={{ gridColumn: 'span 2', width: '24px', height: '1px', background: 'var(--border)' }}></div>
 
@@ -1010,13 +1742,23 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                         return (
                             <div key={presetColor} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px' }}>
                                 <button
-                                    onClick={() => { setPenColor(presetColor as PenColor); setTool('pen'); }}
+                                    onClick={() => {
+                                        if (tool === 'highlighter') {
+                                            const r = parseInt(presetColor.slice(1, 3), 16);
+                                            const g = parseInt(presetColor.slice(3, 5), 16);
+                                            const b = parseInt(presetColor.slice(5, 7), 16);
+                                            setHighlighterColor(`rgba(${r}, ${g}, ${b}, 0.4)`);
+                                        } else {
+                                            setPenColor(presetColor as PenColor);
+                                            setTool('pen');
+                                        }
+                                    }}
                                     style={{
                                         width: '24px', height: '24px', borderRadius: '50%', background: presetColor,
-                                        border: penColor === presetColor && tool === 'pen' ? '2px solid var(--text-primary)' : '2px solid transparent',
+                                        border: (tool === 'pen' && penColor === presetColor) || (tool === 'highlighter' && highlighterColor.includes(presetColor.toLowerCase())) ? '2px solid var(--text-primary)' : '2px solid transparent',
                                         cursor: 'pointer',
                                         transition: 'transform 0.1s',
-                                        transform: penColor === presetColor && tool === 'pen' ? 'scale(1.15)' : 'scale(1)',
+                                        transform: (penColor === presetColor && tool === 'pen') ? 'scale(1.15)' : 'scale(1)',
                                         flexShrink: 0
                                     }}
                                     title={`Color (${shortcutKeys[ci]})`}
@@ -1076,37 +1818,49 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                         </label>
                     </div>
 
-                    {/* Text default color */}
+                    {/* Highlight custom color */}
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                        <span style={{ fontSize: '0.5rem', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Text</span>
-                        <label style={{ position: 'relative', cursor: 'pointer' }} title="Default text color">
-                            <div style={{ width: '22px', height: '22px', borderRadius: '4px', background: defaultTextColor, border: '2px solid var(--border)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <span style={{ fontSize: '10px', fontWeight: 900, color: 'white', mixBlendMode: 'difference' }}>A</span>
-                            </div>
+                        <span style={{ fontSize: '0.5rem', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Hl</span>
+                        <label style={{ position: 'relative', cursor: 'pointer' }} title="Custom highlight color">
+                            <div style={{ width: '22px', height: '22px', borderRadius: '4px', background: highlighterColor, border: '2px solid var(--border)', cursor: 'pointer' }} />
                             <input
                                 type="color"
-                                value={defaultTextColor}
-                                onChange={(e) => setDefaultTextColor(e.target.value)}
+                                value={(() => {
+                                    if (highlighterColor.startsWith('#')) return highlighterColor;
+                                    const m = highlighterColor.match(/\d+/g);
+                                    if (m) return '#' + m.slice(0, 3).map(x => parseInt(x).toString(16).padStart(2, '0')).join('');
+                                    return '#fde047';
+                                })()}
+                                onChange={(e) => {
+                                    const hex = e.target.value;
+                                    const r = parseInt(hex.slice(1, 3), 16);
+                                    const g = parseInt(hex.slice(3, 5), 16);
+                                    const b = parseInt(hex.slice(5, 7), 16);
+                                    setHighlighterColor(`rgba(${r}, ${g}, ${b}, 0.4)`);
+                                    setTool('highlighter');
+                                    setActivePresetId(null);
+                                }}
                                 style={{ opacity: 0, position: 'absolute', top: 0, left: 0, width: '22px', height: '22px', cursor: 'pointer' }}
                             />
                         </label>
                     </div>
 
+
                     <div style={{ gridColumn: 'span 2', flex: 1 }}></div>
 
-                    <div style={{ gridColumn: 'span 2', display: 'flex', flexDirection: 'column', gap: '0.4rem', borderTop: '1px solid var(--border)', paddingTop: '0.8rem', marginTop: '0.5rem', width: '100%' }}>
+                    <div style={{ gridColumn: 'span 2', display: 'flex', flexDirection: 'column', gap: '0.4rem', borderTop: 'none', paddingTop: '0.8rem', marginTop: '0.5rem', width: '100%' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', width: '100%', padding: '0' }}>
                             <span style={{ fontSize: '0.5rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'center' }}>Mida Text</span>
                             <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
                                 <input type="number" value={commentDefaultSize} onChange={e => setCommentDefaultSize(Number(e.target.value))}
-                                    style={{ width: '100%', maxWidth: '60px', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 4px', fontSize: '0.75rem', textAlign: 'center' }} />
+                                    style={{ width: '40px', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 4px', fontSize: '0.75rem', textAlign: 'center' }} />
                             </div>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', width: '100%', padding: '0' }}>
                             <span style={{ fontSize: '0.5rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em', textAlign: 'center' }}>Mida Nota</span>
                             <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
                                 <input type="number" value={scoreStampSize} onChange={e => setScoreStampSize(Number(e.target.value))}
-                                    style={{ width: '100%', maxWidth: '60px', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 4px', fontSize: '0.75rem', textAlign: 'center' }} />
+                                    style={{ width: '40px', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 4px', fontSize: '0.75rem', textAlign: 'center' }} />
                             </div>
                         </div>
                         <button
@@ -1153,15 +1907,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                         {renderedPages.length > 0 ? (
                             <div
                                 className="canvas-container"
-                                style={{
-                                    width: '100%',
-                                    flex: 1,
-                                    minHeight: 0,
-                                    position: 'relative',
-                                    margin: 0,
-                                    boxShadow: 'none',
-                                    background: 'transparent'
-                                }}
+                                style={{ width: '100%', flex: 1, minHeight: 0, position: 'relative', margin: 0, boxShadow: 'none', background: 'transparent', cursor: pendingStampComment ? 'crosshair' : (tool === 'select' ? 'default' : 'crosshair') }}
                                 onDragOver={(e) => e.preventDefault()}
                                 onDrop={(e) => {
                                     e.preventDefault();
@@ -1225,6 +1971,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                     onTouchMove={handleTouchMove}
                                     onTouchEnd={handleTouchEnd}
                                     onWheel={handleWheel}
+                                    preventDefault={true}
                                     onClick={(e) => {
                                         // If we click the stage (empty area), deselect
                                         if (e.target === e.target.getStage()) {
@@ -1242,9 +1989,9 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                             setStagePos({ x: e.target.x(), y: e.target.y() });
                                         }
                                     }}
-                                    style={{ cursor: tool === 'pen' ? 'crosshair' : tool === 'highlighter' ? 'text' : tool === 'text' ? 'text' : tool === 'select' ? 'grab' : 'default' }}
+                                    style={{ cursor: tool === 'pen' ? 'crosshair' : tool === 'eraser' ? 'cell' : tool === 'highlighter' ? 'text' : tool === 'text' ? 'text' : tool === 'select' ? 'grab' : 'default' }}
                                 >
-                                    <Layer>
+                                    <Layer key={`${currentStudent.id}_${currentExercise.id}`}>
                                         {/* Render the background pages */}
                                         {renderedPages.map((page, i) => (
                                             <KonvaImage key={i} image={page.img} x={page.xOffset || 0} y={page.yOffset} width={page.width} height={page.height} />
@@ -1255,7 +2002,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                             <Rect
                                                 x={0}
                                                 y={0}
-                                                width={(currentExercise.type === 'pages' && (currentExercise as any).spansTwoPages && renderedPages.length > 1) 
+                                                width={(currentExercise.type === 'pages' && (currentExercise as any).spansTwoPages && renderedPages.length > 1)
                                                     ? renderedPages[0].width + (renderedPages[1].width || 0) + 20
                                                     : renderedPages[0].width}
                                                 height={renderedPages.reduce((max, p) => Math.max(max, p.yOffset + p.height), 0)}
@@ -1267,7 +2014,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                             />
                                         )}
 
-                                        {currentAnnotations.map((ann) => {
+                                        {currentAnnotations.filter(a => a.id !== 'system_score_stamp').map((ann) => {
                                             const isSelected = ann.id === selectedId;
 
                                             const handleSelect = (e: any) => {
@@ -1329,20 +2076,28 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                                 );
                                             } else if (ann.type === 'highlighter') {
                                                 const annFontSize = (ann.fontSize || commentDefaultSize) * FONT_SCALE;
-                                                const labelColor = ann.color.startsWith('rgba') 
-                                                    ? ann.color.replace(/[\d.]+\)$/, '1.0)') 
+                                                const labelColor = ann.color.startsWith('rgba')
+                                                    ? ann.color.replace(/[\d.]+\)$/, '1.0)')
                                                     : ann.color;
+
+                                                const labelX = (ann.labelOffsetX ?? 2);
+                                                const labelY = (ann.labelOffsetY ?? -(annFontSize + 4));
 
                                                 return (
                                                     <Group
                                                         key={ann.id}
                                                         id={ann.id}
+                                                        name="highlighter-group"
                                                         x={ann.x}
                                                         y={ann.y}
+                                                        width={ann.width || 100}
+                                                        height={ann.height || 30}
                                                         draggable={tool === 'select' && isSelected}
                                                         onClick={handleSelect}
                                                         onTap={handleSelect}
                                                         onDragEnd={(e) => handleDragEnd(e, ann.id)}
+                                                        onTransform={handleTransform}
+                                                        onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
                                                     >
                                                         <Rect
                                                             width={ann.width}
@@ -1350,24 +2105,93 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                                             fill={ann.color}
                                                             stroke={isSelected ? 'var(--accent)' : undefined}
                                                             strokeWidth={isSelected ? 1 / stageScale : 0}
-                                                            onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
                                                         />
-                                                        {(ann.label || ann.points !== undefined) && (
+                                                        {highlighterLabelMode === 'individual' && (ann.label || ann.points !== undefined) && (
                                                             <Text
-                                                                x={2}
-                                                                y={-(annFontSize + 4)}
+                                                                x={labelX}
+                                                                y={labelY}
                                                                 text={[
                                                                     ann.label || '',
                                                                     ann.points !== undefined ? (ann.points > 0 ? `+${ann.points}` : `${ann.points}`) : ''
                                                                 ].filter(Boolean).join(' ')}
                                                                 fill={labelColor}
                                                                 fontSize={annFontSize}
-                                                                fontFamily="'Caveat', cursive"
+                                                                fontFamily="Caveat"
                                                                 fontStyle="800"
                                                                 letterSpacing={0.5}
                                                                 align="left"
+                                                                draggable={tool === 'select' && isSelected}
+                                                                onDragEnd={(e) => {
+                                                                    e.cancelBubble = true; // Stop group from dragging
+                                                                    const newAnns = currentAnnotations.map(a =>
+                                                                        a.id === ann.id ? {
+                                                                            ...(a as HighlighterAnnotation),
+                                                                            labelOffsetX: e.target.x(),
+                                                                            labelOffsetY: e.target.y()
+                                                                        } : a
+                                                                    );
+                                                                    onUpdateAnnotations(students[studentIdx].id, currentExercise.id, newAnns);
+                                                                }}
                                                             />
                                                         )}
+                                                    </Group>
+                                                );
+                                            } else if (ann.type === 'highlighter_legend') {
+                                                if (highlighterLabelMode !== 'legend') return null;
+                                                const usedPresetIds = new Set(currentAnnotations
+                                                    .filter((a): a is HighlighterAnnotation => a.type === 'highlighter' && !!a.presetId)
+                                                    .map(a => a.presetId));
+                                                const usedPresets = presets.filter(p => usedPresetIds.has(p.id));
+                                                if (usedPresets.length === 0) return null;
+
+                                                const legendFontSize = 14 * FONT_SCALE;
+                                                const padding = 10;
+                                                const itemHeight = legendFontSize + 10;
+
+                                                return (
+                                                    <Group
+                                                        key={ann.id}
+                                                        id={ann.id}
+                                                        x={ann.x}
+                                                        y={ann.y}
+                                                        scaleX={ann.scale || 1}
+                                                        scaleY={ann.scale || 1}
+                                                        draggable={tool === 'select' && isSelected}
+                                                        onClick={handleSelect}
+                                                        onTap={handleSelect}
+                                                        onDragEnd={(e) => handleDragEnd(e, ann.id)}
+                                                        onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
+                                                    >
+                                                        {/* Clean selection indicator only when selected */}
+                                                        {isSelected && (
+                                                            <Rect
+                                                                width={250}
+                                                                height={usedPresets.length * itemHeight + padding}
+                                                                stroke="#6366f1"
+                                                                strokeWidth={1 / stageScale}
+                                                                dash={[5, 5]}
+                                                            />
+                                                        )}
+                                                        {usedPresets.map((p, pi) => (
+                                                            <Group key={p.id} y={pi * itemHeight}>
+                                                                <Rect
+                                                                    width={legendFontSize}
+                                                                    height={legendFontSize}
+                                                                    fill={p.color}
+                                                                    cornerRadius={2}
+                                                                    opacity={0.8}
+                                                                />
+                                                                <Text
+                                                                    x={legendFontSize + 12}
+                                                                    y={2}
+                                                                    text={p.label}
+                                                                    fontSize={legendFontSize * 0.9}
+                                                                    fill="var(--text-primary)"
+                                                                    fontFamily="Caveat"
+                                                                    fontStyle="bold"
+                                                                />
+                                                            </Group>
+                                                        ))}
                                                     </Group>
                                                 );
                                             } else if (ann.type === 'text') {
@@ -1378,19 +2202,26 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                                     <Group
                                                         key={ann.id}
                                                         id={ann.id}
+                                                        name="text-group"
                                                         x={ann.x} y={ann.y}
+                                                        width={ann.width || ((ann.text.length * (currentFontSize * 0.6)) + 8)}
+                                                        height={ann.height || (currentFontSize + 8)}
                                                         draggable={tool === 'select' && isSelected}
                                                         onClick={handleSelect}
                                                         onTap={handleSelect}
                                                         onDblClick={handleDbClickText}
                                                         onDblTap={handleDbClickText}
                                                         onDragEnd={(e) => handleDragEnd(e, ann.id)}
+                                                        onTransform={handleTransform}
+                                                        onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
                                                     >
                                                         <Text
                                                             text={ann.text}
                                                             fill={ann.color}
                                                             fontSize={currentFontSize}
-                                                            fontFamily="Caveat, cursive"
+                                                            fontFamily="Caveat"
+                                                            width={ann.width || undefined}
+                                                            wrap="word"
                                                         />
                                                         {ann.score !== undefined && (
                                                             <Text
@@ -1406,7 +2237,8 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                                         {isSelected && (
                                                             <Rect
                                                                 x={-4} y={-4}
-                                                                width={(ann.text.length * (currentFontSize * 0.6)) + 8} height={currentFontSize + 8}
+                                                                width={(ann.width || (ann.text.length * (currentFontSize * 0.6))) + 8}
+                                                                height={(ann.height || currentFontSize) + 8}
                                                                 stroke="#6366f1" dash={[4 / stageScale, 4 / stageScale]} strokeWidth={1 / stageScale} fill="transparent"
                                                             />
                                                         )}
@@ -1417,11 +2249,14 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                                 img.src = ann.dataUrl;
                                                 return (
                                                     <Group
-                                                        key={ann.id} x={ann.x} y={ann.y}
+                                                        key={ann.id}
+                                                        id={ann.id}
+                                                        x={ann.x} y={ann.y}
                                                         draggable={tool === 'select' && isSelected}
                                                         onClick={handleSelect}
                                                         onTap={handleSelect}
                                                         onDragEnd={(e) => handleDragEnd(e, ann.id)}
+                                                        onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
                                                     >
                                                         <KonvaImage image={img} width={ann.width} height={ann.height} />
                                                         {isSelected && (
@@ -1448,32 +2283,98 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                             />
                                         )}
 
-                                        {/* Persistent Score Stamp in Viewer */}
-                                        {renderedPages.length > 0 && computedScore !== null && (() => {
-                                            const totalPossible = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
-                                            const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
-                                            const scaledExScore = Math.round(computedScore * currentFactor * 100) / 100;
-                                            const scaledExMax = (currentExercise.maxScore ?? 10) * currentFactor;
-
-                                            return (
+                                        {scoreStampData && (
+                                            <Group
+                                                id="system_score_stamp"
+                                                name="stamp-group"
+                                                key={`stamp_${currentExercise.id}_${currentStudent.id}`}
+                                                x={scoreStampData.x}
+                                                y={scoreStampData.y}
+                                                width={500}
+                                                height={scoreStampData.height}
+                                                scaleX={scoreStampData.scale}
+                                                scaleY={scoreStampData.scale}
+                                                draggable={tool === 'select' && selectedId === 'system_score_stamp'}
+                                                onClick={(e) => {
+                                                    if (tool === 'select') {
+                                                        e.cancelBubble = true;
+                                                        setSelectedId('system_score_stamp');
+                                                    }
+                                                }}
+                                                onTap={(e) => {
+                                                    if (tool === 'select') {
+                                                        e.cancelBubble = true;
+                                                        setSelectedId('system_score_stamp');
+                                                    }
+                                                }}
+                                                onDragEnd={(e) => {
+                                                    const node = e.target;
+                                                    setPendingStampChange({
+                                                        x: node.x(),
+                                                        y: node.y(),
+                                                        scale: node.scaleX()
+                                                    });
+                                                }}
+                                                onTransformEnd={(e) => {
+                                                    const node = e.target;
+                                                    const scaleX = node.scaleX();
+                                                    node.scaleX(1);
+                                                    node.scaleY(1);
+                                                    setPendingStampChange({
+                                                        x: node.x(),
+                                                        y: node.y(),
+                                                        scale: scaleX
+                                                    });
+                                                }}
+                                            >
                                                 <Text
-                                                    x={renderedPages[0].width - 310}
-                                                    y={renderedPages.reduce((sum, p) => sum + p.height, 0) - (scoreStampSize + 10)}
-                                                    text={`Nota: ${scaledExScore}`}
-                                                    fontSize={scoreStampSize}
+                                                    text={`Nota: ${scoreStampData.scaledExScore} / ${Math.round(scoreStampData.scaledExMax * 100) / 100}`}
+                                                    fontSize={scoreStampSize * 1.5}
                                                     fontFamily="'Caveat', cursive"
                                                     fontStyle="bold"
-                                                    fill={(scaledExScore >= (scaledExMax / 2)) ? '#10b981' : '#ef4444'}
-                                                    align="right"
-                                                    width={300}
+                                                    fill={(scoreStampData.scaledExScore >= (scoreStampData.scaledExMax / 2)) ? '#10b981' : '#ef4444'}
+                                                    align="left"
+                                                    width={500}
                                                 />
-                                            );
-                                        })()}
+                                                {scoreStampData.lines.length > 0 && (
+                                                    <Text
+                                                        y={scoreStampSize * 1.7}
+                                                        text={scoreStampData.lines.join('\n')}
+                                                        fontSize={scoreStampSize * 0.75}
+                                                        fontFamily="'Caveat', cursive"
+                                                        fill="rgba(0,0,0,0.6)"
+                                                        align="left"
+                                                        width={500}
+                                                    />
+                                                )}
+                                                {selectedId === 'system_score_stamp' && (
+                                                    <Rect
+                                                        x={-4} y={-4}
+                                                        width={500 + 8}
+                                                        height={scoreStampData.height + 8}
+                                                        stroke="#6366f1" dash={[4 / stageScale, 4 / stageScale]} strokeWidth={1 / stageScale} fill="transparent"
+                                                    />
+                                                )}
+                                            </Group>
+                                        )}
+                                        {/* Editing Text Bounding Box during draw */}
+                                        {isDrawing && tool === 'text' && editingTextNode && (
+                                            <Rect
+                                                x={editingTextNode.x}
+                                                y={editingTextNode.y}
+                                                width={editingTextNode.width}
+                                                height={editingTextNode.height}
+                                                stroke="var(--accent)"
+                                                dash={[5 / stageScale, 5 / stageScale]}
+                                                strokeWidth={2 / stageScale}
+                                            />
+                                        )}
+
                                     </Layer>
                                 </Stage>
 
                                 {/* HTML Overlay for Text Editing */}
-                                {editingTextNode && (
+                                {editingTextNode && !isDrawing && (
                                     <textarea
                                         ref={textareaRef}
                                         autoFocus
@@ -1493,28 +2394,57 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                             position: 'absolute',
                                             top: (editingTextNode.y * stageScale) + stagePos.y,
                                             left: (editingTextNode.x * stageScale) + stagePos.x,
+                                            width: editingTextNode.width ? (editingTextNode.width * stageScale) : '200px',
+                                            height: editingTextNode.height ? (editingTextNode.height * stageScale) : '60px',
                                             margin: 0,
-                                            padding: '4px',
-                                            border: '1px solid var(--accent)',
-                                            background: 'var(--bg-primary)',
+                                            padding: 0,
+                                            border: '1px dashed var(--accent)',
+                                            background: 'transparent',
                                             outline: 'none',
-                                            resize: 'both',
-                                            color: penColor,
+                                            resize: 'none',
+                                            overflow: 'hidden',
+                                            color: defaultTextColor,
                                             fontSize: `${(activePresetId ? 18 : commentDefaultSize) * FONT_SCALE * stageScale}px`,
-                                            fontFamily: "'Caveat', cursive",
-                                            fontWeight: 700,
-                                            lineHeight: 1.2,
-                                            minWidth: '200px',
-                                            minHeight: '60px',
+                                            fontFamily: 'Caveat',
+                                            fontWeight: 800,
+                                            lineHeight: 1.0,
                                             zIndex: 10
                                         }}
                                     />
                                 )}
                             </div>
                         ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '20vh', color: 'var(--text-secondary)' }}>
-                                <div className="loader"></div>
-                                Loading exercise view for Student {studentIdx + 1}...
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '1.5rem', padding: '2rem', textAlign: 'center' }}>
+                                <div style={{ background: 'var(--bg-secondary)', padding: '2rem', borderRadius: '1rem', border: '1px solid var(--border)', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', maxWidth: '400px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+                                        {isPageLoading ? (
+                                            <Loader2 size={48} className="animate-spin" color="var(--accent)" />
+                                        ) : (
+                                            <AlertTriangle size={48} color="var(--danger)" />
+                                        )}
+                                    </div>
+                                    <h3 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem', fontSize: '1.2rem', fontWeight: 700 }}>
+                                        {isPageLoading ? "Carregant exercici..." : "No es pot carregar l'exercici"}
+                                    </h3>
+                                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.5' }}>
+                                        {currentStudent.pageIndexes.length === 0
+                                            ? "Aquest alumne no té cap pàgina de PDF assignada."
+                                            : `L'exercici requereix pàgines d'alumne que no estan disponibles. Pàgines de l'alumne: [${currentStudent.pageIndexes.join(', ')}].`}
+                                    </p>
+                                    <div style={{ marginTop: '1.5rem', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '0.5rem', textAlign: 'left', fontSize: '0.8rem' }}>
+                                        <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Detalls tècnics:</div>
+                                        <div>Tipus exercici: <strong>{currentExercise.type}</strong></div>
+                                        {currentExercise.type === 'pages' ? (
+                                            <div>Pàgines requerides: <strong>{(currentExercise as any).pageIndexes.map((p: number) => p + 1).join(', ')}</strong></div>
+                                        ) : (
+                                            <div>Pàgina requerida: <strong>{(currentExercise as any).pageIndex + 1}</strong></div>
+                                        )}
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                    <button className="btn btn-secondary" onClick={onBack}>Tornar a Configuració</button>
+                                    <button className="btn btn-primary" onClick={() => onUpdateStudentIdx((studentIdx + 1) % students.length)}>Provar següent alumne</button>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -1522,8 +2452,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                     {/* Bottom Comment Bar (Inside Center Column so Sidebars reach bottom) */}
                     <div className="bottom-comment-bank" style={{
                         height: `${commentBankHeight}px`,
-                        background: 'var(--bg-tertiary)',
-                        borderTop: '1px solid var(--border)',
+                        background: 'var(--bg-secondary)',
                         padding: '0.4rem 0.75rem',
                         display: 'flex',
                         gap: '0.75rem',
@@ -1546,7 +2475,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                         <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: '1rem', overflowY: 'hidden', paddingRight: '0.5rem' }}>
                             {/* Generals */}
                             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', overflowY: 'auto' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', position: 'sticky', top: 0, background: 'var(--bg-tertiary)', zIndex: 5, paddingBottom: '2px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 5, paddingBottom: '2px' }}>
                                     <div style={{ width: '3px', height: '9px', background: 'var(--accent)', borderRadius: '1px' }} />
                                     <span style={{ fontSize: '0.55rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Generals</span>
                                 </div>
@@ -1554,40 +2483,40 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                     {commentBank.map((comment, idx) => {
                                         if (comment.exerciseId) return null;
                                         const isEditing = editingBankComment === idx;
-                                        const bgColor = isEditing 
-                                            ? (isDarkMode ? '#451a03' : '#fef3c7') 
-                                            : (comment.colorMode === 'custom' 
-                                                ? (isDarkMode ? `${comment.customColor}30` : `${comment.customColor}15`) 
-                                                : comment.score !== undefined 
-                                                    ? (comment.score > 0 
-                                                        ? (isDarkMode ? '#064e3b' : '#10b98115') 
-                                                        : comment.score < 0 
-                                                            ? (isDarkMode ? '#7f1d1d' : '#ef444415') 
-                                                            : 'var(--bg-secondary)') 
+                                        const bgColor = isEditing
+                                            ? (isDarkMode ? '#451a03' : '#fef3c7')
+                                            : (comment.colorMode === 'custom'
+                                                ? (isDarkMode ? `${comment.customColor}30` : `${comment.customColor}15`)
+                                                : comment.score !== undefined
+                                                    ? (comment.score > 0
+                                                        ? (isDarkMode ? '#064e3b' : '#10b98115')
+                                                        : comment.score < 0
+                                                            ? (isDarkMode ? '#7f1d1d' : '#ef444415')
+                                                            : 'var(--bg-secondary)')
                                                     : (draggingComment === comment.text ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-secondary)'));
-                                        
-                                        const borderColor = isEditing 
-                                            ? (isDarkMode ? '#f59e0b' : '#f59e0b') 
-                                            : (comment.colorMode === 'custom' 
-                                                ? (isDarkMode ? `${comment.customColor}60` : `${comment.customColor}40`) 
-                                                : comment.score !== undefined 
-                                                    ? (comment.score > 0 
-                                                        ? (isDarkMode ? '#05966960' : '#10b98140') 
-                                                        : comment.score < 0 
-                                                            ? (isDarkMode ? '#dc262660' : '#ef444440') 
-                                                            : 'var(--border)') 
+
+                                        const borderColor = isEditing
+                                            ? (isDarkMode ? '#f59e0b' : '#f59e0b')
+                                            : (comment.colorMode === 'custom'
+                                                ? (isDarkMode ? `${comment.customColor}60` : `${comment.customColor}40`)
+                                                : comment.score !== undefined
+                                                    ? (comment.score > 0
+                                                        ? (isDarkMode ? '#05966960' : '#10b98140')
+                                                        : comment.score < 0
+                                                            ? (isDarkMode ? '#dc262660' : '#ef444440')
+                                                            : 'var(--border)')
                                                     : 'var(--border)');
 
-                                        const textColor = isEditing 
-                                            ? (isDarkMode ? '#fbbf24' : '#92400e') 
-                                            : (comment.colorMode === 'custom' 
-                                                ? comment.customColor 
-                                                : comment.score !== undefined 
-                                                    ? (comment.score > 0 
-                                                        ? (isDarkMode ? '#34d399' : '#059669') 
-                                                        : comment.score < 0 
-                                                            ? (isDarkMode ? '#f87171' : '#dc2626') 
-                                                            : 'var(--text-primary)') 
+                                        const textColor = isEditing
+                                            ? (isDarkMode ? '#fbbf24' : '#92400e')
+                                            : (comment.colorMode === 'custom'
+                                                ? comment.customColor
+                                                : comment.score !== undefined
+                                                    ? (comment.score > 0
+                                                        ? (isDarkMode ? '#34d399' : '#059669')
+                                                        : comment.score < 0
+                                                            ? (isDarkMode ? '#f87171' : '#dc2626')
+                                                            : 'var(--text-primary)')
                                                     : 'var(--text-primary)');
 
                                         return (
@@ -1611,7 +2540,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                             >
                                                 <span>{comment.text}</span>
                                                 {comment.score !== undefined && <span style={{ fontWeight: 800, opacity: 0.8, background: isDarkMode ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.4)', padding: '0.05rem 0.25rem', borderRadius: '3px', fontSize: '0.65rem' }}>{comment.score > 0 ? '+' : ''}{comment.score}</span>}
-                                                <button onClick={(e) => { e.stopPropagation(); setCommentBank(prev => prev.filter((_, i) => i !== idx)); if (isEditing) setEditingBankComment(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.4, fontSize: '1rem', marginLeft: '4px' }}>×</button>
+                                                <button onClick={(e) => { e.stopPropagation(); onUpdateCommentBank(commentBank.filter((_, i) => i !== idx)); if (isEditing) setEditingBankComment(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.4, fontSize: '1rem', marginLeft: '4px' }}>×</button>
                                             </div>
                                         );
                                     })}
@@ -1623,49 +2552,56 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
 
                             {/* Per Exercici */}
                             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', overflowY: 'auto' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', position: 'sticky', top: 0, background: 'var(--bg-tertiary)', zIndex: 5, paddingBottom: '2px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 5, paddingBottom: '2px' }}>
                                     <div style={{ width: '3px', height: '9px', background: '#f59e0b', borderRadius: '1px' }} />
                                     <span style={{ fontSize: '0.55rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Ex. {exerciseIdx + 1}</span>
                                 </div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', paddingBottom: '0.5rem' }}>
                                     {commentBank.map((comment, idx) => {
                                         if (comment.exerciseId !== currentExercise.id) return null;
+                                        const isSelectedStamp = pendingStampComment === comment;
                                         const isEditing = editingBankComment === idx;
-                                        const bgColor = isEditing 
-                                            ? (isDarkMode ? '#451a03' : '#fef3c7') 
-                                            : (comment.colorMode === 'custom' 
-                                                ? (isDarkMode ? `${comment.customColor}30` : `${comment.customColor}15`) 
-                                                : comment.score !== undefined 
-                                                    ? (comment.score > 0 
-                                                        ? (isDarkMode ? '#064e3b' : '#10b98115') 
-                                                        : comment.score < 0 
-                                                            ? (isDarkMode ? '#7f1d1d' : '#ef444415') 
-                                                            : 'var(--bg-secondary)') 
-                                                    : (draggingComment === comment.text ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-secondary)'));
-                                        
-                                        const borderColor = isEditing 
-                                            ? (isDarkMode ? '#f59e0b' : '#f59e0b') 
-                                            : (comment.colorMode === 'custom' 
-                                                ? (isDarkMode ? `${comment.customColor}60` : `${comment.customColor}40`) 
-                                                : comment.score !== undefined 
-                                                    ? (comment.score > 0 
-                                                        ? (isDarkMode ? '#05966960' : '#10b98140') 
-                                                        : comment.score < 0 
-                                                            ? (isDarkMode ? '#dc262660' : '#ef444440') 
-                                                            : 'var(--border)') 
-                                                    : 'var(--border)');
+                                        const bgColor = isEditing
+                                            ? (isDarkMode ? '#451a03' : '#fef3c7')
+                                            : isSelectedStamp
+                                                ? 'rgba(99, 102, 241, 0.25)'
+                                                : (comment.colorMode === 'custom'
+                                                    ? (isDarkMode ? `${comment.customColor}30` : `${comment.customColor}15`)
+                                                    : comment.score !== undefined
+                                                        ? (comment.score > 0
+                                                            ? (isDarkMode ? '#064e3b' : '#10b98115')
+                                                            : comment.score < 0
+                                                                ? (isDarkMode ? '#7f1d1d' : '#ef444415')
+                                                                : 'var(--bg-secondary)')
+                                                        : (draggingComment === comment.text ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-secondary)'));
 
-                                        const textColor = isEditing 
-                                            ? (isDarkMode ? '#fbbf24' : '#92400e') 
-                                            : (comment.colorMode === 'custom' 
-                                                ? comment.customColor 
-                                                : comment.score !== undefined 
-                                                    ? (comment.score > 0 
-                                                        ? (isDarkMode ? '#34d399' : '#059669') 
-                                                        : comment.score < 0 
-                                                            ? (isDarkMode ? '#f87171' : '#dc2626') 
-                                                            : 'var(--text-primary)') 
-                                                    : 'var(--text-primary)');
+                                        const borderColor = isEditing
+                                            ? (isDarkMode ? '#f59e0b' : '#f59e0b')
+                                            : isSelectedStamp
+                                                ? 'rgba(99, 102, 241, 0.8)'
+                                                : (comment.colorMode === 'custom'
+                                                    ? (isDarkMode ? `${comment.customColor}60` : `${comment.customColor}40`)
+                                                    : comment.score !== undefined
+                                                        ? (comment.score > 0
+                                                            ? (isDarkMode ? '#05966960' : '#10b98140')
+                                                            : comment.score < 0
+                                                                ? (isDarkMode ? '#dc262660' : '#ef444440')
+                                                                : 'var(--border)')
+                                                        : 'var(--border)');
+
+                                        const textColor = isEditing
+                                            ? (isDarkMode ? '#fbbf24' : '#92400e')
+                                            : isSelectedStamp
+                                                ? (isDarkMode ? '#818cf8' : '#4f46e5')
+                                                : (comment.colorMode === 'custom'
+                                                    ? comment.customColor
+                                                    : comment.score !== undefined
+                                                        ? (comment.score > 0
+                                                            ? (isDarkMode ? '#34d399' : '#059669')
+                                                            : comment.score < 0
+                                                                ? (isDarkMode ? '#f87171' : '#dc2626')
+                                                                : 'var(--text-primary)')
+                                                        : 'var(--text-primary)');
 
                                         return (
                                             <div key={`ex_${idx}`} draggable onDragStart={(e) => { e.dataTransfer.setData('text/comment', JSON.stringify(comment)); setDraggingComment(comment.text); }} onDragEnd={() => setDraggingComment(null)}
@@ -1673,10 +2609,17 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                                     display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.2rem 0.6rem', borderRadius: '2rem',
                                                     background: bgColor,
                                                     border: `1px solid ${borderColor}`,
-                                                    cursor: 'grab', fontSize: '0.7rem', fontWeight: 600,
+                                                    cursor: 'pointer', fontSize: '0.7rem', fontWeight: 600,
                                                     color: textColor,
-                                                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)', boxShadow: '0 1px 2px rgba(0,0,0,0.02)', userSelect: 'none',
-                                                    transform: isEditing ? 'scale(1.05)' : 'none'
+                                                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)', boxShadow: isSelectedStamp ? '0 0 0 2px rgba(99,102,241,0.3)' : '0 1px 2px rgba(0,0,0,0.02)', userSelect: 'none',
+                                                    transform: (isEditing || isSelectedStamp) ? 'scale(1.05)' : 'none'
+                                                }}
+                                                onClick={() => {
+                                                    if (pendingStampComment === comment) {
+                                                        setPendingStampComment(null);
+                                                    } else {
+                                                        setPendingStampComment(comment);
+                                                    }
                                                 }}
                                                 onDoubleClick={() => {
                                                     setEditingBankComment(idx);
@@ -1688,7 +2631,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                             >
                                                 <span>{comment.text}</span>
                                                 {comment.score !== undefined && <span style={{ fontWeight: 800, opacity: 0.8, background: isDarkMode ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.4)', padding: '0.05rem 0.25rem', borderRadius: '3px', fontSize: '0.65rem' }}>{comment.score > 0 ? '+' : ''}{comment.score}</span>}
-                                                <button onClick={(e) => { e.stopPropagation(); setCommentBank(prev => prev.filter((_, i) => i !== idx)); if (isEditing) setEditingBankComment(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.4, fontSize: '1rem', marginLeft: '4px' }}>×</button>
+                                                <button onClick={(e) => { e.stopPropagation(); onUpdateCommentBank(commentBank.filter((_, i) => i !== idx)); if (isEditing) setEditingBankComment(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.4, fontSize: '1rem', marginLeft: '4px' }}>×</button>
                                             </div>
                                         );
                                     })}
@@ -1736,22 +2679,21 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                                 style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text-primary)', padding: '0.2rem 0.3rem', fontSize: '0.65rem' }}
                                             />
                                             <div style={{ display: 'flex', gap: '0.3rem' }}>
-                                                <input
-                                                    type="number" step="0.1" placeholder="Pts"
-                                                    value={selectedAnn.type === 'text' ? ((selectedAnn as TextAnnotation).score ?? '') : (selectedAnn.type === 'highlighter' ? ((selectedAnn as HighlighterAnnotation).points ?? '') : '')}
-                                                    onChange={e => {
-                                                        const val = e.target.value === '' ? undefined : Number(e.target.value);
+                                                <NumericInput
+                                                    placeholder="Pts"
+                                                    value={selectedAnn.type === 'text' ? ((selectedAnn as TextAnnotation).score ?? undefined) : (selectedAnn.type === 'highlighter' ? ((selectedAnn as HighlighterAnnotation).points ?? undefined) : undefined)}
+                                                    onChange={val => {
                                                         updateAnnotationsWithHistory(currentAnnotations.map(a =>
                                                             a.id === selectedId ? (a.type === 'text' ? { ...a, score: val } : (a.type === 'highlighter' ? { ...a, points: val } : a)) : a
                                                         ));
                                                     }}
-                                                    style={{ width: '50px', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text-primary)', padding: '0.2rem 0.3rem', fontSize: '0.65rem' }}
+                                                    style={{ width: '50px' }}
                                                 />
-                                                <input 
-                                                    type="color" 
-                                                    value={(selectedAnn as any).color?.startsWith('#') ? (selectedAnn as any).color : '#ef4444'} 
+                                                <input
+                                                    type="color"
+                                                    value={(selectedAnn as any).color?.startsWith('#') ? (selectedAnn as any).color : '#ef4444'}
                                                     onChange={e => {
-                                                        updateAnnotationsWithHistory(currentAnnotations.map(a => 
+                                                        updateAnnotationsWithHistory(currentAnnotations.map(a =>
                                                             a.id === selectedId ? { ...a, color: e.target.value } as any : a
                                                         ));
                                                     }}
@@ -1802,10 +2744,10 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                                     if (editingBankComment !== null) {
                                                         const b = [...commentBank];
                                                         b[editingBankComment] = { ...b[editingBankComment], text: newComment.trim(), score, colorMode: newCommentColorMode, customColor: newCommentColorMode === 'custom' ? newCommentCustomColor : undefined };
-                                                        setCommentBank(b);
+                                                        onUpdateCommentBank(b);
                                                         setEditingBankComment(null);
                                                     } else {
-                                                        setCommentBank(prev => [...prev, {
+                                                        onUpdateCommentBank([...commentBank, {
                                                             text: newComment.trim(),
                                                             score,
                                                             colorMode: newCommentColorMode,
@@ -1849,10 +2791,10 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                                         if (editingBankComment !== null) {
                                                             const b = [...commentBank];
                                                             b[editingBankComment] = { ...b[editingBankComment], text: newComment.trim(), score, colorMode: newCommentColorMode, customColor: newCommentColorMode === 'custom' ? newCommentCustomColor : undefined };
-                                                            setCommentBank(b);
+                                                            onUpdateCommentBank(b);
                                                             setEditingBankComment(null);
                                                         } else {
-                                                            setCommentBank(prev => [...prev, {
+                                                            onUpdateCommentBank([...commentBank, {
                                                                 text: newComment.trim(),
                                                                 score,
                                                                 colorMode: newCommentColorMode,
@@ -1887,34 +2829,34 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
 
                 {/* Grading Right Sidebar */}
                 <div className="grading-sidebar" style={{ width: '300px', background: 'var(--bg-secondary)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: 0 }}>
-                    
+
                     {/* Properties for Selected Annotation */}
                     {selectedId && (
-                        <div style={{ padding: '1rem', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        <div style={{ padding: '1rem', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <span style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Propietats</span>
-                                <button 
-                                    className="btn-icon" 
-                                    style={{ color: 'var(--danger)', padding: '0.25rem' }} 
+                                <button
+                                    className="btn-icon"
+                                    style={{ color: 'var(--danger)', padding: '0.25rem' }}
                                     onClick={() => deleteSelected()}
                                     title="Eliminar anotació"
                                 >
                                     <Trash2 size={16} />
                                 </button>
                             </div>
-                            
+
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                 <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)' }}>Color</label>
                                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                     {['#ef4444', '#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#000000'].map(c => {
                                         const selectedAnn = currentAnnotations.find(a => a.id === selectedId);
                                         const isSelectedColor = (selectedAnn as any)?.color === c;
-                                        
+
                                         return (
                                             <button
                                                 key={c}
                                                 onClick={() => {
-                                                    const newAnns = currentAnnotations.map(a => 
+                                                    const newAnns = currentAnnotations.map(a =>
                                                         a.id === selectedId ? { ...a, color: c } as any : a
                                                     );
                                                     updateAnnotationsWithHistory(newAnns);
@@ -1928,15 +2870,15 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                             />
                                         );
                                     })}
-                                    <input 
-                                        type="color" 
+                                    <input
+                                        type="color"
                                         value={(() => {
                                             const ann = currentAnnotations.find(a => a.id === selectedId) as any;
                                             if (ann?.color && ann.color.startsWith('#')) return ann.color;
-                                            return '#3b82f6'; 
+                                            return '#3b82f6';
                                         })()}
                                         onChange={(e) => {
-                                            const newAnns = currentAnnotations.map(a => 
+                                            const newAnns = currentAnnotations.map(a =>
                                                 a.id === selectedId ? { ...a, color: e.target.value } as any : a
                                             );
                                             updateAnnotationsWithHistory(newAnns);
@@ -1970,7 +2912,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
 
                         {/* Rubric panel — only shown when scoringMode === 'from_zero' */}
                         {currentExercise.scoringMode === 'from_zero' && currentExercise.rubric && currentExercise.rubric.length > 0 && (
-                            <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'var(--bg-tertiary)', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
+                            <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
                                     <h4 style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.05em', margin: 0 }}>
                                         Rúbrica
@@ -2002,15 +2944,15 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                                         placeholder="Descripció..."
                                                         style={{ flex: 1, fontSize: '0.75rem', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', padding: '2px' }}
                                                     />
-                                                    <input
-                                                        type="number" step="0.1"
+                                                    <NumericInput
                                                         value={item.points}
-                                                        onChange={(e) => {
+                                                        onChange={(val) => {
+                                                            if (val === undefined) return;
                                                             const newRubric = [...(currentExercise.rubric || [])];
-                                                            newRubric[idx] = { ...item, points: Number(e.target.value) };
+                                                            newRubric[idx] = { ...item, points: val };
                                                             onUpdateExercise({ ...currentExercise, rubric: newRubric });
                                                         }}
-                                                        style={{ width: '40px', fontSize: '0.75rem', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', textAlign: 'right' }}
+                                                        style={{ width: '40px', border: 'none', borderBottom: '1px solid var(--border)', textAlign: 'right' }}
                                                     />
                                                     <button
                                                         onClick={() => {
@@ -2083,7 +3025,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                 </div>
                                 {/* Summary breakdown */}
                                 {Object.values(currentExRubricCounts).some(v => v > 0) && (
-                                    <div style={{ marginTop: '0.6rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                    <div style={{ marginTop: '0.6rem', paddingTop: '0.5rem', borderTop: 'none', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
                                         {currentExercise.rubric.filter(item => (currentExRubricCounts[item.id] ?? 0) > 0).map(item => {
                                             const count = currentExRubricCounts[item.id];
                                             const contribution = item.points * count;
@@ -2128,7 +3070,7 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
 
                                     if (isEditing) {
                                         return (
-                                            <div key={preset.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.3rem', background: 'var(--bg-tertiary)', borderRadius: '0.3rem', border: '1px solid var(--accent)' }}>
+                                            <div key={preset.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.3rem', background: 'var(--bg-secondary)', borderRadius: '0.3rem', border: '1px solid var(--accent)' }}>
                                                 <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
                                                     <input
                                                         type="text"
@@ -2152,11 +3094,10 @@ export default function CorrectionView({ pdfDoc, students, exercises, annotation
                                                         }}
                                                         style={{ width: '18px', height: '18px', padding: 0, border: 'none', cursor: 'pointer' }}
                                                     />
-                                                    <input
-                                                        type="number" step="0.25"
+                                                    <NumericInput
                                                         value={presetForm.points || 0}
-                                                        onChange={e => setPresetForm({ ...presetForm, points: Number(e.target.value) })}
-                                                        style={{ width: '40px', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '2px', fontSize: '0.7rem', padding: '0.1rem' }}
+                                                        onChange={val => setPresetForm({ ...presetForm, points: val })}
+                                                        style={{ width: '40px' }}
                                                     />
                                                     <div style={{ display: 'flex', gap: '0.2rem' }}>
                                                         <button onClick={() => setEditingPresetId(null)} className="btn-icon" style={{ padding: '0.1rem' }}><X size={10} /></button>

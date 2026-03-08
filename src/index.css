@@ -13,6 +13,33 @@
   --slider-track: #cbd5e1;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden !important;
+  /* Prevent page scroll entirely */
+  touch-action: none !important;
+  /* Disable default browser scrolling/gestures */
+  overscroll-behavior: none !important;
+  /* Prevent bounce effect and navigation gestures (swipe back/forward) */
+  user-select: none;
+  /* Prevent accidental text selection during touch interaction */
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.workspace,
+.canvas-container,
+.konvajs-content {
+  touch-action: none !important;
+  overscroll-behavior: none !important;
+}
+
+
 [data-theme='dark'] {
   --bg-primary: #020617;
   --bg-secondary: #0f172a;
@@ -53,7 +80,7 @@ input[type=range].custom-slider::-webkit-slider-thumb {
   cursor: pointer;
   -webkit-appearance: none;
   margin-top: -5px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   transition: transform 0.1s ease;
 }
 
@@ -63,7 +90,14 @@ input[type=range].custom-slider:active::-webkit-slider-thumb {
 
 [data-theme='dark'] .canvas-container {
   filter: invert(0.92) hue-rotate(180deg) brightness(1.05) contrast(0.95);
-  background: #ffffff !important; /* This will be inverted to almost black */
+  background: #ffffff !important;
+  /* This will be inverted to almost black */
+}
+
+.canvas-container,
+.workspace {
+  touch-action: none;
+  /* Prevent scroll on touch devices while drawing */
 }
 
 [data-theme='dark'] .canvas-container canvas {
@@ -75,11 +109,12 @@ input[type=range].custom-slider:active::-webkit-slider-thumb {
 }
 
 /* Hide number input spinners for cleaner UI */
-input[type=number]::-webkit-inner-spin-button, 
-input[type=number]::-webkit-outer-spin-button { 
-  -webkit-appearance: none; 
-  margin: 0; 
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
+
 input[type=number] {
   -moz-appearance: textfield;
   padding-left: 6px !important;
@@ -91,6 +126,8 @@ input[type=number] {
   margin: 0;
   padding: 0;
   transition: background-color 0.2s ease, border-color 0.2s ease, color 0.1s ease;
+  overscroll-behavior: none;
+  /* Prevent bounce-back/refresh gestures */
 }
 
 body {
@@ -275,7 +312,5 @@ button {
 
 /* Canvas container */
 .canvas-container {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  background: white;
-  margin: 2rem;
+  /* Used for dark mode target */
 }

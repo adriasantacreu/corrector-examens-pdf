@@ -47,3 +47,37 @@ export async function extractTextFromRegion(
         return '';
     }
 }
+
+/**
+ * Just extracts the image from a region as a DataURL (no OCR).
+ */
+export async function extractImageFromRegion(
+    pdfDoc: PDFDocumentProxy,
+    pageIndex: number,
+    region: { x: number; y: number; width: number; height: number },
+    scale: number = 2.5
+): Promise<string> {
+    try {
+        const fullCanvas = document.createElement('canvas');
+        await renderPDFPageToCanvas(pdfDoc, pageIndex, fullCanvas, scale);
+
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = region.width;
+        cropCanvas.height = region.height;
+        const ctx = cropCanvas.getContext('2d')!;
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, region.width, region.height);
+
+        ctx.drawImage(
+            fullCanvas,
+            region.x, region.y, region.width, region.height,
+            0, 0, region.width, region.height
+        );
+
+        return cropCanvas.toDataURL('image/jpeg', 0.85);
+    } catch (err) {
+        console.error('Image extraction failed:', err);
+        return '';
+    }
+}

@@ -1,9 +1,5 @@
 import * as pdfjsLib from 'pdfjs-dist';
 
-// For production builds (like GitHub Pages), we need to set the workerSrc explicitly.
-// Using a CDN is the most reliable way for this to work out-of-the-box.
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-
 // Define the PDF document type wrapper
 export type PDFDocumentProxy = pdfjsLib.PDFDocumentProxy;
 
@@ -11,9 +7,19 @@ export type PDFDocumentProxy = pdfjsLib.PDFDocumentProxy;
  * Loads a PDF document from a File or Blob.
  */
 export async function loadPDF(file: File): Promise<PDFDocumentProxy> {
+    console.log('[pdfUtils] Starting loadPDF for file:', file.name, file.size);
     const arrayBuffer = await file.arrayBuffer();
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-    return await loadingTask.promise;
+    console.log('[pdfUtils] ArrayBuffer ready, length:', arrayBuffer.byteLength);
+    try {
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        console.log('[pdfUtils] loadingTask created');
+        const doc = await loadingTask.promise;
+        console.log('[pdfUtils] PDF loaded successfully, numPages:', doc.numPages);
+        return doc;
+    } catch (err) {
+        console.error('[pdfUtils] Error in loadPDF:', err);
+        throw err;
+    }
 }
 
 /**

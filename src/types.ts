@@ -14,6 +14,9 @@ export interface BaseExercise {
   maxScore?: number;
   scoringMode?: 'from_max' | 'from_zero'; // 'from_max' is default
   rubric?: RubricItem[]; // used when scoringMode === 'from_zero'
+  stampX?: number; // Global stamp position override
+  stampY?: number;
+  stampScale?: number;
 }
 
 export interface CropExercise extends BaseExercise {
@@ -63,10 +66,12 @@ export type ExerciseDef = CropExercise | PagesExercise | QrCodeRegion | OcrNameR
 export interface Student {
   id: string; // studentId from QR code
   name: string; // can default to studentId, or "Codi: studentId"
+  originalOcrName?: string; // Experimental: Store the raw OCR result before fuzzy matching
+  nameCropUrl?: string;     // Experimental: DataURL of the cropped name area
   pageIndexes: number[]; // Index array where pageIndexes[0] is the absolute PDF page for the student's exam page 1
 }
 
-export type ToolType = 'select' | 'pen' | 'highlighter' | 'text';
+export type ToolType = 'select' | 'pen' | 'highlighter' | 'text' | 'eraser';
 export type PenColor = string;
 
 export interface PenAnnotation {
@@ -97,6 +102,16 @@ export interface HighlighterAnnotation {
   points?: number;
   label?: string;
   fontSize?: number;
+  labelOffsetX?: number;
+  labelOffsetY?: number;
+}
+
+export interface HighlighterLegendAnnotation {
+  id: string;
+  type: 'highlighter_legend';
+  x: number;
+  y: number;
+  scale?: number;
 }
 
 export interface ImageAnnotation {
@@ -114,6 +129,9 @@ export interface TextAnnotation {
   type: 'text';
   x: number;
   y: number;
+  width?: number; // optional width for wrapping/sizing
+  height?: number; // optional height
+  wrap?: 'word' | 'char' | 'none';
   text: string;
   color: string;
   fontSize: number;
@@ -124,7 +142,7 @@ export interface TextAnnotation {
   baseline?: 'top' | 'middle' | 'bottom';
 }
 
-export type Annotation = PenAnnotation | HighlighterAnnotation | ImageAnnotation | TextAnnotation;
+export type Annotation = PenAnnotation | HighlighterAnnotation | ImageAnnotation | TextAnnotation | HighlighterLegendAnnotation;
 
 export type AnnotationStore = Record<string, Record<string, Annotation[]>>;
 
