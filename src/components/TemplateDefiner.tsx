@@ -469,7 +469,7 @@ export default function TemplateDefiner({ pdfDoc, pagesPerExam, initialExercises
                                                             {ex.type === 'pages' ? '📄 Exercici de Pàgina' : '✂️ Exercici de Retall'}
                                                         </span>
                                                         <input
-                                                            ref={el => { inputRefs.current[ex.id] = el; }}
+                                                            ref={(el) => { inputRefs.current[ex.id] = el; }}
                                                             type="text" value={ex.name || ''} placeholder="Nom exercici"
                                                             onChange={e => updateExerciseMeta(ex.id, { name: e.target.value })}
                                                             style={{ width: '100%', background: 'var(--bg-primary)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '0.2rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem' }}
