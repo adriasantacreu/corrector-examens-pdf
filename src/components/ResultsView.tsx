@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Mail, Send, CheckCircle2, AlertCircle, ChevronLeft, Beaker, RefreshCw } from 'lucide-react';
-import type { Student, ExerciseDef, AnnotationStore, RubricCountStore, Annotation, TextAnnotation } from '../types';
+import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from '../types';
 import { generateStudentPDF } from '../utils/pdfExport';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 
@@ -108,14 +108,14 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
             });
             const data = await res.json();
             const classroomStudents = data.students || [];
-            
+
             const updatedStudents = students.map(s => ({ ...s }));
             let matchesFound = 0;
 
             classroomStudents.forEach((cs: any) => {
                 const fullName = cs.profile.name.fullName.toLowerCase();
                 const email = cs.profile.emailAddress;
-                
+
                 const match = updatedStudents.find(s => {
                     const localName = s.name.toLowerCase();
                     return fullName.includes(localName) || localName.includes(fullName);
@@ -126,7 +126,7 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
                     matchesFound++;
                 }
             });
-            
+
             onUpdateStudents(updatedStudents);
             alert(`S'han trobat i assignat ${matchesFound} emails d'alumnes de Classroom.`);
         } catch (err) {
@@ -140,13 +140,13 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
 
         for (const ex of exercises) {
             if (ex.type !== 'crop' && ex.type !== 'pages') continue;
-            
+
             const exAnns = annotations[studentId]?.[ex.id] || [];
             const exRubricCounts = rubricCounts[studentId]?.[ex.id] || {};
-            
+
             const highlightAdj = exAnns.reduce((s, a) => (a.type === 'highlighter' && typeof a.points === 'number' ? s + a.points : (a.type === 'text' && typeof a.score === 'number' ? s + a.score : s)), 0);
             const rubricBase = (ex.scoringMode === 'from_zero' && ex.rubric) ? ex.rubric.reduce((s, item) => s + item.points * (exRubricCounts[item.id] ?? 0), 0) : (ex.maxScore ?? 0);
-            
+
             total += (rubricBase + highlightAdj);
             maxPossible += (ex.maxScore ?? 0);
         }
@@ -176,7 +176,7 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
         try {
             console.log(`[ResultsView] Calculant nota per a ${student.name}...`);
             const score = calculateStudentScore(student.id);
-            
+
             // Calculate scale factor: targetMaxScore / sum of all exercises maxScore
             const totalExercisesMax = exercises.reduce((sum, ex) => {
                 if (ex.type === 'crop' || ex.type === 'pages') return sum + (ex.maxScore ?? 0);
@@ -197,7 +197,7 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
                     scaleFactor
                 }
             );
-            
+
             console.log(`[ResultsView] Generant PDF per a ${student.name}... Factor escala: ${scaleFactor}`);
             const pdfBlob = await generateStudentPDF(
                 pdfDoc,
@@ -205,7 +205,6 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
                 exercises,
                 annotations,
                 rubricCounts,
-                targetMaxScore,
                 scaleFactor
             );
             console.log(`[ResultsView] PDF generat correctament. Mida blob: ${pdfBlob.size} bytes`);
@@ -221,10 +220,10 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
 
             const subject = `${isTest ? '[TEST] ' : ''}Nota Examen: ${student.name}`;
             const body = `Hola ${student.name},\n\nLa teva nota de l'examen és: ${score.normalized} / ${targetMaxScore}.\n\nT'adjuntem el PDF amb la correcció detallada.\n\nSalutacions,\nEl teu professor.`;
-            
+
             const boundary = "foo_bar_baz";
             const utf8Subject = `=?utf-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`;
-            
+
             const emailLines = [
                 `To: ${targetEmail}`,
                 `Subject: ${utf8Subject}`,
@@ -313,7 +312,7 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
             console.warn("[ResultsView] Abortat: mode test però sense userEmail.");
             return;
         }
-        
+
         setIsSendingAll(true);
         console.log("[ResultsView] Botons bloquejats (isSendingAll=true)");
 
@@ -323,7 +322,7 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
                 if (isTest) return true; // Sempre enviem a tothom en mode test
                 return s.email && sendStatuses[s.id] !== 'success'; // En mode real, només si té email i no està enviat
             });
-            
+
             console.log(`[ResultsView] Alumnes pendents d'enviar: ${studentsToMail.length}`);
 
             if (isTest) {
@@ -379,7 +378,7 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                             {courses.length > 0 && (
-                                <select 
+                                <select
                                     onChange={(e) => importClassroomEmails(e.target.value)}
                                     style={{ padding: '0.4rem', borderRadius: '0.4rem', border: '1px solid var(--accent)', fontSize: '0.8rem', background: 'white' }}
                                     defaultValue=""
@@ -412,7 +411,7 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
                                     {students.map(student => {
                                         const score = calculateStudentScore(student.id);
                                         const status = sendStatuses[student.id];
-                                        
+
                                         return (
                                             <tr key={student.id} style={{ borderBottom: '1px solid var(--border)' }}>
                                                 <td style={{ padding: '1rem', fontWeight: 600 }}>{student.name}</td>
@@ -420,10 +419,10 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
                                                     {student.email || 'Falta email'}
                                                 </td>
                                                 <td style={{ padding: '1rem', textAlign: 'center' }}>
-                                                    <span style={{ 
-                                                        padding: '0.2rem 0.6rem', borderRadius: '1rem', 
-                                                        background: score.normalized >= (targetMaxScore/2) ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                                        color: score.normalized >= (targetMaxScore/2) ? '#10b981' : '#ef4444',
+                                                    <span style={{
+                                                        padding: '0.2rem 0.6rem', borderRadius: '1rem',
+                                                        background: score.normalized >= (targetMaxScore / 2) ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                                        color: score.normalized >= (targetMaxScore / 2) ? '#10b981' : '#ef4444',
                                                         fontWeight: 700
                                                     }}>
                                                         {score.normalized}
@@ -442,8 +441,8 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
                                                             <button className="btn-icon" onClick={() => sendEmail(student)} style={{ color: 'var(--accent)' }}><RefreshCw size={14} /></button>
                                                         </div>
                                                     ) : (
-                                                        <button 
-                                                            className="btn btn-secondary" 
+                                                        <button
+                                                            className="btn btn-secondary"
                                                             style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
                                                             onClick={() => sendEmail(student)}
                                                             disabled={status === 'sending'}
