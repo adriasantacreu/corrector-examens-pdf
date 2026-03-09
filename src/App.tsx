@@ -5,8 +5,9 @@ import { loadPDF, type PDFDocumentProxy } from './utils/pdfUtils';
 import TemplateDefiner from './components/TemplateDefiner';
 import CorrectionView from './components/CorrectionView';
 import PageOrganizer from './components/PageOrganizer';
+import ResultsView from './components/ResultsView';
 
-type AppMode = 'upload' | 'setup' | 'organize_pages' | 'configure_crops' | 'correction';
+type AppMode = 'upload' | 'setup' | 'organize_pages' | 'configure_crops' | 'correction' | 'results';
 
 const STORAGE_KEY = 'correccio_app_state';
 
@@ -95,12 +96,55 @@ function App() {
 
   const addLog = (msg: string) => { console.log('[App]', msg); setDebugLogs(prev => [...prev.slice(-200), msg]); };
 
+  const agentDebugLog = (
+    hypothesisId: string,
+    location: string,
+    message: string,
+    data: any = {},
+    runId: string = 'initial'
+  ) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7480/ingest/a6df652c-8a3b-4565-80ea-18f2b272eb6e', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Debug-Session-Id': '4dc664'
+      },
+      body: JSON.stringify({
+        sessionId: '4dc664',
+        runId,
+        hypothesisId,
+        location,
+        message,
+        data,
+        timestamp: Date.now()
+      })
+    }).catch(() => { });
+    // #endregion
+  };
+
   const [studentIdx, setStudentIdx] = useState<number>(savedState?.lastStudentIdx ?? 0);
   const [exerciseIdx, setExerciseIdx] = useState<number>(savedState?.lastExerciseIdx ?? 0);
 
   // Persist state whenever key values change
   useEffect(() => {
     if (exercises.length > 0 || students.length > 0 || Object.keys(annotations).length > 0) {
+      agentDebugLog(
+        'H2_state_persist',
+        'src/App.tsx:103',
+        'Persisting app state',
+        {
+          mode,
+          pagesPerExam: Number(pagesPerExam) || 1,
+          exercises: exercises.length,
+          students: students.length,
+          annotationsStudents: Object.keys(annotations).length,
+          rubricStudents: Object.keys(rubricCounts).length,
+          targetMaxScore,
+          studentIdx,
+          exerciseIdx
+        }
+      );
       saveState({
         mode,
         pagesPerExam: Number(pagesPerExam) || 1,
@@ -134,6 +178,15 @@ function App() {
         console.log('[App] PDF loaded, pages:', doc.numPages);
         setPdfDoc(doc);
         setNumPages(doc.numPages);
+        agentDebugLog(
+          'H1_pdf_load',
+          'src/App.tsx:133',
+          'PDF loaded successfully',
+          {
+            numPages: doc.numPages,
+            pendingModeAfterPDF
+          }
+        );
         if (pendingModeAfterPDF) {
           setMode(pendingModeAfterPDF);
           setPendingModeAfterPDF(null);
@@ -431,6 +484,16 @@ function App() {
               setDebugLogs([]);
 
               try {
+                agentDebugLog(
+                  'H3_ocr_names',
+                  'src/App.tsx:435',
+                  'Starting OCR name extraction',
+                  {
+                    students: students.length,
+                    exercises: definedExercises.length,
+                    hasOcrRegion: !!ocrRegion
+                  }
+                );
                 const updatedStudents = [...students];
 
                 if (false) {
@@ -487,8 +550,29 @@ function App() {
                           nameCropUrl: cropUrl
                         };
                       }
+                      agentDebugLog(
+                        'H3_ocr_names',
+                        'src/App.tsx:447',
+                        'OCR processed student',
+                        {
+                          studentIndex: i,
+                          pageForOcr,
+                          extracted,
+                          finalName,
+                          hadCropUrl: !!cropUrl
+                        }
+                      );
                     } catch (err: any) {
                       addLog(`  → Error OCR: ${err?.message || err}`);
+                      agentDebugLog(
+                        'H3_ocr_names',
+                        'src/App.tsx:491',
+                        'OCR error for student',
+                        {
+                          studentIndex: i,
+                          errorMessage: err?.message || String(err)
+                        }
+                      );
                     }
                     await new Promise(r => setTimeout(r, safePages > 1 ? 10 : 0));
                   }
@@ -520,6 +604,7 @@ function App() {
             onUpdateCommentBank={setCommentBank}
             onUpdateTargetMaxScore={setTargetMaxScore}
             onBack={handleBack}
+            onFinish={() => setMode('results')}
             onUpdateAnnotations={handleUpdateAnnotations}
             onUpdateRubricCounts={(studentId, exerciseId, itemId, delta) => {
               setRubricCounts(prev => {
@@ -541,6 +626,19 @@ function App() {
             exerciseIdx={exerciseIdx}
             onUpdateStudentIdx={setStudentIdx}
             onUpdateExerciseIdx={setExerciseIdx}
+          />
+        )}
+
+        {mode === 'results' && pdfDoc && (
+          <ResultsView
+            pdfDoc={pdfDoc}
+            students={students}
+            exercises={exercises}
+            annotations={annotations}
+            rubricCounts={rubricCounts}
+            targetMaxScore={targetMaxScore}
+            onUpdateStudents={setStudents}
+            onBack={() => setMode('correction')}
           />
         )}
 

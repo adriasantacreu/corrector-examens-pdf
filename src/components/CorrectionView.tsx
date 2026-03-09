@@ -8,7 +8,7 @@ declare global {
 import { Stage, Layer, Image as KonvaImage, Line, Rect, Group, Text, Transformer } from 'react-konva';
 import {
     ChevronLeft, ChevronRight, PenTool, Highlighter, MousePointer2,
-    Undo, Trash2, Type, Plus, Pencil, Check, X, Download, Loader2, Moon, Sun, AlertTriangle, RefreshCw
+    Undo, Trash2, Type, Plus, Pencil, Check, X, Download, Loader2, Moon, Sun, AlertTriangle, RefreshCw, Send
 } from 'lucide-react';
 // import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
@@ -29,6 +29,7 @@ interface Props {
     onUpdateRubricCounts: (studentId: string, exerciseId: string, itemId: string, delta: number) => void;
     onUpdateExercise: (exercise: ExerciseDef) => void;
     onBack?: () => void;
+    onFinish?: () => void;
     studentIdx: number;
     exerciseIdx: number;
     onUpdateStudentIdx: (idx: number) => void;
@@ -119,7 +120,7 @@ function NumericInput({ value, onChange, style, placeholder = "" }: {
 export default function CorrectionView({
     pdfDoc, students, exercises, annotations, rubricCounts,
     commentBank, targetMaxScore, onUpdateCommentBank, onUpdateTargetMaxScore,
-    onUpdateAnnotations, onUpdateRubricCounts, onUpdateExercise, onBack,
+    onUpdateAnnotations, onUpdateRubricCounts, onUpdateExercise, onBack, onFinish,
     studentIdx, exerciseIdx, onUpdateStudentIdx, onUpdateExerciseIdx
 }: Props) {
     const [renderedPages, setRenderedPages] = useState<RenderedPage[]>([]);
@@ -601,23 +602,30 @@ export default function CorrectionView({
         currentStudent?.pageIndexes ? currentStudent.pageIndexes.join(',') : ''
     ]);
 
-    // Auto-add legend if mode is on and missing
+    // Auto-add legend if mode is on and highlighters exist
     useEffect(() => {
-        if (highlighterLabelMode === 'legend' && currentStudent && currentExercise) {
-            const hasLegend = currentAnnotations.some(a => a.type === 'highlighter_legend');
-            if (!hasLegend) {
-                const newLegend: HighlighterLegendAnnotation = {
-                    id: `legend_${Date.now()}`,
-                    type: 'highlighter_legend',
-                    x: currentExercise.type === 'crop' ? 20 : 50,
-                    y: currentExercise.type === 'crop' ? 20 : 50,
-                    scale: 1.2
-                };
-                // Use onUpdateAnnotations directly to avoid polluting history for each exercise transition
-                onUpdateAnnotations(currentStudent.id, currentExercise.id, [...currentAnnotations, newLegend]);
-            }
+        if (!currentStudent || !currentExercise) return;
+
+        const hasHighlighters = currentAnnotations.some(a => a.type === 'highlighter');
+        const hasLegend = currentAnnotations.some(a => a.type === 'highlighter_legend');
+
+        if (highlighterLabelMode === 'legend' && hasHighlighters && !hasLegend) {
+            // Add legend
+            const newLegend: HighlighterLegendAnnotation = {
+                id: `legend_${Date.now()}`,
+                type: 'highlighter_legend',
+                x: 100,
+                y: 100,
+                scale: 1
+            };
+            // Use updateAnnotationsWithHistory (silent/no history if possible? 
+            // Actually, better to just use current set function to avoid infinite loop)
+            onUpdateAnnotations(currentStudent.id, currentExercise.id, [...currentAnnotations, newLegend]);
+        } else if ((highlighterLabelMode !== 'legend' || !hasHighlighters) && hasLegend) {
+            // Remove legend if it exists but shouldn't (either mode off or no highlighters)
+            onUpdateAnnotations(currentStudent.id, currentExercise.id, currentAnnotations.filter(a => a.type !== 'highlighter_legend'));
         }
-    }, [highlighterLabelMode, currentExercise?.id, currentStudent?.id, currentAnnotations.length]);
+    }, [highlighterLabelMode, currentAnnotations.length, currentStudent?.id, currentExercise?.id]);
 
     // Paste handling API
     useEffect(() => {
@@ -1093,6 +1101,10 @@ export default function CorrectionView({
         const node = e.target;
         const scaleX = node.scaleX();
         const scaleY = node.scaleY();
+        const isTextGroup = node.hasName('text-group');
+        const isHighlighterGroup = node.hasName('highlighter-group');
+        const isStampGroup = node.hasName('stamp-group');
+
         const newAnnots = currentAnnotations.map(a => {
             if (a.id === id) {
                 if (a.type === 'pen') {
@@ -1105,22 +1117,62 @@ export default function CorrectionView({
                         return base + (p - base) * scale;
                     });
                     return { ...a, points: scaledPoints } as PenAnnotation;
-                } else if (a.type === 'highlighter' || a.type === 'image' || a.type === 'text' || a.type === 'highlighter_legend') {
-                    // For image we allow scaling, for text/highlighter onTransform has already reset scale to 1 and modified width
-                    if (a.type === 'highlighter_legend') {
-                        return { ...a, x: node.x(), y: node.y(), scale: (a.scale || 1) * scaleX } as HighlighterLegendAnnotation;
-                    }
+                }
+
+                if (isTextGroup && a.type === 'text') {
+                    // Do not deform text: update width/height and position only
                     return {
                         ...a,
                         x: node.x(),
                         y: node.y(),
-                        width: Math.abs((a.width || (a.type === 'text' ? 200 : 100)) * scaleX),
-                        height: Math.abs((a.height || (a.type === 'text' ? 50 : 30)) * scaleY),
-                    } as any;
+                        width: Math.max(20, node.width() * scaleX),
+                        height: Math.max(20, node.height() * scaleY),
+                    } as TextAnnotation;
+                }
+
+                if (isHighlighterGroup && a.type === 'highlighter') {
+                    return {
+                        ...a,
+                        x: node.x(),
+                        y: node.y(),
+                        width: Math.max(5, (a.width || 0) * scaleX),
+                        height: Math.max(5, (a.height || 0) * scaleY),
+                    } as HighlighterAnnotation;
+                }
+
+                if (isStampGroup && a.type === 'text' && a.id === 'system_score_stamp') {
+                    return {
+                        ...a,
+                        x: node.x(),
+                        y: node.y(),
+                        width: Math.max(50, (a.width || 0) * scaleX),
+                        height: Math.max(20, (a.height || 0) * scaleY),
+                    } as TextAnnotation;
+                }
+
+                if (a.type === 'image') {
+                    // For image we allow scaling uniformly
+                    return {
+                        ...a,
+                        x: node.x(),
+                        y: node.y(),
+                        width: Math.abs((a.width || 100) * scaleX),
+                        height: Math.abs((a.height || 100) * scaleY),
+                    } as ImageAnnotation;
+                }
+
+                if (a.type === 'highlighter_legend') {
+                    return {
+                        ...a,
+                        x: node.x(),
+                        y: node.y(),
+                        scale: (a.scale || 1) * scaleX,
+                    } as HighlighterLegendAnnotation;
                 }
             }
             return a;
         }) as Annotation[];
+
         node.scaleX(1);
         node.scaleY(1);
         updateAnnotationsWithHistory(newAnnots);
@@ -1661,6 +1713,26 @@ export default function CorrectionView({
                             Layout (Tots)
                         </button>
 
+                        {onFinish && (
+                            <button
+                                onClick={onFinish}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                    padding: '0.4rem 0.75rem', borderRadius: '0.5rem',
+                                    background: 'var(--success)',
+                                    color: 'white', border: 'none',
+                                    cursor: 'pointer',
+                                    fontSize: '0.8rem', fontWeight: 700,
+                                    marginLeft: '0.5rem',
+                                    boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)'
+                                }}
+                                title="Finalitzar i enviar notes per correu"
+                            >
+                                <Send size={14} />
+                                Finalitzar i Enviar
+                            </button>
+                        )}
+
                         <button
                             onClick={() => setIsDarkMode(!isDarkMode)}
                             className="btn-icon"
@@ -1706,34 +1778,6 @@ export default function CorrectionView({
                         </button>
                     ))}
 
-                    {/* Quick Legend toggle next to highlighters */}
-                    <button
-                        onClick={() => {
-                            if (highlighterLabelMode === 'legend') {
-                                setHighlighterLabelMode('individual');
-                            } else {
-                                setHighlighterLabelMode('legend');
-                                // Ensure a legend exists if it doesn't
-                                const hasLegend = currentAnnotations.some(a => a.type === 'highlighter_legend');
-                                if (!hasLegend) {
-                                    const newLegend: HighlighterLegendAnnotation = {
-                                        id: `legend_${Date.now()}`,
-                                        type: 'highlighter_legend',
-                                        x: 100,
-                                        y: 100,
-                                        scale: 1
-                                    };
-                                    updateAnnotationsWithHistory([...currentAnnotations, newLegend]);
-                                }
-                            }
-                        }}
-                        className={`btn-icon ${highlighterLabelMode === 'legend' ? 'active' : ''}`}
-                        title="Mode Llegenda (L)"
-                        style={{ gridColumn: 'span 2', padding: '4px', fontSize: '0.6rem', fontWeight: 800, textTransform: 'uppercase', display: 'flex', gap: '4px', alignItems: 'center' }}
-                    >
-                        <Plus size={14} style={{ transform: highlighterLabelMode === 'legend' ? 'rotate(45deg)' : 'none', transition: 'transform 0.2s' }} />
-                        Llegenda
-                    </button>
 
                     <div style={{ gridColumn: 'span 2', width: '24px', height: '1px', background: 'var(--border)' }}></div>
 
@@ -2267,7 +2311,7 @@ export default function CorrectionView({
                                             }
                                             return null;
                                         })}
-                                        {selectedId && (
+                                        {selectedId && !editingTextNode && (
                                             <Transformer
                                                 ref={transformerRef}
                                                 rotateEnabled={false}
@@ -2335,6 +2379,7 @@ export default function CorrectionView({
                                                     fill={(scoreStampData.scaledExScore >= (scoreStampData.scaledExMax / 2)) ? '#10b981' : '#ef4444'}
                                                     align="left"
                                                     width={500}
+                                                    wrap="word"
                                                 />
                                                 {scoreStampData.lines.length > 0 && (
                                                     <Text
@@ -2345,6 +2390,7 @@ export default function CorrectionView({
                                                         fill="rgba(0,0,0,0.6)"
                                                         align="left"
                                                         width={500}
+                                                        wrap="word"
                                                     />
                                                 )}
                                                 {selectedId === 'system_score_stamp' && (
@@ -3062,7 +3108,24 @@ export default function CorrectionView({
 
 
                         <div style={{ marginTop: '2rem' }}>
-                            <h4 style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '1rem', letterSpacing: '0.05em' }}>Penalty Highlights</h4>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                                <h4 style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.05em', margin: 0 }}>Penalty Highlights</h4>
+                                <button
+                                    onClick={() => setHighlighterLabelMode(highlighterLabelMode === 'legend' ? 'individual' : 'legend')}
+                                    style={{
+                                        background: highlighterLabelMode === 'legend' ? 'var(--accent)' : 'transparent',
+                                        color: highlighterLabelMode === 'legend' ? 'white' : 'var(--text-secondary)',
+                                        border: highlighterLabelMode === 'legend' ? 'none' : '1px solid var(--border)',
+                                        borderRadius: '4px', padding: '2px 8px', fontSize: '0.65rem', fontWeight: 700,
+                                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    title="Toggle Legend Mode"
+                                >
+                                    <Plus size={10} style={{ transform: highlighterLabelMode === 'legend' ? 'rotate(45deg)' : 'none' }} />
+                                    LLEGENDA
+                                </button>
+                            </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
                                 {presets.map(preset => {
                                     const isEditing = editingPresetId === preset.id;

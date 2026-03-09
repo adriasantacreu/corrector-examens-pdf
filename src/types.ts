@@ -66,6 +66,7 @@ export type ExerciseDef = CropExercise | PagesExercise | QrCodeRegion | OcrNameR
 export interface Student {
   id: string; // studentId from QR code
   name: string; // can default to studentId, or "Codi: studentId"
+  email?: string; // Optional email for sending results
   originalOcrName?: string; // Experimental: Store the raw OCR result before fuzzy matching
   nameCropUrl?: string;     // Experimental: DataURL of the cropped name area
   pageIndexes: number[]; // Index array where pageIndexes[0] is the absolute PDF page for the student's exam page 1
