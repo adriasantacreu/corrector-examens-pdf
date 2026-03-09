@@ -15,7 +15,7 @@ interface Props {
     onBack: () => void;
 }
 
-const CLIENT_ID = "89755629853-3i114l0ocgkpv5cla6d86n8ufuammvii.apps.googleusercontent.com";
+const CLIENT_ID = "89755629853-lplrdbb6oh5vb2j169minkt8nh5nreog.apps.googleusercontent.com";
 const SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.rosters.readonly https://www.googleapis.com/auth/classroom.profile.emails https://www.googleapis.com/auth/userinfo.email';
 
 export default function ResultsView({ pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore, onUpdateStudents, onBack }: Props) {
