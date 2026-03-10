@@ -11,6 +11,9 @@ export async function loadPDF(file: File): Promise<PDFDocumentProxy> {
     const arrayBuffer = await file.arrayBuffer();
     console.log('[pdfUtils] ArrayBuffer ready, length:', arrayBuffer.byteLength);
     try {
+        if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+        }
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
         console.log('[pdfUtils] loadingTask created');
         const doc = await loadingTask.promise;
