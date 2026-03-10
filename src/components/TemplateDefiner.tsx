@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Group, Text, Transformer } from 'react-konva';
-import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, File, Award, TextSelect, Settings, FileText, Moon, Sun, LogOut, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, File, Award, TextSelect, Settings, FileText, Moon, Sun, LogOut, RefreshCw, ListChecks } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
-import type { ExerciseDef, CropExercise, PagesExercise } from '../types';
+import type { ExerciseDef, CropExercise, PagesExercise, RubricItem } from '../types';
 import FlowGradingLogo from './FlowGradingLogo';
-import Highlighter from './Highlighter';
 import HandwrittenTitle from './HandwrittenTitle';
 
 interface Props {
@@ -251,7 +250,14 @@ export default function TemplateDefiner({
             if (width > 20 && height > 20) {
                 const finalType = mode === 'draw' ? 'crop' : mode === 'draw_qr' ? 'qr_code' : mode === 'draw_ocr' ? 'ocr_name' : 'total_score';
                 const newId = `ex_${Date.now()}`;
-                const finalCrop: any = { id: newId, type: finalType, pageIndex: currentPageIndex, x, y, width, height };
+                const finalCrop: any = { 
+                    id: newId, 
+                    type: finalType, 
+                    pageIndex: currentPageIndex, 
+                    x, y, width, height,
+                    scoringMode: 'from_zero', // Default to rubric mode
+                    rubric: []
+                };
                 setExercises(prev => [...prev, finalCrop]);
                 setLastAddedId(newId);
             }
@@ -269,6 +275,35 @@ export default function TemplateDefiner({
         setExercises(prev => prev.map(ex => ex.id === id ? { ...ex, ...updates } as ExerciseDef : ex));
     };
 
+    const addRubricItem = (exId: string) => {
+        setExercises(prev => prev.map(ex => {
+            if (ex.id === exId) {
+                const items = ex.rubric || [];
+                return { ...ex, rubric: [...items, { id: `r_${Date.now()}`, label: '', points: 0 }] };
+            }
+            return ex;
+        }));
+    };
+
+    const updateRubricItem = (exId: string, itemId: string, updates: Partial<RubricItem>) => {
+        setExercises(prev => prev.map(ex => {
+            if (ex.id === exId) {
+                const items = (ex.rubric || []).map(item => item.id === itemId ? { ...item, ...updates } : item);
+                return { ...ex, rubric: items };
+            }
+            return ex;
+        }));
+    };
+
+    const removeRubricItem = (exId: string, itemId: string) => {
+        setExercises(prev => prev.map(ex => {
+            if (ex.id === exId) {
+                return { ...ex, rubric: (ex.rubric || []).filter(i => i.id !== itemId) };
+            }
+            return ex;
+        }));
+    };
+
     const currentPageRegions = exercises.filter(c => c.type !== 'pages' && c.pageIndex === currentPageIndex) as any[];
 
     const getRegionStyle = (type: string) => {
@@ -276,7 +311,6 @@ export default function TemplateDefiner({
             case 'qr_code': return { fill: 'rgba(16, 185, 129, 0.2)', stroke: '#10b981', label: 'Àrea QR' };
             case 'ocr_name': return { fill: 'rgba(234, 179, 8, 0.2)', stroke: '#eab308', label: 'Nom OCR' };
             case 'total_score': return { fill: 'rgba(239, 68, 68, 0.2)', stroke: '#ef4444', label: 'Nota final' };
-            // LIGHT BLUE FOR EXERCISES (Works better in dark mode)
             default: return { fill: 'rgba(96, 165, 250, 0.2)', stroke: '#60a5fa', label: 'Retall ex' };
         }
     };
@@ -297,7 +331,7 @@ export default function TemplateDefiner({
                 </div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '1.25rem', alignItems: 'center' }}>
                     <button onClick={onToggleTheme} className="btn-icon" title="Tema">
-                        {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+                        {isDarkMode ? <Sun size={20} /> : <Sun size={20} />}
                     </button>
                     {accessToken ? (
                         <div style={{ 
@@ -326,7 +360,7 @@ export default function TemplateDefiner({
             </header>
 
             <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                <div className="sidebar" style={{ width: '360px', flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)', borderRight: '1px solid var(--border)', padding: '1.25rem' }}>
+                <div className="sidebar" style={{ width: '380px', flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)', borderRight: '1px solid var(--border)', padding: '1.25rem' }}>
                     <div style={{ paddingBottom: '1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                         <HandwrittenTitle size="1.5rem" color="purple" noMargin={true}>Definir plantilla</HandwrittenTitle>
                         <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, fontWeight: 600 }}>
@@ -341,7 +375,7 @@ export default function TemplateDefiner({
                         <button className={`btn-icon ${mode === 'draw_total_score' ? 'active' : ''}`} onClick={() => setMode('draw_total_score')} title="Definir nota final" style={{ color: mode === 'draw_total_score' ? '#ef4444' : undefined }}><Award size={18} /></button>
                     </div>
 
-                    <div style={{ padding: '1rem 0', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div style={{ padding: '1rem 0', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                         <section>
                             <HandwrittenTitle size="1.3rem" color="yellow" noMargin={true} style={{ marginBottom: '0.5rem' }}>Regions de control</HandwrittenTitle>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
@@ -378,31 +412,71 @@ export default function TemplateDefiner({
                             {exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages').length === 0 ? (
                                 <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Cap exercici definit.</p>
                             ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                     {exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages').map((ex, idx) => {
                                         const isCurrentPageInvolved = ex.type === 'pages' ? (ex as PagesExercise).pageIndexes.includes(currentPageIndex) : (ex as any).pageIndex === currentPageIndex;
                                         const isSelectedInList = ex.id === selectedId;
                                         return (
-                                            <div key={ex.id} onClick={() => { if (ex.type === 'crop') setCurrentPageIndex((ex as any).pageIndex); setSelectedId(ex.id); }} style={{ padding: '0.75rem', background: isSelectedInList ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-tertiary)', borderRadius: '0.5rem', border: isSelectedInList ? '2px solid var(--accent)' : (isCurrentPageInvolved ? '1px solid var(--accent)' : '1px solid var(--border)'), display: 'flex', flexDirection: 'column', gap: '0.5rem', transition: 'all 0.2s ease', cursor: 'pointer' }}>
+                                            <div key={ex.id} onClick={() => { if (ex.type === 'crop') setCurrentPageIndex((ex as any).pageIndex); setSelectedId(ex.id); }} style={{ padding: '0.75rem', background: isSelectedInList ? 'rgba(59, 130, 246, 0.05)' : 'var(--bg-tertiary)', borderRadius: '0.75rem', border: isSelectedInList ? '2px solid var(--accent)' : (isCurrentPageInvolved ? '1px solid var(--accent)' : '1px solid var(--border)'), display: 'flex', flexDirection: 'column', gap: '0.75rem', transition: 'all 0.2s ease', cursor: 'pointer' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flex: 1 }}>
-                                                        <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: ex.type === 'pages' ? 'var(--accent)' : '#6366f1', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 800 }}>{idx + 1}</div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+                                                        <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: ex.type === 'pages' ? 'var(--accent)' : '#6366f1', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 800 }}>{idx + 1}</div>
                                                         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: '2px' }}>
-                                                            <span style={{ fontSize: '0.55rem', fontWeight: 800, color: ex.type === 'pages' ? 'var(--accent)' : '#6366f1' }}>{ex.type === 'pages' ? 'Exercici de pàgina' : 'Exercici de retall'}</span>
-                                                            <input ref={(el) => { inputRefs.current[ex.id] = el; }} type="text" value={ex.name || ''} placeholder="Nom exercici" onChange={e => updateExerciseMeta(ex.id, { name: e.target.value })} style={{ width: '100%', background: 'var(--bg-primary)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '0.2rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem' }} />
+                                                            <input ref={(el) => { inputRefs.current[ex.id] = el; }} type="text" value={ex.name || ''} placeholder="Nom exercici" onChange={e => updateExerciseMeta(ex.id, { name: e.target.value })} style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', padding: '2px 0', fontSize: '0.85rem', fontWeight: 700 }} onClick={e => e.stopPropagation()} />
                                                         </div>
                                                     </div>
-                                                    <button onClick={(e) => { e.stopPropagation(); removeExercise(ex.id); }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer' }}><Trash2 size={14} /></button>
+                                                    <button onClick={(e) => { e.stopPropagation(); removeExercise(ex.id); }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '4px' }}><Trash2 size={16} /></button>
                                                 </div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingLeft: '1.5rem' }}>
-                                                    <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Màx:</span>
-                                                    <NumericInput value={ex.maxScore} onChange={val => updateExerciseMeta(ex.id, { maxScore: val })} style={{ width: '40px' }} />
-                                                    <div style={{ flex: 1 }}></div>
-                                                    <div style={{ display: 'flex', gap: '0.2rem' }}>
-                                                        {(['from_max', 'from_zero'] as const).map(m => (
-                                                            <button key={m} onClick={(e) => { e.stopPropagation(); updateExerciseMeta(ex.id, { scoringMode: m }); }} style={{ fontSize: '0.65rem', padding: '2px 5px', borderRadius: '4px', border: 'none', cursor: 'pointer', background: (ex.scoringMode ?? 'from_max') === m ? 'var(--accent)' : 'var(--bg-primary)', color: (ex.scoringMode ?? 'from_max') === m ? 'white' : 'var(--text-secondary)' }}>{m === 'from_max' ? 'Max' : 'Rúb'}</button>
-                                                        ))}
+
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                        <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)' }}>MÀX:</span>
+                                                        <NumericInput value={ex.maxScore} onChange={val => updateExerciseMeta(ex.id, { maxScore: val })} style={{ width: '45px', textAlign: 'center', fontWeight: 800 }} />
                                                     </div>
+                                                    
+                                                    <div style={{ flex: 1 }}></div>
+                                                    
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); updateExerciseMeta(ex.id, { scoringMode: (ex.scoringMode === 'from_max' ? 'from_zero' : 'from_max') }); }} 
+                                                        className="btn btn-secondary" 
+                                                        style={{ height: '28px', padding: '0 0.6rem', fontSize: '0.65rem', border: ex.scoringMode === 'from_max' ? '1px solid var(--accent)' : '1px solid var(--border)', background: ex.scoringMode === 'from_max' ? 'var(--accent-light)' : 'transparent' }}
+                                                    >
+                                                        {ex.scoringMode === 'from_max' ? 'Restar de MAX' : 'Sumar rúbrica'}
+                                                    </button>
+                                                </div>
+
+                                                {/* Rubric Items Editor */}
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', borderTop: '1px solid var(--border)', paddingTop: '0.5rem' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Criteris de rúbrica</span>
+                                                        <button onClick={(e) => { e.stopPropagation(); addRubricItem(ex.id); }} className="btn btn-icon" style={{ padding: '2px', height: '20px', width: '20px', color: 'var(--accent)' }}>
+                                                            <Plus size={14} />
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    {(ex.rubric || []).map((item) => (
+                                                        <div key={item.id} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                                                            <input 
+                                                                type="text" 
+                                                                value={item.label} 
+                                                                placeholder="Concepte..." 
+                                                                onChange={e => updateRubricItem(ex.id, item.id, { label: e.target.value })}
+                                                                style={{ flex: 1, fontSize: '0.7rem', padding: '0.2rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--bg-primary)' }}
+                                                                onClick={e => e.stopPropagation()}
+                                                            />
+                                                            <NumericInput 
+                                                                value={item.points} 
+                                                                onChange={val => updateRubricItem(ex.id, item.id, { points: val || 0 })} 
+                                                                style={{ width: '40px', textAlign: 'center' }} 
+                                                            />
+                                                            <button onClick={(e) => { e.stopPropagation(); removeRubricItem(ex.id, item.id); }} style={{ padding: '2px', color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                                <X size={12} />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                    {(ex.rubric || []).length === 0 && (
+                                                        <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Clica + per afegir criteris</span>
+                                                    )}
                                                 </div>
                                             </div>
                                         );
