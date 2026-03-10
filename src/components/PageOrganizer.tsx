@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, Check, ChevronLeft, Sun, Moon, ArrowDown, ArrowUp, LogOut, ChevronsUp, ChevronsDown } from 'lucide-react';
+import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, Check, ChevronLeft, Sun, Moon, ArrowDown, ArrowUp, LogOut, ChevronsUp, ChevronsDown, RotateCcw } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import HandwrittenTitle from './HandwrittenTitle';
@@ -79,6 +79,7 @@ export default function PageOrganizer({
                 if (cancelled) return;
                 try {
                     const canvas = document.createElement('canvas');
+                    // THUMBNAILS STAY LIGHT (false for invert)
                     await renderPDFPageToCanvas(pdfDoc, pageNum, canvas, 0.5, false);
                     const url = canvas.toDataURL('image/jpeg', 0.7);
                     if (!cancelled) {
@@ -91,6 +92,12 @@ export default function PageOrganizer({
         loadOrdered();
         return () => { cancelled = true; };
     }, [pdfDoc, initialGroups, pagesPerExam]);
+
+    const handleReset = () => {
+        if (window.confirm("Vols restablir la distribució original de pàgines? Es perdran tots els canvis manuals.")) {
+            setGroups(initialGroups);
+        }
+    };
 
     const ripplePushForward = (groupIdx: number) => {
         setGroups(prev => {
@@ -219,12 +226,17 @@ export default function PageOrganizer({
 
             <main style={{ flex: 1, overflow: 'auto', padding: '2.5rem' }}>
                 <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-                    <div style={{ marginBottom: '3rem' }}>
-                        <HandwrittenTitle size="3rem" color="purple">Organitzador de pàgines</HandwrittenTitle>
-                        <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem', fontSize: '1.1rem' }}>
-                            Ajusta l'ordre dels exàmens. Utilitza les fletxes per desplaçar pàgines. Les fletxes dobles mouen en cascada.
-                            {inconsistentCount > 0 && <span style={{ color: 'var(--danger)', marginLeft: '1rem', fontWeight: 700 }}>⚠️ {inconsistentCount} alumnes amb error</span>}
-                        </p>
+                    <div style={{ marginBottom: '3rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                            <HandwrittenTitle size="3rem" color="purple">Organitzador de pàgines</HandwrittenTitle>
+                            <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem', fontSize: '1.1rem' }}>
+                                Ajusta l'ordre dels exàmens. Utilitza les fletxes per desplaçar pàgines. Les fletxes dobles mouen en cascada.
+                                {inconsistentCount > 0 && <span style={{ color: 'var(--danger)', marginLeft: '1rem', fontWeight: 700 }}>⚠️ {inconsistentCount} alumnes amb error</span>}
+                            </p>
+                        </div>
+                        <button className="btn btn-secondary" onClick={handleReset} style={{ color: 'var(--danger)', border: '1px solid var(--danger)' }}>
+                            <RotateCcw size={18} /> Restablir original
+                        </button>
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -240,7 +252,7 @@ export default function PageOrganizer({
                                     {/* Action Buttons (Vertical Arrows) */}
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '40px' }}>
                                         {gi > 0 && (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                                 <button className="btn btn-secondary" onClick={() => ripplePullBackward(gi - 1)} title="Moure EN CASCADA amunt" style={{ padding: '0.2rem', borderRadius: '0.4rem', height: '28px', border: '1px solid var(--accent)' }}>
                                                     <ChevronsUp size={16} color="var(--accent)" />
                                                 </button>

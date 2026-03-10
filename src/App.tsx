@@ -576,7 +576,7 @@ function App() {
                             <option value="" disabled>Selecciona un curs Classroom...</option>
                             {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                           </select>
-                          <button className="btn btn-primary" onClick={importClassroom} disabled={!selectedCourseId} style={{ padding: '0.75rem' }} title="Sincronitzar ara">
+                          <button className="btn btn-primary" onClick={importClassroom} disabled={!selectedCourseId} style={{ padding: '0.75rem', borderRadius: '50%', width: '42px', height: '42px', flexShrink: 0 }} title="Sincronitzar ara">
                             <RefreshCw size={18} />
                           </button>
                         </div>
