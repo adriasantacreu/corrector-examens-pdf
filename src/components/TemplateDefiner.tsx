@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Group, Text, Transformer } from 'react-konva';
-import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, File, Award, TextSelect, Settings, FileText, Moon, Sun, LogOut, RefreshCw, ListChecks } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, File, Award, TextSelect, Settings, FileText, Moon, Sun, LogOut, RefreshCw, ListChecks, X } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import type { ExerciseDef, CropExercise, PagesExercise, RubricItem } from '../types';
@@ -255,7 +255,7 @@ export default function TemplateDefiner({
                     type: finalType, 
                     pageIndex: currentPageIndex, 
                     x, y, width, height,
-                    scoringMode: 'from_zero', // Default to rubric mode
+                    scoringMode: 'from_zero', // Default to rubric mode starting from zero
                     rubric: []
                 };
                 setExercises(prev => [...prev, finalCrop]);
@@ -436,13 +436,25 @@ export default function TemplateDefiner({
                                                     
                                                     <div style={{ flex: 1 }}></div>
                                                     
-                                                    <button 
-                                                        onClick={(e) => { e.stopPropagation(); updateExerciseMeta(ex.id, { scoringMode: (ex.scoringMode === 'from_max' ? 'from_zero' : 'from_max') }); }} 
-                                                        className="btn btn-secondary" 
-                                                        style={{ height: '28px', padding: '0 0.6rem', fontSize: '0.65rem', border: ex.scoringMode === 'from_max' ? '1px solid var(--accent)' : '1px solid var(--border)', background: ex.scoringMode === 'from_max' ? 'var(--accent-light)' : 'transparent' }}
-                                                    >
-                                                        {ex.scoringMode === 'from_max' ? 'Restar de MAX' : 'Sumar rúbrica'}
-                                                    </button>
+                                                    {/* Segmented Control / Switch for Scoring Mode */}
+                                                    <div style={{ display: 'flex', background: 'var(--bg-primary)', borderRadius: '0.5rem', padding: '2px', border: '1px solid var(--border)', height: '28px' }}>
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); updateExerciseMeta(ex.id, { scoringMode: 'from_zero' }); }}
+                                                            style={{ 
+                                                                padding: '0 8px', fontSize: '0.6rem', fontWeight: 800, borderRadius: '0.35rem', border: 'none', cursor: 'pointer',
+                                                                background: (ex.scoringMode ?? 'from_max') === 'from_zero' ? 'var(--accent)' : 'transparent',
+                                                                color: (ex.scoringMode ?? 'from_max') === 'from_zero' ? 'white' : 'var(--text-secondary)'
+                                                            }}
+                                                        >0</button>
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); updateExerciseMeta(ex.id, { scoringMode: 'from_max' }); }}
+                                                            style={{ 
+                                                                padding: '0 8px', fontSize: '0.6rem', fontWeight: 800, borderRadius: '0.35rem', border: 'none', cursor: 'pointer',
+                                                                background: (ex.scoringMode ?? 'from_max') === 'from_max' ? 'var(--accent)' : 'transparent',
+                                                                color: (ex.scoringMode ?? 'from_max') === 'from_max' ? 'white' : 'var(--text-secondary)'
+                                                            }}
+                                                        >MAX</button>
+                                                    </div>
                                                 </div>
 
                                                 {/* Rubric Items Editor */}
@@ -461,7 +473,7 @@ export default function TemplateDefiner({
                                                                 value={item.label} 
                                                                 placeholder="Concepte..." 
                                                                 onChange={e => updateRubricItem(ex.id, item.id, { label: e.target.value })}
-                                                                style={{ flex: 1, fontSize: '0.7rem', padding: '0.2rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--bg-primary)' }}
+                                                                style={{ flex: 1, fontSize: '0.7rem', padding: '0.2rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
                                                                 onClick={e => e.stopPropagation()}
                                                             />
                                                             <NumericInput 
@@ -469,8 +481,8 @@ export default function TemplateDefiner({
                                                                 onChange={val => updateRubricItem(ex.id, item.id, { points: val || 0 })} 
                                                                 style={{ width: '40px', textAlign: 'center' }} 
                                                             />
-                                                            <button onClick={(e) => { e.stopPropagation(); removeRubricItem(ex.id, item.id); }} style={{ padding: '2px', color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                                                                <X size={12} />
+                                                            <button onClick={(e) => { e.stopPropagation(); removeRubricItem(ex.id, item.id); }} style={{ padding: '4px', color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                                <X size={14} />
                                                             </button>
                                                         </div>
                                                     ))}
