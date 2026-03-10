@@ -242,9 +242,9 @@ export default function CorrectionView({
         ? (rubricCounts?.[currentStudent.id]?.[currentExercise.id] ?? {})
         : {};
 
-    const rubricBase = (currentExercise?.scoringMode === 'from_zero' && currentExercise?.rubric)
-        ? (currentExercise.rubric ?? []).reduce((sum: number, item: any) => sum + item.points * (currentExRubricCounts[item.id] ?? 0), 0)
-        : null;
+    const rubricAdjustment = (currentExercise?.rubric ?? []).reduce((sum: number, item: any) => {
+        return sum + item.points * (currentExRubricCounts[item.id] ?? 0);
+    }, 0);
 
     const highlightAdjustment = currentAnnotations.reduce((sum: number, ann: any) => {
         if (ann.type === 'highlighter' && typeof ann.points === 'number') return sum + ann.points;
@@ -253,11 +253,7 @@ export default function CorrectionView({
     }, 0);
 
     const computedScore = currentExercise
-        ? rubricBase !== null
-            ? rubricBase + highlightAdjustment
-            : currentExercise.maxScore !== undefined
-                ? currentExercise.maxScore + highlightAdjustment
-                : 0 // Default to 0 instead of null for gradable exercises
+        ? Math.max(0, (currentExercise.scoringMode === 'from_zero' ? 0 : (currentExercise.maxScore || 0)) + rubricAdjustment + highlightAdjustment)
         : null;
 
     const scoreStampData = useMemo(() => {

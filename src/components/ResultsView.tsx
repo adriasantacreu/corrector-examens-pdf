@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { ChevronLeft, Send, Download, Sun, Moon, UserCheck, RefreshCw, FileDown } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from '../types';
 import { exportCombinedPDF, exportStudentPDF } from '../utils/pdfExport';
+import { calculateStudentScore } from '../utils/scoreUtils';
 import HandwrittenTitle from './HandwrittenTitle';
 import FlowGradingLogo from './FlowGradingLogo';
 
@@ -30,28 +31,13 @@ export default function ResultsView({
     pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore,
     onUpdateStudents, onBack, theme, onToggleTheme,
     accessToken, classroomStudents,
-    showDialog
+    showDialog, showConfirm
 }: Props) {
     const [isExporting, setIsProcessing] = useState(false);
     const [exportProgress, setExportProgress] = useState(0);
 
     const stats = useMemo(() => {
-        const scores = students.map(s => {
-            let total = 0;
-            exercises.forEach(ex => {
-                if (ex.type === 'crop' || ex.type === 'pages') {
-                    const anns = annotations[s.id]?.[ex.id] || [];
-                    const rubrics = rubricCounts[s.id]?.[ex.id] || {};
-                    let score = (ex.scoringMode ?? 'from_max') === 'from_max' ? (ex.maxScore || 0) : 0;
-                    anns.forEach((a: any) => { if (a.score) score += a.score; });
-                    Object.entries(rubrics).forEach(([_, count]) => { if (count) score += count * -0.5; });
-                    total += Math.max(0, score);
-                }
-            });
-            const maxPossible = exercises.reduce((acc, ex) => acc + (ex.maxScore || 0), 0);
-            return maxPossible > 0 ? (total / maxPossible) * targetMaxScore : 0;
-        });
-
+        const scores = students.map(s => calculateStudentScore(s.id, exercises, annotations, rubricCounts, targetMaxScore).normalized);
         const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
         const pass = scores.filter(s => s >= targetMaxScore / 2).length;
         return { avg: avg.toFixed(2), passRate: scores.length ? Math.round((pass / scores.length) * 100) : 0, passCount: pass, total: scores.length };
@@ -136,28 +122,23 @@ export default function ResultsView({
                             </thead>
                             <tbody>
                                 {students.map((s, i) => {
-                                    let total = 0;
-                                    exercises.forEach(ex => {
-                                        if (ex.type === 'crop' || ex.type === 'pages') {
-                                            const anns = annotations[s.id]?.[ex.id] || [];
-                                            const rubrics = rubricCounts[s.id]?.[ex.id] || {};
-                                            let score = (ex.scoringMode ?? 'from_max') === 'from_max' ? (ex.maxScore || 0) : 0;
-                                            anns.forEach((a: any) => { if (a.score) score += a.score; });
-                                            Object.entries(rubrics).forEach(([_, count]) => { if (count) score += count * -0.5; });
-                                            total += Math.max(0, score);
-                                        }
-                                    });
-                                    const maxPossible = exercises.reduce((acc, ex) => acc + (ex.maxScore || 0), 0);
-                                    const finalScore = maxPossible > 0 ? (total / maxPossible) * targetMaxScore : 0;
-                                    const isPass = finalScore >= targetMaxScore / 2;
+                                    const scoreData = calculateStudentScore(s.id, exercises, annotations, rubricCounts, targetMaxScore);
+                                    const isPass = scoreData.normalized >= targetMaxScore / 2;
 
                                     return (
                                         <tr key={s.id}>
                                             <td style={{ fontWeight: 800, color: 'var(--text-secondary)' }}>{i + 1}</td>
                                             <td>
-                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                    <span style={{ fontWeight: 700, fontSize: '1rem' }}>{s.name}</span>
-                                                    {s.email && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{s.email}</span>}
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                                    {s.nameCropUrl && (
+                                                        <div style={{ width: '140px', height: '42px', overflow: 'hidden', borderRadius: '0.5rem', border: '1px solid var(--border)', background: 'white', flexShrink: 0, padding: '2px' }}>
+                                                            <img src={s.nameCropUrl} alt="OCR Name" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                                        </div>
+                                                    )}
+                                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                        <span style={{ fontWeight: 700, fontSize: '1rem' }}>{s.name}</span>
+                                                        {s.email && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{s.email}</span>}
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td>
@@ -184,7 +165,7 @@ export default function ResultsView({
                                             </td>
                                             <td style={{ textAlign: 'right' }}>
                                                 <span style={{ fontSize: '1.25rem', fontWeight: 900, color: isPass ? 'var(--success)' : 'var(--danger)' }}>
-                                                    {finalScore.toFixed(2)}
+                                                    {scoreData.normalized.toFixed(2)}
                                                 </span>
                                             </td>
                                             <td style={{ textAlign: 'center' }}>
@@ -192,7 +173,14 @@ export default function ResultsView({
                                                     <button className="btn-icon" title="Baixar PDF" onClick={() => handleDownloadStudent(s)}>
                                                         <Download size={18} />
                                                     </button>
-                                                    <button className="btn-icon" title="Enviar per correu" disabled={!s.email || !accessToken}>
+                                                    <button 
+                                                        className="btn-icon" 
+                                                        title="Enviar per correu" 
+                                                        disabled={!s.email || !accessToken}
+                                                        onClick={() => showConfirm("Enviar correu", `Vols enviar la correcció a ${s.name} (${s.email})?`, () => {
+                                                            showDialog("Properament", "Aquesta funcionalitat s'implementarà aviat.");
+                                                        })}
+                                                    >
                                                         <Send size={18} />
                                                     </button>
                                                 </div>

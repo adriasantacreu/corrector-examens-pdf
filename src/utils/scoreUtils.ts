@@ -17,15 +17,14 @@ export const calculateStudentScore = (
         const exRubricCounts = rubricCounts[studentId]?.[ex.id] || {};
 
         const highlightAdj = exAnns.reduce((s, a) => (
-            a.type === 'highlighter' && typeof a.points === 'number' ? s + a.points :
-            (a.type === 'text' && typeof a.score === 'number' ? s + a.score : s)
+            a.type === 'highlighter' && typeof (a as any).points === 'number' ? s + (a as any).points :
+            (a.type === 'text' && typeof (a as any).score === 'number' ? s + (a as any).score : s)
         ), 0);
 
-        const rubricBase = (ex.scoringMode === 'from_zero' && ex.rubric) ?
-            ex.rubric.reduce((s, item) => s + item.points * (exRubricCounts[item.id] ?? 0), 0) :
-            (ex.maxScore ?? 0);
+        const rubricAdj = (ex.rubric ?? []).reduce((s, item) => s + item.points * (exRubricCounts[item.id] ?? 0), 0);
+        const base = (ex.scoringMode === 'from_zero') ? 0 : (ex.maxScore ?? 0);
 
-        total += (rubricBase + highlightAdj);
+        total += Math.max(0, base + rubricAdj + highlightAdj);
         maxPossible += (ex.maxScore ?? 0);
     }
 
