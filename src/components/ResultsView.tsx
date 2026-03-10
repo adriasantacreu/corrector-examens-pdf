@@ -74,7 +74,6 @@ export default function ResultsView({
     const handleDownloadStudent = async (student: Student) => {
         setIsProcessing(true);
         try {
-            // Cast to any to avoid complex AnnotationStore sub-indexing TS issues here
             await exportStudentPDF(pdfDoc, student, exercises, annotations as any, rubricCounts, targetMaxScore);
         } catch (err) {
             showDialog("Error", "Error generant el PDF individual.");
@@ -108,7 +107,7 @@ export default function ResultsView({
                         <HandwrittenTitle size="3.5rem" color="green">Resultats i Exportació</HandwrittenTitle>
                         
                         <div style={{ display: 'flex', gap: '1.5rem' }}>
-                            <div className="card" style={{ padding: '1.5rem 2.5rem', textAlign: 'center', border: '2px solid var(--accent)', background: 'var(--accent-light)' }}>
+                            <div className="card" style={{ padding: '1.5rem 2.5rem', textAlign: 'center', border: '2px solid var(--accent)', background: 'rgba(59, 130, 246, 0.05)' }}>
                                 <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Mitjana de classe</div>
                                 <div style={{ fontSize: '2.5rem', fontWeight: 900, color: 'var(--text-primary)' }}>{stats.avg}<span style={{ fontSize: '1rem', opacity: 0.5 }}>/{targetMaxScore}</span></div>
                             </div>

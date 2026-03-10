@@ -1598,7 +1598,7 @@ export default function CorrectionView({
                                         scope: 'current',
                                         currentStudentIdx: studentIdx,
                                         scaleFactor: currentFactor,
-                                        onProgress: (d, t) => setExportProgress({ done: d, total: t })
+                                        onProgress: (d: number, t: number) => setExportProgress({ done: d, total: t })
                                     } as any);
                                 } finally {
                                     setIsExporting(false);
@@ -1663,7 +1663,7 @@ export default function CorrectionView({
                                         scope: 'current',
                                         currentStudentIdx: studentIdx,
                                         scaleFactor: currentFactor,
-                                        onProgress: (d, t) => setExportProgress({ done: d, total: t })
+                                        onProgress: (d: number, t: number) => setExportProgress({ done: d, total: t })
                                     });
                                 } finally {
                                     setIsExporting(false);
@@ -1696,7 +1696,7 @@ export default function CorrectionView({
                                         scope: 'all',
                                         currentStudentIdx: studentIdx,
                                         scaleFactor: currentFactor,
-                                        onProgress: (d, t) => setExportProgress({ done: d, total: t })
+                                        onProgress: (d: number, t: number) => setExportProgress({ done: d, total: t })
                                     });
                                 } finally {
                                     setIsExporting(false);
@@ -2960,13 +2960,28 @@ export default function CorrectionView({
                             )}
                         </div>
 
-                        {/* Rubric panel — only shown when scoringMode === 'from_zero' */}
-                        {currentExercise.scoringMode === 'from_zero' && currentExercise.rubric && currentExercise.rubric.length > 0 && (
-                            <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
-                                    <h4 style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.05em', margin: 0 }}>
-                                        Rúbrica
-                                    </h4>
+                        {/* Rubric panel — always shown if available, or with 'define' button if empty */}
+                        <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+                                <h4 style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.05em', margin: 0 }}>
+                                    Rúbrica
+                                </h4>
+                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                    {(!currentExercise.rubric || currentExercise.rubric.length === 0) && (
+                                        <button
+                                            onClick={() => setIsEditingRubric(true)}
+                                            style={{
+                                                background: 'transparent',
+                                                color: 'var(--text-secondary)',
+                                                border: '1px solid var(--border)',
+                                                borderRadius: '4px', padding: '2px 8px', fontSize: '0.65rem', fontWeight: 700,
+                                                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            <Plus size={10} /> DEFINIR RÚBRICA
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => setIsEditingRubric(!isEditingRubric)}
                                         style={{ background: 'transparent', border: 'none', color: isEditingRubric ? 'var(--accent)' : 'var(--text-secondary)', cursor: 'pointer', padding: '2px' }}
@@ -2975,9 +2990,11 @@ export default function CorrectionView({
                                         {isEditingRubric ? <Check size={14} /> : <Pencil size={14} />}
                                     </button>
                                 </div>
+                            </div>
 
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                                    {currentExercise.rubric.map((item, idx) => {
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                                {currentExercise.rubric && currentExercise.rubric.length > 0 ? (
+                                    currentExercise.rubric.map((item, idx) => {
                                         const count = currentExRubricCounts[item.id] ?? 0;
                                         const contribution = item.points * count;
 
@@ -3059,55 +3076,60 @@ export default function CorrectionView({
                                                 </span>
                                             </div>
                                         );
-                                    })}
-
-                                    {isEditingRubric && (
-                                        <button
-                                            onClick={() => {
-                                                const newRubric = [...(currentExercise.rubric || []), { id: `rub_${Date.now()}`, label: 'Nou ítem', points: 0 }];
-                                                onUpdateExercise({ ...currentExercise, rubric: newRubric });
-                                            }}
-                                            style={{ marginTop: '0.4rem', background: 'var(--bg-primary)', border: '1px dashed var(--border)', borderRadius: '4px', color: 'var(--text-secondary)', fontSize: '0.7rem', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                                        >
-                                            <Plus size={12} /> Afegir ítem
-                                        </button>
-                                    )}
-                                </div>
-                                {/* Summary breakdown */}
-                                {Object.values(currentExRubricCounts).some(v => v > 0) && (
-                                    <div style={{ marginTop: '0.6rem', paddingTop: '0.5rem', borderTop: 'none', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                                        {currentExercise.rubric.filter(item => (currentExRubricCounts[item.id] ?? 0) > 0).map(item => {
-                                            const count = currentExRubricCounts[item.id];
-                                            const contribution = item.points * count;
-                                            return (
-                                                <span key={item.id} style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                                                    {count}× {item.label} → <strong style={{ color: contribution >= 0 ? 'var(--success)' : 'var(--danger)' }}>{contribution > 0 ? '+' : ''}{contribution.toFixed(2)} pt</strong>
-                                                </span>
-                                            );
-                                        })}
-                                        {(() => {
-                                            const colorPoints = currentAnnotations.reduce((sum, ann) => (ann.type === 'highlighter' && typeof ann.points === 'number') ? sum + ann.points : sum, 0);
-                                            const textPoints = currentAnnotations.reduce((sum, ann) => (ann.type === 'text' && typeof ann.score === 'number') ? sum + ann.score : sum, 0);
-
-                                            return (
-                                                <>
-                                                    {colorPoints !== 0 && (
-                                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                                                            Highlights → <strong style={{ color: colorPoints >= 0 ? 'var(--success)' : 'var(--danger)' }}>{colorPoints > 0 ? '+' : ''}{colorPoints.toFixed(2)} pt</strong>
-                                                        </span>
-                                                    )}
-                                                    {textPoints !== 0 && (
-                                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                                                            Comentaris → <strong style={{ color: textPoints >= 0 ? 'var(--success)' : 'var(--danger)' }}>{textPoints > 0 ? '+' : ''}{textPoints.toFixed(2)} pt</strong>
-                                                        </span>
-                                                    )}
-                                                </>
-                                            );
-                                        })()}
+                                    })
+                                ) : (
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontStyle: 'italic', textAlign: 'center', padding: '0.5rem' }}>
+                                        Sense criteris definits.
                                     </div>
                                 )}
+
+                                {isEditingRubric && (
+                                    <button
+                                        onClick={() => {
+                                            const newRubric = [...(currentExercise.rubric || []), { id: `rub_${Date.now()}`, label: 'Nou ítem', points: 0 }];
+                                            onUpdateExercise({ ...currentExercise, rubric: newRubric });
+                                        }}
+                                        style={{ marginTop: '0.4rem', background: 'var(--bg-primary)', border: '1px dashed var(--border)', borderRadius: '4px', color: 'var(--text-secondary)', fontSize: '0.7rem', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                    >
+                                        <Plus size={12} /> Afegir criteri
+                                    </button>
+                                )}
                             </div>
-                        )}
+                            {/* Summary breakdown */}
+                            {currentExercise.rubric && Object.values(currentExRubricCounts).some(v => v > 0) && (
+                                <div style={{ marginTop: '0.6rem', paddingTop: '0.5rem', borderTop: 'none', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                    {currentExercise.rubric.filter(item => (currentExRubricCounts[item.id] ?? 0) > 0).map(item => {
+                                        const count = currentExRubricCounts[item.id];
+                                        const contribution = item.points * count;
+                                        return (
+                                            <span key={item.id} style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                                {count}× {item.label} → <strong style={{ color: contribution >= 0 ? 'var(--success)' : 'var(--danger)' }}>{contribution > 0 ? '+' : ''}{contribution.toFixed(2)} pt</strong>
+                                            </span>
+                                        );
+                                    })}
+                                    {(() => {
+                                        const colorPoints = currentAnnotations.reduce((sum, ann) => (ann.type === 'highlighter' && typeof ann.points === 'number') ? sum + ann.points : sum, 0);
+                                        const textPoints = currentAnnotations.reduce((sum, ann) => (ann.type === 'text' && typeof ann.score === 'number') ? sum + ann.score : sum, 0);
+
+                                        return (
+                                            <>
+                                                {colorPoints !== 0 && (
+                                                    <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                                        Highlights → <strong style={{ color: colorPoints >= 0 ? 'var(--success)' : 'var(--danger)' }}>{colorPoints > 0 ? '+' : ''}{colorPoints.toFixed(2)} pt</strong>
+                                                    </span>
+                                                )}
+                                                {textPoints !== 0 && (
+                                                    <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                                        Comentaris → <strong style={{ color: textPoints >= 0 ? 'var(--success)' : 'var(--danger)' }}>{textPoints > 0 ? '+' : ''}{textPoints.toFixed(2)} pt</strong>
+                                                    </span>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                </div>
+                            )}
+                        </div>
+
 
 
 

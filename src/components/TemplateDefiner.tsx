@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Group, Text, Transformer } from 'react-konva';
-import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, Award, TextSelect, Sun, LogOut, RefreshCw, X, Pencil } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, Award, TextSelect, Sun, LogOut, RefreshCw, X } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import type { ExerciseDef, CropExercise, PagesExercise, RubricItem } from '../types';
