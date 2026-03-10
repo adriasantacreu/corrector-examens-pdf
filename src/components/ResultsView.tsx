@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ChevronLeft, Mail, Send, Download, Sun, Moon, Trophy, UserCheck, RefreshCw, MailQuestion, CheckCircle, FileDown, Layers } from 'lucide-react';
+import { ChevronLeft, Send, Download, Sun, Moon, UserCheck, RefreshCw, FileDown } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from '../types';
 import { exportCombinedPDF, exportStudentPDF } from '../utils/pdfExport';
 import HandwrittenTitle from './HandwrittenTitle';
@@ -178,7 +178,7 @@ export default function ResultsView({
                                                     </select>
                                                 ) : (
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', fontSize: '0.8rem', fontStyle: 'italic' }}>
-                                                        <MailQuestion size={14} /> No vinculat
+                                                        <RefreshCw size={14} /> No vinculat
                                                     </div>
                                                 )}
                                             </td>

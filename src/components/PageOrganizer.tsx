@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, Check, ChevronLeft, Sun, Moon, ArrowDown, ArrowUp, LogOut, ChevronsUp, ChevronsDown, RotateCcw } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
@@ -38,14 +38,11 @@ export default function PageOrganizer({
         let cancelled = false;
         const totalPages = pdfDoc.numPages;
         
-        // CUSTOM THUMBNAIL GENERATION ORDER
-        // 1. All Page 1s, 2. All Last Pages, 3. All Page 2s, 4. All N-1 pages...
         const generateOrder = () => {
             const order: number[] = [];
             const processed = new Set<number>();
             
             for (let p = 0; p < pagesPerExam; p++) {
-                // p-th page of each student
                 for (let i = 0; i < initialGroups.length; i++) {
                     const page = initialGroups[i].pageIndexes[p];
                     if (page && !processed.has(page)) {
@@ -53,7 +50,6 @@ export default function PageOrganizer({
                         processed.add(page);
                     }
                 }
-                // (N-p)-th page of each student
                 const lastP = pagesPerExam - 1 - p;
                 if (lastP > p) {
                     for (let i = 0; i < initialGroups.length; i++) {
@@ -66,7 +62,6 @@ export default function PageOrganizer({
                 }
             }
             
-            // Add any missing pages
             for (let i = 1; i <= totalPages; i++) {
                 if (!processed.has(i)) order.push(i);
             }
@@ -79,7 +74,6 @@ export default function PageOrganizer({
                 if (cancelled) return;
                 try {
                     const canvas = document.createElement('canvas');
-                    // THUMBNAILS STAY LIGHT (false for invert)
                     await renderPDFPageToCanvas(pdfDoc, pageNum, canvas, 0.5, false);
                     const url = canvas.toDataURL('image/jpeg', 0.7);
                     if (!cancelled) {
@@ -249,7 +243,6 @@ export default function PageOrganizer({
                                         <input value={group.name} onChange={e => setGroups(prev => prev.map((g, i) => i === gi ? { ...g, name: e.target.value } : g))} style={{ fontWeight: 800, fontSize: '0.9rem', border: 'none', background: 'transparent', outline: 'none', color: 'var(--text-primary)', width: '100%' }} />
                                     </div>
 
-                                    {/* Action Buttons (Vertical Arrows) */}
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '40px' }}>
                                         {gi > 0 && (
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -273,7 +266,6 @@ export default function PageOrganizer({
                                         )}
                                     </div>
 
-                                    {/* Thumbnails Row */}
                                     <div style={{ flex: 1, display: 'flex', gap: '1rem', overflowX: 'auto', padding: '1rem', background: 'var(--bg-tertiary)20', borderRadius: '1rem', minHeight: '240px' }}>
                                         {group.pageIndexes.map((p, pi) => (
                                             <div key={`${p}-${pi}`} draggable onDragStart={() => handleDragStart(gi, pi)} style={{ position: 'relative', cursor: 'grab', background: 'white', borderRadius: '0.6rem', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', overflow: 'hidden', flexShrink: 0 }}>

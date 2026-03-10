@@ -379,7 +379,7 @@ export async function exportCombinedPDF(pdfDoc: PDFDocumentProxy, students: Stud
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
 }
 
-// RESTORED MISSING EXPORTS
+// RESTORED MISSING EXPORTS WITH CORRECT SIGNATURES
 export async function exportOriginalLayoutPDF(opts: { pdfDoc: PDFDocumentProxy; students: Student[]; exercises: ExerciseDef[]; annotations: AnnotationStore; rubricCounts: RubricCountStore; scope: 'current' | 'all'; currentStudentIdx: number; scaleFactor?: number; onProgress?: (done: number, total: number) => void; }): Promise<void> {
     const targets = opts.scope === 'current' ? [opts.students[opts.currentStudentIdx]] : opts.students;
     let done = 0;
@@ -393,7 +393,7 @@ export async function exportOriginalLayoutPDF(opts: { pdfDoc: PDFDocumentProxy; 
     }
 }
 
-export async function exportAnnotatedPDF(opts: { pdfDoc: PDFDocumentProxy; students: Student[]; exercises: ExerciseDef[]; annotations: AnnotationStore; scope: 'current' | 'all'; currentStudentIdx: number; onProgress?: (done: number, total: number) => void; }): Promise<void> {
+export async function exportAnnotatedPDF(opts: { pdfDoc: PDFDocumentProxy; students: Student[]; exercises: ExerciseDef[]; annotations: AnnotationStore; rubricCounts: RubricCountStore; scope: 'current' | 'all'; currentStudentIdx: number; onProgress?: (done: number, total: number) => void; }): Promise<void> {
     const targets = opts.scope === 'current' ? [opts.students[opts.currentStudentIdx]] : opts.students;
     const pdf = await PDFDocument.create(), font = await pdf.embedFont(StandardFonts.HelveticaBold);
     let done = 0; const total = targets.length * opts.exercises.length;

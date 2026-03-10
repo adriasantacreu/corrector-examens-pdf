@@ -8,7 +8,6 @@ import PageOrganizer from './components/PageOrganizer';
 import ResultsView from './components/ResultsView';
 import FlowGradingLogo from './components/FlowGradingLogo';
 import HandwrittenTitle from './components/HandwrittenTitle';
-import Highlighter from './components/Highlighter';
 import { fetchClassroomStudents, matchClassroomStudents } from './utils/classroomUtils';
 import { storePDFLocal, getPDFLocal } from './utils/dbUtils';
 

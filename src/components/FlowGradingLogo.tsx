@@ -1,46 +1,41 @@
-import React from 'react';
-import Highlighter from './Highlighter';
+import { Highlighter } from 'lucide-react';
 
-export default function FlowGradingLogo({ size = '2.2rem', rotation = -2.5, extraThick = false }: { size?: string, rotation?: number, extraThick?: boolean }) {
-    // Letters with individual offsets for "real handwritten" look
-    // "Flow" uses fontWeight 200 for maximum contrast with "Grading" (900)
-    const letters = [
-        { char: 'F', y: -2, r: 2, weight: 200 },
-        { char: 'l', y: 1, r: -1.5, weight: 200 },
-        { char: 'o', y: -3, r: 3, weight: 200 },
-        { char: 'w', y: 0, r: -1, weight: 200 },
-        { char: 'G', y: 2, r: 2, weight: 900, ml: '4px' },
-        { char: 'r', y: -1, r: -2, weight: 900 },
-        { char: 'a', y: 3, r: 1.5, weight: 900 },
-        { char: 'd', y: -2, r: 2.5, weight: 900 },
-        { char: 'i', y: 1, r: -1.5, weight: 900 },
-        { char: 'n', y: 0, r: 2, weight: 900 },
-        { char: 'g', y: -3, r: -2, weight: 900 },
-    ];
-
+export default function FlowGradingLogo({ 
+    size = '3rem', 
+    rotation = -4.5, 
+    extraThick = false 
+}: { 
+    size?: string, 
+    rotation?: number,
+    extraThick?: boolean
+}) {
+    const letters = "FlowGrading".split("");
+    
     return (
-        <Highlighter thick={!extraThick} className={extraThick ? 'highlighter-extra-thick' : ''} color="blue" rotation={rotation} textStyle={{ fontSize: size }}>
-            <span style={{ 
-                display: 'inline-flex', 
-                alignItems: 'baseline', 
-                transform: `rotate(${rotation * 0.15}deg)`,
-                padding: '0 0.5rem'
-            }}>
-                {letters.map((l, i) => (
-                    <span 
-                        key={i} 
-                        style={{ 
-                            display: 'inline-block',
-                            transform: `translateY(${l.y}px) rotate(${l.r}deg)`,
-                            fontWeight: l.weight,
-                            marginLeft: l.ml || '0',
-                            transition: 'all 0.3s ease'
-                        }}
-                    >
-                        {l.char}
-                    </span>
-                ))}
-            </span>
-        </Highlighter>
+        <div className={`highlighter-container ${extraThick ? 'highlighter-extra-thick' : 'highlighter-thick'}`} style={{ transform: `rotate(${rotation}deg)` }}>
+            <div className="highlighter-stroke" style={{ top: '48%' }}></div>
+            <div className="highlighter-text" style={{ fontSize: size, display: 'flex', alignItems: 'baseline', gap: '0.02em' }}>
+                {letters.map((char, i) => {
+                    // Random-ish handwriting feel
+                    const y = (i % 3 === 0) ? -2 : (i % 2 === 0) ? 2 : 0;
+                    const r = (i % 2 === 0) ? 1.5 : -1.5;
+                    const isFlow = i < 4;
+                    
+                    return (
+                        <span 
+                            key={i} 
+                            style={{ 
+                                fontWeight: isFlow ? 200 : 900,
+                                transform: `translateY(${y}px) rotate(${r}deg)`,
+                                display: 'inline-block',
+                                transition: 'all 0.3s ease'
+                            }}
+                        >
+                            {char}
+                        </span>
+                    );
+                })}
+            </div>
+        </div>
     );
 }
