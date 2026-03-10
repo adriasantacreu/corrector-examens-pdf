@@ -46,6 +46,7 @@ interface PersistedState {
   fileName: string;
   isSent?: boolean;
   progress?: number;
+  lastModified?: string;
 }
 
 interface RecentSession {
@@ -215,10 +216,10 @@ function App() {
   };
 
   useEffect(() => {
+    fetchRecentSessions();
     if (accessToken) {
       fetchUserInfo(accessToken);
       fetchCourses(accessToken);
-      fetchRecentSessions();
     }
   }, [accessToken]);
 
@@ -259,6 +260,41 @@ function App() {
     } catch (err) {
       console.error("[App] Error fetching students", err);
     }
+  };
+
+  const calculateProgressFromData = (s: Student[], ex: ExerciseDef[], anns: AnnotationStore) => {
+    if (s.length === 0) return 0;
+    let totalEx = s.length * ex.length;
+    if (totalEx === 0) return 0;
+    let comp = 0;
+    s.forEach(student => {
+      const studentAnns = anns[student.id] || {};
+      ex.forEach(exercise => {
+        if (studentAnns[exercise.id] && studentAnns[exercise.id].length > 0) comp++;
+      });
+    });
+    return Math.round((comp / totalEx) * 100);
+  };
+
+  const fetchLocalSessions = (): RecentSession[] => {
+    const sessions: RecentSession[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(STORAGE_PREFIX)) {
+        try {
+          const content = JSON.parse(localStorage.getItem(key) || '{}');
+          sessions.push({
+            fileName: content.fileName || key.replace(STORAGE_PREFIX, ''),
+            progress: content.progress || 0,
+            isSent: content.isSent || false,
+            lastModified: content.lastModified || new Date().toISOString()
+          });
+        } catch (e) {
+          console.error("Error parsing local session", key, e);
+        }
+      }
+    }
+    return sessions;
   };
 
   const saveToDrive = async (fileName: string, data: any) => {
@@ -318,24 +354,12 @@ function App() {
     }
   };
 
-  const calculateProgress = () => {
-    if (students.length === 0) return 0;
-    let totalExercises = students.length * exercises.length;
-    if (totalExercises === 0) return 0;
-
-    let completed = 0;
-    students.forEach(s => {
-      const studentAnns = annotations[s.id] || {};
-      exercises.forEach(ex => {
-        if (studentAnns[ex.id] && studentAnns[ex.id].length > 0) {
-          completed++;
-        }
-      });
-    });
-    return Math.round((completed / totalExercises) * 100);
-  };
 
   const fetchRecentSessions = async () => {
+    // Start with local ones
+    let sessions: RecentSession[] = fetchLocalSessions();
+    setRecentSessions([...sessions].sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()));
+
     if (!accessToken) return;
     try {
       const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=mimeType='application/json' and parents in 'appDataFolder' and name contains '.json'&spaces=appDataFolder&fields=files(id,name,modifiedTime)`, {
@@ -344,7 +368,7 @@ function App() {
       const data = await res.json();
       const files = data.files || [];
 
-      const sessions: RecentSession[] = [];
+      const cloudSessions: RecentSession[] = [];
       for (const file of files) {
         if (file.name === 'correccio_app_global.json') continue;
         try {
@@ -352,17 +376,32 @@ function App() {
             headers: { 'Authorization': `Bearer ${accessToken}` }
           });
           const content = await contentRes.json();
-          sessions.push({
+          cloudSessions.push({
             fileName: content.fileName || file.name.replace('.json', ''),
             progress: content.progress || 0,
             isSent: content.isSent || false,
-            lastModified: file.modifiedTime
+            lastModified: file.modifiedTime || content.lastModified || new Date().toISOString()
           });
         } catch (e) {
           console.warn("Error loading session metadata for", file.name, e);
         }
       }
-      setRecentSessions(sessions.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()));
+
+      // Merge: priority to cloud if same name but different time, or just combine unique
+      const combined = [...sessions];
+      cloudSessions.forEach(cs => {
+        const existingIdx = combined.findIndex(s => s.fileName === cs.fileName);
+        if (existingIdx === -1) {
+          combined.push(cs);
+        } else {
+          // If cloud is newer, update (optionally)
+          if (new Date(cs.lastModified).getTime() > new Date(combined[existingIdx].lastModified).getTime()) {
+            combined[existingIdx] = cs;
+          }
+        }
+      });
+
+      setRecentSessions(combined.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()));
     } catch (err) {
       console.error("[App] Error fetching recent sessions", err);
     }
@@ -478,7 +517,8 @@ function App() {
         accessToken,
         userEmail,
         isSent,
-        progress: calculateProgress()
+        progress: calculateProgressFromData(students, exercises, annotations),
+        lastModified: new Date().toISOString()
       };
       saveState(stateToSave);
 
@@ -798,11 +838,11 @@ function App() {
                 )}
               </div>
 
-              {accessToken && recentSessions.length > 0 && (
+              {recentSessions.length > 0 && (
                 <div style={{ marginTop: '3rem', width: '100%', maxWidth: '600px', textAlign: 'left' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
                     <RefreshCw size={18} color="var(--accent)" />
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Darreres sessions al núvol</h3>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Sessions recents (Local + Núvol)</h3>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     {recentSessions.map(session => (
