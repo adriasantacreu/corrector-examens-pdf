@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ChevronLeft, Send, Download, Sun, Moon, UserCheck, RefreshCw, FileDown } from 'lucide-react';
+import { ChevronLeft, Send, Download, Sun, Moon, UserCheck, RefreshCw, FileDown, XCircle, MailCheck } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from '../types';
 import { exportCombinedPDF, exportStudentPDF } from '../utils/pdfExport';
 import { calculateStudentScore } from '../utils/scoreUtils';
@@ -30,11 +30,12 @@ interface Props {
 export default function ResultsView({
     pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore,
     onUpdateStudents, onBack, theme, onToggleTheme,
-    accessToken, classroomStudents,
+    accessToken, userEmail, classroomStudents,
     showDialog, showConfirm
 }: Props) {
     const [isExporting, setIsProcessing] = useState(false);
     const [exportProgress, setExportProgress] = useState(0);
+    const [isSendingTest, setIsSendingTest] = useState(false);
 
     const stats = useMemo(() => {
         const scores = students.map(s => calculateStudentScore(s.id, exercises, annotations, rubricCounts, targetMaxScore).normalized);
@@ -69,8 +70,54 @@ export default function ResultsView({
     };
 
     const handleManualLink = (studentId: string, classroomEmail: string) => {
-        const updated = students.map(s => s.id === studentId ? { ...s, email: classroomEmail } : s);
+        const updated = students.map(s => s.id === studentId ? { ...s, email: classroomEmail || undefined } : s);
         onUpdateStudents(updated);
+    };
+
+    const handleSendTestEmail = async () => {
+        if (!accessToken || !userEmail) {
+            showDialog("Error", "Has d'estar connectat per enviar un correu de prova.");
+            return;
+        }
+
+        setIsSendingTest(true);
+        try {
+            const subject = "Prova d'enviament - FlowGrading";
+            const body = `Hola!\n\nAixò és un correu de prova de FlowGrading per verificar que la integració amb Gmail funciona correctament.\n\nSi reps aquest correu, ja pots enviar les correccions als teus alumnes.`;
+            
+            const message = [
+                `To: ${userEmail}`,
+                `Subject: ${subject}`,
+                'Content-Type: text/plain; charset="UTF-8"',
+                '',
+                body
+            ].join('\r\n');
+
+            const encodedMessage = btoa(unescape(encodeURIComponent(message)))
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=+$/, '');
+
+            const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ raw: encodedMessage })
+            });
+
+            if (response.ok) {
+                showDialog("Test enviat", `S'ha enviat un correu de prova a ${userEmail}. Revisa la teva bústia.`);
+            } else {
+                const err = await response.json();
+                throw new Error(err.error?.message || "Error desconegut");
+            }
+        } catch (err: any) {
+            showDialog("Error d'enviament", `No s'ha pogut enviar el correu: ${err.message}`);
+        } finally {
+            setIsSendingTest(false);
+        }
     };
 
     return (
@@ -78,9 +125,20 @@ export default function ResultsView({
             <header className="header">
                 <div style={{ flex: 1 }}><button className="btn-icon" onClick={onBack} title="Enrere"><ChevronLeft size={28} /></button></div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}><FlowGradingLogo size="2.2rem" /></div>
-                <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '1.25rem', alignItems: 'center' }}>
+                <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '1rem', alignItems: 'center' }}>
                     <button className="btn-icon" onClick={onToggleTheme}>{theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}</button>
-                    <button className="btn btn-primary" onClick={handleDownloadAll} disabled={isExporting}>
+                    
+                    <button 
+                        className="btn btn-secondary" 
+                        onClick={handleSendTestEmail} 
+                        disabled={isSendingTest || !accessToken}
+                        style={{ height: '42px', fontSize: '0.85rem' }}
+                    >
+                        {isSendingTest ? <RefreshCw size={16} className="spin" /> : <MailCheck size={16} />}
+                        Enviar-me test
+                    </button>
+
+                    <button className="btn btn-primary" onClick={handleDownloadAll} disabled={isExporting} style={{ height: '42px' }}>
                         {isExporting ? <RefreshCw size={18} className="spin" /> : <FileDown size={18} />}
                         {isExporting ? `Generant... ${exportProgress}%` : 'Baixar tots els PDF'}
                     </button>
@@ -142,21 +200,42 @@ export default function ResultsView({
                                                 </div>
                                             </td>
                                             <td>
-                                                {s.email ? (
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--success)', fontWeight: 700, fontSize: '0.8rem' }}>
-                                                        <UserCheck size={14} /> Vinculat
+                                                {classroomStudents.length > 0 ? (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <select 
+                                                            value={s.email || ""}
+                                                            onChange={(e) => handleManualLink(s.id, e.target.value)}
+                                                            style={{ 
+                                                                padding: '0.4rem 0.75rem', borderRadius: '0.5rem', fontSize: '0.8rem', fontWeight: 600, 
+                                                                border: s.email ? '1px solid var(--success)' : '1px solid var(--border)', 
+                                                                color: s.email ? 'var(--success)' : 'var(--text-secondary)',
+                                                                background: 'var(--bg-primary)',
+                                                                cursor: 'pointer', flex: 1
+                                                            }}
+                                                        >
+                                                            <option value="">No vinculat</option>
+                                                            {classroomStudents.map(cs => (
+                                                                <option key={cs.profile.emailAddress} value={cs.profile.emailAddress}>
+                                                                    {cs.profile.name.fullName}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                        {s.email && <UserCheck size={16} color="var(--success)" />}
                                                     </div>
-                                                ) : classroomStudents.length > 0 ? (
-                                                    <select 
-                                                        onChange={(e) => handleManualLink(s.id, e.target.value)}
-                                                        style={{ padding: '0.3rem 0.6rem', borderRadius: '0.5rem', fontSize: '0.75rem', fontWeight: 600, border: '1px solid var(--accent)', color: 'var(--accent)', background: 'transparent' }}
-                                                        defaultValue=""
-                                                    >
-                                                        <option value="" disabled>Vincular amb...</option>
-                                                        {classroomStudents.map(cs => (
-                                                            <option key={cs.profile.emailAddress} value={cs.profile.emailAddress}>{cs.profile.name.fullName}</option>
-                                                        ))}
-                                                    </select>
+                                                ) : s.email ? (
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--success)', fontWeight: 700, fontSize: '0.8rem' }}>
+                                                            <UserCheck size={14} /> Vinculat
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => handleManualLink(s.id, "")}
+                                                            className="btn-icon" 
+                                                            style={{ color: 'var(--danger)', padding: '2px' }}
+                                                            title="Desvincular"
+                                                        >
+                                                            <XCircle size={14} />
+                                                        </button>
+                                                    </div>
                                                 ) : (
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', fontSize: '0.8rem', fontStyle: 'italic' }}>
                                                         <RefreshCw size={14} /> No vinculat
