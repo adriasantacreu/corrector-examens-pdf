@@ -5,37 +5,11 @@ import type {
     Student, ExerciseDef, AnnotationStore, Annotation,
     PenAnnotation, HighlighterAnnotation, TextAnnotation, ImageAnnotation,
     RubricCountStore,
+    PagesExercise
 } from '../types';
 
 const RENDER_SCALE = 2.5;
 const FONT_SCALE = 2.5;
-
-const agentDebugLog = (
-    hypothesisId: string,
-    location: string,
-    message: string,
-    data: any = {},
-    runId: string = 'initial'
-) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7480/ingest/a6df652c-8a3b-4565-80ea-18f2b272eb6e', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-Debug-Session-Id': '4dc664'
-        },
-        body: JSON.stringify({
-            sessionId: '4dc664',
-            runId,
-            hypothesisId,
-            location,
-            message,
-            data,
-            timestamp: Date.now()
-        })
-    }).catch(() => { });
-    // #endregion
-};
 
 function parseColor(color: string): { r: number; g: number; b: number; a: number } {
     if (color.startsWith('rgba') || color.startsWith('rgb')) {
@@ -163,7 +137,6 @@ function drawText(ctx: CanvasRenderingContext2D, ann: TextAnnotation) {
     const hasWidth = typeof ann.width === 'number' && ann.width > 0;
     const shouldWrap = ann.wrap === 'word' && hasWidth;
 
-    // Compute wrapped lines (approximate Konva's word wrapping for the summary box)
     const wrappedLines: string[] = [];
     const baseLines = rawText.split('\n');
     if (shouldWrap) {
@@ -186,7 +159,6 @@ function drawText(ctx: CanvasRenderingContext2D, ann: TextAnnotation) {
         wrappedLines.push(...baseLines);
     }
 
-    // Background (simple: use max line width and line count)
     if (ann.bgFill && wrappedLines.length > 0) {
         const padding = 4;
         const maxWidth = Math.max(...wrappedLines.map(l => ctx.measureText(l).width));
@@ -201,7 +173,6 @@ function drawText(ctx: CanvasRenderingContext2D, ann: TextAnnotation) {
         ctx.fillRect(bgX - padding, bgY - padding, maxWidth + padding * 2, totalHeight + padding * 2);
     }
 
-    // Draw text lines
     ctx.fillStyle = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
     const lineHeight = fontSize * 1.1;
     let currentY = ann.y;
@@ -210,7 +181,6 @@ function drawText(ctx: CanvasRenderingContext2D, ann: TextAnnotation) {
         currentY += lineHeight;
     }
 
-    // Optional inline score badge
     if (ann.score !== undefined) {
         const scoreFontSize = fontSize * 0.65;
         ctx.font = `bold ${scoreFontSize}px ${family}`;
@@ -260,7 +230,6 @@ function createScoreAnns(exercise: ExerciseDef, finalScore: number, x: number, y
     return anns;
 }
 
-// --- ENGINE REPLICA ---
 export async function generateStudentPDF(
     pdfDoc: PDFDocumentProxy, student: Student, exercises: ExerciseDef[],
     annotations: AnnotationStore, rubricCounts: RubricCountStore,
@@ -293,24 +262,6 @@ export async function generateStudentPDF(
             const added = createScoreAnns(exercise, finalScore, sx, sy, stampStorage?.width ? (stampStorage.width / 500) : (exercise.stampScale ?? 1.0), scaleFactor, rSumm, hlSumm, scSumm, puSumm);
             const existing = pageAnnotMap.get(absPage) || []; pageAnnotMap.set(absPage, [...existing, ...addCropOffset(cleanExAnns, exercise.x, exercise.y), ...added]);
         } else if (exercise.type === 'pages') {
-            agentDebugLog(
-                'H5_pages_summary',
-                'src/utils/pdfExport.ts:224',
-                'Starting multi-page exercise layout',
-                {
-                    studentId: student.id,
-                    exerciseId: exercise.id,
-                    exerciseName: (exercise as any).name,
-                    pageIndexes: (exercise as any).pageIndexes,
-                    spansTwoPages: (exercise as any).spansTwoPages || false,
-                    annotationsCount: exAnns.length,
-                    finalScore,
-                    rSumm,
-                    hlSumm,
-                    scSumm,
-                    puSumm
-                }
-            );
             const spansTwoPages = (exercise as any).spansTwoPages;
             let currentYLimit = 0, prevPageWidth = 0;
             let placedScore = false;
@@ -318,129 +269,40 @@ export async function generateStudentPDF(
             for (let i = 0; i < (exercise as any).pageIndexes.length; i++) {
                 const logicalIdx = (exercise as any).pageIndexes[i];
                 let pAbs = student.pageIndexes[logicalIdx];
-
-                // Mirror CorrectionView fallback logic for missing pages in multi-page exercises
                 if ((pAbs === undefined || pAbs === -1) && student.pageIndexes.length > 0 && logicalIdx > 0) {
                     const baseIndex = student.pageIndexes.find(p => p > 0) || 1;
                     const guessedIndex = baseIndex + logicalIdx;
-                    if (guessedIndex >= 1 && guessedIndex <= pdfDoc.numPages) {
-                        pAbs = guessedIndex;
-                    }
+                    if (guessedIndex >= 1 && guessedIndex <= pdfDoc.numPages) pAbs = guessedIndex;
                 }
-
-                if (pAbs === undefined || pAbs < 1 || pAbs > pdfDoc.numPages || isNaN(pAbs as number)) {
-                    continue;
-                }
-
-                if (firstValidAbsPage === null) {
-                    firstValidAbsPage = pAbs;
-                }
-
+                if (pAbs === undefined || pAbs < 1 || pAbs > pdfDoc.numPages || isNaN(pAbs as number)) continue;
+                if (firstValidAbsPage === null) firstValidAbsPage = pAbs;
                 const pageDoc = await pdfDoc.getPage(pAbs);
                 const vScaled = pageDoc.getViewport({ scale: RENDER_SCALE });
-                const pageW = vScaled.width;
-                const pageH = vScaled.height;
+                const pageW = vScaled.width, pageH = vScaled.height;
                 const isRightSide = spansTwoPages && i % 2 !== 0;
                 const xOffset = isRightSide ? prevPageWidth + (20 * RENDER_SCALE) : 0;
-                const pageTop = currentYLimit;
-                const pageBottom = currentYLimit + pageH;
-
-                const annsOnPage = cleanExAnns
-                    .filter(ann => {
-                        let ax = 0, ay = 0;
-                        if (ann.type === 'pen') {
-                            ax = ann.points[0];
-                            ay = ann.points[1];
-                        } else {
-                            ax = (ann as any).x || 0;
-                            ay = (ann as any).y || 0;
-                        }
-                        return ay >= pageTop && ay < (pageBottom + 10) && ax >= xOffset && ax < (xOffset + pageW + 10);
-                    })
-                    .map(ann => {
-                        if (ann.type === 'pen') {
-                            return {
-                                ...ann,
-                                points: ann.points.map((v, idx) => idx % 2 === 0 ? v - xOffset : v - pageTop)
-                            };
-                        }
-                        return {
-                            ...ann,
-                            x: (ann as any).x - xOffset,
-                            y: (ann as any).y - pageTop
-                        };
-                    });
+                const pageTop = currentYLimit, pageBottom = currentYLimit + pageH;
+                const annsOnPage = cleanExAnns.filter(ann => {
+                    let ax = 0, ay = 0;
+                    if (ann.type === 'pen') { ax = ann.points[0]; ay = ann.points[1]; }
+                    else { ax = (ann as any).x || 0; ay = (ann as any).y || 0; }
+                    return ay >= pageTop && ay < (pageBottom + 10) && ax >= xOffset && ax < (xOffset + pageW + 10);
+                }).map(ann => {
+                    if (ann.type === 'pen') return { ...ann, points: ann.points.map((v, idx) => idx % 2 === 0 ? v - xOffset : v - pageTop) };
+                    return { ...ann, x: (ann as any).x - xOffset, y: (ann as any).y - pageTop };
+                });
                 const existing = pageAnnotMap.get(pAbs) || []; let fullAnns = [...existing, ...annsOnPage];
-
-                // Global marker coordinates: prefer per-alumne stampStorage, then exercise-level stampX/Y
                 const hasExerciseStamp = exercise.stampX !== undefined && exercise.stampY !== undefined;
                 const markerX = stampStorage?.x ?? (hasExerciseStamp ? (exercise.stampX as number) : NaN);
                 const markerY = stampStorage?.y ?? (hasExerciseStamp ? (exercise.stampY as number) : NaN);
-
                 if (!Number.isNaN(markerX) && !Number.isNaN(markerY)) {
-                    // markerX / markerY estan en el mateix sistema de coordenades "virtual" que usem aquí (escala RENDER_SCALE)
-                    if (
-                        markerY >= pageTop &&
-                        markerY < pageBottom &&
-                        markerX >= xOffset &&
-                        markerX < (xOffset + pageW)
-                    ) {
-                        const scoreX = markerX - xOffset;
-                        const scoreY = markerY - pageTop;
-                        agentDebugLog(
-                            'H5_pages_summary',
-                            'src/utils/pdfExport.ts:245',
-                            'Placing score summary on multi-page exercise (marker inside this page band)',
-                            {
-                                studentId: student.id,
-                                exerciseId: exercise.id,
-                                absPage: pAbs,
-                                loopIndex: i,
-                                pageTop,
-                                pageBottom,
-                                xOffset,
-                                pageW,
-                                scoreX,
-                                scoreY,
-                                fromStampStorage: !!stampStorage,
-                                fromExerciseStamp: !stampStorage && hasExerciseStamp
-                            }
-                        );
-                        fullAnns = [
-                            ...fullAnns,
-                            ...createScoreAnns(
-                                exercise,
-                                finalScore,
-                                scoreX,
-                                scoreY,
-                                stampStorage?.width ? (stampStorage.width / 500) : (exercise.stampScale ?? 1.0),
-                                scaleFactor,
-                                rSumm,
-                                hlSumm,
-                                scSumm,
-                                puSumm
-                            )
-                        ];
+                    if (markerY >= pageTop && markerY < pageBottom && markerX >= xOffset && markerX < (xOffset + pageW)) {
+                        const scoreX = markerX - xOffset, scoreY = markerY - pageTop;
+                        fullAnns = [...fullAnns, ...createScoreAnns(exercise, finalScore, scoreX, scoreY, stampStorage?.width ? (stampStorage.width / 500) : (exercise.stampScale ?? 1.0), scaleFactor, rSumm, hlSumm, scSumm, puSumm)];
                         placedScore = true;
                     }
                 } else if (i === 0 && !stampStorage && !hasExerciseStamp) {
-                    // Sense cap coordenada guardada: posicionament per defecte a la primera pàgina
-                    const scoreX = 20;
-                    const scoreY = pageH - 80;
-                    agentDebugLog(
-                        'H5_pages_summary',
-                        'src/utils/pdfExport.ts:248',
-                        'Placing score summary on multi-page exercise (default position, first logical page, no marker stored)',
-                        {
-                            studentId: student.id,
-                            exerciseId: exercise.id,
-                            absPage: pAbs,
-                            loopIndex: i,
-                            pageH,
-                            scoreX,
-                            scoreY
-                        }
-                    );
+                    const scoreX = 20, scoreY = pageH - 80;
                     fullAnns = [...fullAnns, ...createScoreAnns(exercise, finalScore, scoreX, scoreY, exercise.stampScale ?? 1.0, scaleFactor, rSumm, hlSumm, scSumm, puSumm)];
                     placedScore = true;
                 }
@@ -448,43 +310,10 @@ export async function generateStudentPDF(
                 if (!spansTwoPages || isRightSide || i === exercise.pageIndexes.length - 1) currentYLimit += pageH + (20 * RENDER_SCALE);
                 prevPageWidth = pageW;
             }
-
-            // Fallback: si per algun motiu no s'ha pogut col·locar el resum (p.ex. stamp fora de rang),
-            // assegurem que com a mínim aparegui a la primera pàgina vàlida de l'exercici.
             if (!placedScore && firstValidAbsPage !== null) {
                 const existing = pageAnnotMap.get(firstValidAbsPage) || [];
-                const fallbackX = stampStorage?.x ?? (exercise.stampX ?? 20);
-                const fallbackY = stampStorage?.y ?? 40;
-                agentDebugLog(
-                    'H5_pages_summary',
-                    'src/utils/pdfExport.ts:373',
-                    'Fallback placing score summary on first resolved page because no band matched',
-                    {
-                        studentId: student.id,
-                        exerciseId: exercise.id,
-                        absPage: firstValidAbsPage,
-                        fallbackX,
-                        fallbackY
-                    }
-                );
-                pageAnnotMap.set(
-                    firstValidAbsPage,
-                    [
-                        ...existing,
-                        ...createScoreAnns(
-                            exercise,
-                            finalScore,
-                            fallbackX,
-                            fallbackY,
-                            stampStorage?.width ? (stampStorage.width / 500) : (exercise.stampScale ?? 1.0),
-                            scaleFactor,
-                            rSumm,
-                            hlSumm,
-                            scSumm,
-                            puSumm
-                        )
-                    ]
-                );
+                const fallbackX = stampStorage?.x ?? (exercise.stampX ?? 20), fallbackY = stampStorage?.y ?? 40;
+                pageAnnotMap.set(firstValidAbsPage, [...existing, ...createScoreAnns(exercise, finalScore, fallbackX, fallbackY, stampStorage?.width ? (stampStorage.width / 500) : (exercise.stampScale ?? 1.0), scaleFactor, rSumm, hlSumm, scSumm, puSumm)]);
             }
         }
     }
@@ -524,50 +353,28 @@ export async function generateStudentPDF(
     const bytes = await pdf.save(); return new Blob([bytes as any], { type: 'application/pdf' });
 }
 
-export type ExportScope = 'current' | 'all';
-export interface ExportOptions { pdfDoc: PDFDocumentProxy; students: Student[]; exercises: ExerciseDef[]; annotations: AnnotationStore; rubricCounts?: RubricCountStore; scope: ExportScope; currentStudentIdx: number; scaleFactor?: number; onProgress?: (done: number, total: number) => void; }
-
-export async function exportOriginalLayoutPDF(opts: ExportOptions): Promise<void> {
-    const targets = opts.scope === 'current' ? [opts.students[opts.currentStudentIdx]] : opts.students;
-    let done = 0;
-    for (const student of targets) {
-        const blob = await generateStudentPDF(opts.pdfDoc, student, opts.exercises, opts.annotations, opts.rubricCounts || {}, opts.scaleFactor || 1);
-        const url = URL.createObjectURL(blob), a = document.createElement('a');
-        a.href = url; a.download = `layout_${student.name.replace(/\s+/g, '_')}.pdf`;
-        document.body.appendChild(a); a.click();
-        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
-        done++; opts.onProgress?.(done, targets.length);
-    }
+export async function exportStudentPDF(pdfDoc: PDFDocumentProxy, student: Student, exercises: ExerciseDef[], annotations: AnnotationStore, rubricCounts: RubricCountStore, targetMaxScore: number) {
+    const blob = await generateStudentPDF(pdfDoc, student, exercises, annotations, rubricCounts, 1);
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = `correccio_${student.name.replace(/\s+/g, '_')}.pdf`;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
 }
 
-export async function exportAnnotatedPDF(opts: ExportOptions): Promise<void> {
-    const targets = opts.scope === 'current' ? [opts.students[opts.currentStudentIdx]] : opts.students;
-    const pdf = await PDFDocument.create(), font = await pdf.embedFont(StandardFonts.HelveticaBold);
-    let done = 0; const total = targets.length * opts.exercises.length;
-    for (const student of targets) {
-        for (const exercise of opts.exercises) {
-            if (exercise.type !== 'crop' && exercise.type !== 'pages') { done++; continue; }
-            const res = await renderExerciseToDataURL(opts.pdfDoc, student, exercise, opts.annotations[student.id]?.[exercise.id] || []);
-            if (res) {
-                const jpg = await pdf.embedJpg(await dataUrlToBytes(res.dataUrl));
-                const page = pdf.addPage([res.width, res.height + 32]);
-                page.drawRectangle({ x: 0, y: res.height, width: res.width, height: 32, color: rgb(0.09, 0.09, 0.15) });
-                page.drawText(`${student.name} · ${exercise.name || 'Ex'}`, { x: 10, y: res.height + 10, font, size: 11, color: rgb(1, 1, 1) });
-                page.drawImage(jpg, { x: 0, y: 0, width: res.width, height: res.height });
-            }
-            done++; opts.onProgress?.(done, total);
-        }
+export async function exportCombinedPDF(pdfDoc: PDFDocumentProxy, students: Student[], exercises: ExerciseDef[], annotations: AnnotationStore, rubricCounts: RubricCountStore, targetMaxScore: number, onProgress?: (p: number) => void) {
+    const mergedPdf = await PDFDocument.create();
+    for (let i = 0; i < students.length; i++) {
+        const student = students[i];
+        const studentBlob = await generateStudentPDF(pdfDoc, student, exercises, annotations, rubricCounts, 1);
+        const studentPdf = await PDFDocument.load(await studentBlob.arrayBuffer());
+        const pages = await mergedPdf.copyPages(studentPdf, studentPdf.getPageIndices());
+        pages.forEach(p => mergedPdf.addPage(p));
+        if (onProgress) onProgress(Math.round(((i + 1) / students.length) * 100));
     }
-    const bytes = await pdf.save(), blob = new Blob([bytes as any], { type: 'application/pdf' }), url = URL.createObjectURL(blob), a = document.createElement('a');
-    a.href = url; a.download = 'correccio_retalls.pdf'; document.body.appendChild(a); a.click();
-}
-
-async function renderExerciseToDataURL(pdfDoc: PDFDocumentProxy, student: Student, exercise: ExerciseDef, annotations: Annotation[]): Promise<{ dataUrl: string; width: number; height: number } | null> {
-    if (exercise.type !== 'crop') return null;
-    const absPage = student.pageIndexes[exercise.pageIndex]; if (absPage === undefined || absPage === -1) return null;
-    const fullCanvas = document.createElement('canvas'); await renderPDFPageToCanvas(pdfDoc, absPage, fullCanvas, RENDER_SCALE);
-    const crop = document.createElement('canvas'); crop.width = exercise.width; crop.height = exercise.height;
-    const ctx = crop.getContext('2d')!; ctx.drawImage(fullCanvas, exercise.x, exercise.y, exercise.width, exercise.height, 0, 0, exercise.width, exercise.height);
-    drawAnnotationsOnCanvas(ctx, annotations.filter(a => a.id !== 'system_score_stamp'));
-    return { dataUrl: crop.toDataURL('image/jpeg', 0.92), width: exercise.width, height: exercise.height };
+    const bytes = await mergedPdf.save();
+    const blob = new Blob([bytes as any], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = `correccio_completa.pdf`;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
 }

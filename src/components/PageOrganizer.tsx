@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, Check, ChevronLeft, Sun, Moon, ArrowDown, ArrowUp, LogOut } from 'lucide-react';
+import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, Check, ChevronLeft, Sun, Moon, ArrowDown, ArrowUp, LogOut, ChevronsUp, ChevronsDown } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import HandwrittenTitle from './HandwrittenTitle';
@@ -66,7 +66,7 @@ export default function PageOrganizer({
                 }
             }
             
-            // Add any missing pages (just in case)
+            // Add any missing pages
             for (let i = 1; i <= totalPages; i++) {
                 if (!processed.has(i)) order.push(i);
             }
@@ -79,7 +79,6 @@ export default function PageOrganizer({
                 if (cancelled) return;
                 try {
                     const canvas = document.createElement('canvas');
-                    // THUMBNAILS STAY LIGHT (false for invert)
                     await renderPDFPageToCanvas(pdfDoc, pageNum, canvas, 0.5, false);
                     const url = canvas.toDataURL('image/jpeg', 0.7);
                     if (!cancelled) {
@@ -223,7 +222,7 @@ export default function PageOrganizer({
                     <div style={{ marginBottom: '3rem' }}>
                         <HandwrittenTitle size="3rem" color="purple">Organitzador de pàgines</HandwrittenTitle>
                         <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem', fontSize: '1.1rem' }}>
-                            Ajusta l'ordre dels exàmens. Utilitza les fletxes per desplaçar pàgines. Les dobles fletxes mouen en cascada.
+                            Ajusta l'ordre dels exàmens. Utilitza les fletxes per desplaçar pàgines. Les fletxes dobles mouen en cascada.
                             {inconsistentCount > 0 && <span style={{ color: 'var(--danger)', marginLeft: '1rem', fontWeight: 700 }}>⚠️ {inconsistentCount} alumnes amb error</span>}
                         </p>
                     </div>
@@ -241,9 +240,9 @@ export default function PageOrganizer({
                                     {/* Action Buttons (Vertical Arrows) */}
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '40px' }}>
                                         {gi > 0 && (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                                 <button className="btn btn-secondary" onClick={() => ripplePullBackward(gi - 1)} title="Moure EN CASCADA amunt" style={{ padding: '0.2rem', borderRadius: '0.4rem', height: '28px', border: '1px solid var(--accent)' }}>
-                                                    <ArrowUp size={14} strokeWidth={3} />
+                                                    <ChevronsUp size={16} color="var(--accent)" />
                                                 </button>
                                                 <button className="btn btn-secondary" onClick={() => shiftOneUp(gi)} title="Moure només 1 pàgina amunt" style={{ padding: '0.2rem', borderRadius: '0.4rem', height: '28px' }}>
                                                     <ArrowUp size={14} />
@@ -251,12 +250,12 @@ export default function PageOrganizer({
                                             </div>
                                         )}
                                         {gi < groups.length - 1 && (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                                 <button className="btn btn-secondary" onClick={() => shiftOneDown(gi)} title="Moure només 1 pàgina avall" style={{ padding: '0.2rem', borderRadius: '0.4rem', height: '28px' }}>
                                                     <ArrowDown size={14} />
                                                 </button>
                                                 <button className="btn btn-secondary" onClick={() => ripplePushForward(gi)} title="Moure EN CASCADA avall" style={{ padding: '0.2rem', borderRadius: '0.4rem', height: '28px', border: '1px solid var(--accent)' }}>
-                                                    <ArrowDown size={14} strokeWidth={3} />
+                                                    <ChevronsDown size={16} color="var(--accent)" />
                                                 </button>
                                             </div>
                                         )}

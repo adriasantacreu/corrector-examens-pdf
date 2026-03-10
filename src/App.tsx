@@ -460,12 +460,12 @@ function App() {
 
       <main className="main-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
         {mode === 'upload' && (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '20vh 2rem 4rem', overflowY: 'auto' }}>
-            <div style={{ marginBottom: '10rem', transform: 'rotate(-4.5deg)', flexShrink: 0 }}>
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '25vh 2rem 4rem', overflowY: 'auto' }}>
+            <div style={{ marginBottom: '14rem', transform: 'rotate(-4.5deg)', flexShrink: 0 }}>
               <FlowGradingLogo size="13rem" rotation={-7} extraThick={true} />
             </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', alignItems: 'center', marginBottom: '6rem', flexShrink: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem', alignItems: 'center', marginBottom: '6rem', flexShrink: 0 }}>
               <label className="btn btn-primary" style={{ padding: '1.2rem 4rem', fontSize: '1.3rem', height: '56px', borderRadius: '2rem', boxShadow: '0 10px 25px var(--accent-light)' }}>
                 <input type="file" accept="application/pdf" onChange={handleFileUpload} style={{ display: 'none' }} />
                 <Upload size={26} /> Pujar nou PDF
