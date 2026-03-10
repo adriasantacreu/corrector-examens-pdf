@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Upload, FileText, Settings, ChevronLeft, RefreshCw } from 'lucide-react';
+import { Upload, FileText, Settings, ChevronLeft, RefreshCw, X } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from './types';
 import { loadPDF, type PDFDocumentProxy } from './utils/pdfUtils';
 import TemplateDefiner from './components/TemplateDefiner';
 import CorrectionView from './components/CorrectionView';
 import PageOrganizer from './components/PageOrganizer';
 import ResultsView from './components/ResultsView';
+import { storePDFLocal, getPDFLocal } from './utils/dbUtils';
 
 type AppMode = 'upload' | 'setup' | 'organize_pages' | 'configure_crops' | 'correction' | 'results';
 
@@ -47,6 +48,7 @@ interface PersistedState {
   isSent?: boolean;
   progress?: number;
   lastModified?: string;
+  studentEmailMap?: Record<string, string>;
 }
 
 interface RecentSession {
@@ -97,7 +99,6 @@ function App() {
   const globalSaved = loadGlobalState();
 
   const [mode, setMode] = useState<AppMode>('upload');
-  const [showRestorePrompt, setShowRestorePrompt] = useState(false);
 
   // State
   const [currentFileName, setCurrentFileName] = useState<string | null>(null);
@@ -130,6 +131,7 @@ function App() {
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'idle'>('idle');
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
   const [isSent, setIsSent] = useState(false);
+  const [studentEmailMap, setStudentEmailMap] = useState<Record<string, string>>({});
 
   const addLog = (msg: string) => { console.log('[App]', msg); setDebugLogs(prev => [...prev.slice(-200), msg]); };
 
@@ -237,6 +239,12 @@ function App() {
       const combinedList = Array.from(new Set([...currentListLines, ...classroomNames])).join('\n');
       setStudentList(combinedList);
 
+      const newEmailMap = { ...studentEmailMap };
+      classroomStudents.forEach((cs: any) => {
+        newEmailMap[cs.profile.name.fullName] = cs.profile.emailAddress;
+      });
+      setStudentEmailMap(newEmailMap);
+
       if (students.length > 0) {
         const updatedStudents = students.map(s => ({ ...s }));
         let matchesFound = 0;
@@ -255,7 +263,7 @@ function App() {
         setStudents(updatedStudents);
         alert(`S'han trobat i assignat ${matchesFound} emails d'alumnes de Classroom.`);
       } else {
-        alert(`S'han importat ${classroomNames.length} noms de Classroom a la llista d'alumnes.`);
+        alert(`S'han importat ${classroomNames.length} alumnes (noms i correus) de Classroom.`);
       }
     } catch (err) {
       console.error("[App] Error fetching students", err);
@@ -326,26 +334,22 @@ function App() {
         JSON.stringify(data) +
         close_delim;
 
-      if (existingFile) {
-        // Update existing file
-        await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`, {
+      const res = existingFile
+        ? await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`, {
           method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': `multipart/related; boundary=${boundary}`
-          },
+          headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
           body: multipartRequestBody
-        });
-      } else {
-        // Create new file
-        await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        })
+        : await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': `multipart/related; boundary=${boundary}`
-          },
+          headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
           body: multipartRequestBody
         });
+
+      if (res.status === 401 || res.status === 403) {
+        console.warn("[App] Google Drive auth error. Clearing token.");
+        setAccessToken(null);
+        return;
       }
       setCloudSyncStatus('synced');
     } catch (err) {
@@ -409,10 +413,12 @@ function App() {
 
   const loadFromDrive = async (fileName: string) => {
     if (!accessToken) return null;
+    console.log('[App] Loading session from Drive:', fileName);
     try {
       const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${fileName}.json' and parents in 'appDataFolder'&spaces=appDataFolder&fields=files(id,name)`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       });
+      if (!searchRes.ok) throw new Error('Error buscando en Drive');
       const searchData = await searchRes.json();
       const file = searchData.files && searchData.files[0];
       if (!file) return null;
@@ -420,6 +426,7 @@ function App() {
       const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       });
+      if (!fileRes.ok) throw new Error('Error descargando de Drive');
       const data = await fileRes.json();
       if (data.isSent !== undefined) setIsSent(data.isSent);
       return data;
@@ -429,11 +436,13 @@ function App() {
     }
   };
 
-  const savePDFToDrive = async (file: File) => {
+  const savePDFToDrive = async (file: File, silent = false) => {
     if (!accessToken) return;
-    setCloudSyncStatus('syncing');
-    setProcessingMessage('Pujant PDF al núvol...');
-    setIsProcessing(true);
+    if (!silent) {
+      setCloudSyncStatus('syncing');
+      setProcessingMessage('Pujant PDF al núvol...');
+      setIsProcessing(true);
+    }
     try {
       const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${file.name}' and parents in 'appDataFolder'&spaces=appDataFolder`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -460,24 +469,30 @@ function App() {
         body: form
       });
 
-      setCloudSyncStatus('synced');
-      alert('PDF pujat al núvol correctament!');
+      if (!silent) {
+        setCloudSyncStatus('synced');
+        alert('PDF pujat al núvol correctament!');
+      }
     } catch (err) {
       console.error("[App] PDF Drive save error", err);
-      setCloudSyncStatus('error');
+      if (!silent) setCloudSyncStatus('error');
     } finally {
-      setIsProcessing(false);
+      if (!silent) setIsProcessing(false);
     }
   };
 
-  const loadPDFFromDrive = async (fileName: string) => {
+  const loadPDFFromDrive = async (fileName: string, silent = false) => {
     if (!accessToken) return null;
-    setIsProcessing(true);
-    setProcessingMessage('Descarregant PDF del núvol...');
+    if (!silent) {
+      setIsProcessing(true);
+      setProcessingMessage('Descarregant PDF del núvol...');
+    }
+    console.log('[App] Loading PDF from Drive:', fileName);
     try {
       const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and parents in 'appDataFolder'&spaces=appDataFolder&fields=files(id,name,mimeType)`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       });
+      if (!searchRes.ok) return null;
       const searchData = await searchRes.json();
       const fileMeta = searchData.files && searchData.files[0];
       if (!fileMeta) return null;
@@ -485,13 +500,18 @@ function App() {
       const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileMeta.id}?alt=media`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       });
+      if (!fileRes.ok) return null;
       const blob = await fileRes.blob();
-      return new File([blob], fileName, { type: fileMeta.mimeType });
+      if (blob.size < 100) {
+        console.warn("[App] PDF blob from Drive is suspiciously small:", blob.size);
+        return null;
+      }
+      return new File([blob], fileName, { type: 'application/pdf' });
     } catch (err) {
       console.error("[App] PDF Drive load error", err);
       return null;
     } finally {
-      setIsProcessing(false);
+      if (!silent) setIsProcessing(false);
     }
   };
 
@@ -518,7 +538,8 @@ function App() {
         userEmail,
         isSent,
         progress: calculateProgressFromData(students, exercises, annotations),
-        lastModified: new Date().toISOString()
+        lastModified: new Date().toISOString(),
+        studentEmailMap
       };
       saveState(stateToSave);
 
@@ -529,94 +550,169 @@ function App() {
       return () => clearTimeout(timeout);
     }
     // Always save global state
-    saveGlobalState({ accessToken, userEmail });
-  }, [currentFileName, mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, studentIdx, exerciseIdx, accessToken, userEmail]);
+    try {
+      saveGlobalState({ accessToken, userEmail });
+    } catch (e) { }
+  }, [currentFileName, mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, studentIdx, exerciseIdx, accessToken, userEmail, isSent]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
-      if (file.type !== 'application/pdf') {
-        alert("El fitxer seleccionat no és un PDF.");
+    console.log('[App] handleFileUpload triggered');
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== 'application/pdf') {
+      alert("El fitxer seleccionat no és un PDF.");
+      return;
+    }
+
+    setIsProcessing(true);
+    setProcessingMessage('Processant fitxer...');
+
+    const fileName = file.name;
+    setCurrentFileName(fileName);
+    setPdfFile(file);
+
+    let session = loadState(fileName);
+
+    // If no local session, try to load from Drive (async)
+    if (!session && accessToken) {
+      setProcessingMessage('Buscant sessió al núvol...');
+      session = await loadFromDrive(fileName);
+    }
+
+    if (session) {
+      setPagesPerExam(session.pagesPerExam);
+      setExercises(session.exercises);
+      setStudents(session.students);
+      setAnnotations(session.annotations);
+      setRubricCounts(session.rubricCounts);
+      setTargetMaxScore(session.targetMaxScore);
+      setStudentList(session.studentList);
+      setCommentBank(session.commentBank);
+      setStudentIdx(session.lastStudentIdx ?? 0);
+      setExerciseIdx(session.lastExerciseIdx ?? 0);
+      setIsSent(session.isSent ?? false);
+      setPendingModeAfterPDF(session.mode);
+      setStudentEmailMap(session.studentEmailMap || {});
+    } else {
+      // Reset to clean state for new filename
+      setPagesPerExam(1);
+      setExercises([]);
+      setStudents([]);
+      setAnnotations({});
+      setRubricCounts({});
+      setTargetMaxScore(10);
+      setStudentList('');
+      setStudentIdx(0);
+      setExerciseIdx(0);
+      setPendingModeAfterPDF(null);
+    }
+
+    setIsProcessing(true);
+    setProcessingMessage('Carregant PDF...');
+
+    try {
+      console.log('[App] Starting PDF load...', {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        lastModified: file.lastModified
+      });
+      const doc = await loadPDF(file);
+      console.log('[App] PDF loaded, pages:', doc.numPages);
+      setPdfDoc(doc);
+      setNumPages(doc.numPages);
+
+      if (pendingModeAfterPDF || (session && session.mode)) {
+        let nextMode = pendingModeAfterPDF || session?.mode || 'setup';
+        if (nextMode === 'upload') nextMode = 'setup'; // Safety: don't loop in upload
+        console.log('[App] Switching to mode:', nextMode, 'from session:', fileName);
+        setMode(nextMode as AppMode);
+        setPendingModeAfterPDF(null);
+      } else {
+        console.log('[App] New PDF, switching to setup mode');
+        setMode('setup');
+      }
+
+      // Save PDF to IndexedDB for local persistence (invisible to user) - DO NOT block UI
+      storePDFLocal(fileName, file).catch(e => console.error('[App] Background DB store failed', e));
+
+    } catch (err: any) {
+      console.error("[App] Error loading PDF", err);
+      alert(`Error carregant el PDF: ${err?.message || 'Error desconegut'}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSelectSession = async (recentSess: RecentSession) => {
+    console.log('[App] handleSelectSession triggered for:', recentSess.fileName);
+    setCurrentFileName(recentSess.fileName);
+    setProcessingMessage('Carregant sessió...');
+    setIsProcessing(true);
+
+    try {
+      let session = loadState(recentSess.fileName);
+      if (!session && accessToken) {
+        session = await loadFromDrive(recentSess.fileName);
+      }
+
+      if (!session) {
+        alert("No s'ha trobat la sessió.");
         return;
       }
 
-      const fileName = file.name;
-      setCurrentFileName(fileName);
-      setPdfFile(file);
+      // Metadata
+      setPagesPerExam(session.pagesPerExam);
+      setExercises(session.exercises);
+      setStudents(session.students);
+      setAnnotations(session.annotations);
+      setRubricCounts(session.rubricCounts);
+      setTargetMaxScore(session.targetMaxScore);
+      setStudentList(session.studentList);
+      setCommentBank(session.commentBank);
+      setStudentIdx(session.lastStudentIdx ?? 0);
+      setExerciseIdx(session.lastExerciseIdx ?? 0);
+      setIsSent(session.isSent ?? false);
+      setStudentEmailMap(session.studentEmailMap || {});
+      if (session.studentList) setStudentList(session.studentList);
 
-      let session = loadState(fileName);
-
-      // If no local session, try to load from Drive (async)
-      if (!session && accessToken) {
-        setProcessingMessage('Buscant sessió al núvol...');
-        session = await loadFromDrive(fileName);
-      }
-
-      if (session) {
-        setPagesPerExam(session.pagesPerExam);
-        setExercises(session.exercises);
-        setStudents(session.students);
-        setAnnotations(session.annotations);
-        setRubricCounts(session.rubricCounts);
-        setTargetMaxScore(session.targetMaxScore);
-        setStudentList(session.studentList);
-        setCommentBank(session.commentBank);
-        setStudentIdx(session.lastStudentIdx ?? 0);
-        setExerciseIdx(session.lastExerciseIdx ?? 0);
-        setIsSent(session.isSent ?? false);
-        setPendingModeAfterPDF(session.mode);
-        setShowRestorePrompt(true);
+      // Handle PDF
+      if (pdfFile && pdfFile.name === recentSess.fileName) {
+        setMode(session.mode);
       } else {
-        // Reset to clean state for new filename
-        setPagesPerExam(1);
-        setExercises([]);
-        setStudents([]);
-        setAnnotations({});
-        setRubricCounts({});
-        setTargetMaxScore(10);
-        setStudentList('');
-        setStudentIdx(0);
-        setExerciseIdx(0);
-        setPendingModeAfterPDF(null);
-        setShowRestorePrompt(false);
-      }
+        // Try local DB first (invisible persistence)
+        let neededPDF = await getPDFLocal(recentSess.fileName);
 
-      setIsProcessing(true);
-      setProcessingMessage('Carregant PDF...');
-
-      try {
-        console.log('[App] Starting PDF load...', {
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          lastModified: file.lastModified
-        });
-        const doc = await loadPDF(file);
-        console.log('[App] PDF loaded, pages:', doc.numPages);
-        setPdfDoc(doc);
-        setNumPages(doc.numPages);
-        agentDebugLog(
-          'H1_pdf_load',
-          'src/App.tsx:133',
-          'PDF loaded successfully',
-          {
-            numPages: doc.numPages,
-            pendingModeAfterPDF
-          }
-        );
-        if (pendingModeAfterPDF) {
-          setMode(pendingModeAfterPDF);
-          setPendingModeAfterPDF(null);
-        } else {
-          setMode('setup');
+        if (!neededPDF && accessToken) {
+          setProcessingMessage('Descarregant PDF del núvol...');
+          neededPDF = await loadPDFFromDrive(recentSess.fileName, true);
         }
-        setShowRestorePrompt(false);
-      } catch (err: any) {
-        console.error("[App] Error loading PDF", err);
-        alert(`Error carregant el PDF: ${err?.message || 'Error desconegut'}\n\nComprova que el fitxer no estigui corrupte.`);
-      } finally {
-        setIsProcessing(false);
+
+        if (neededPDF) {
+          console.log('[App] PDF source found (LocalDB or Cloud). Parsing...');
+          setProcessingMessage('Carregant PDF...');
+          const doc = await loadPDF(neededPDF);
+          setPdfDoc(doc);
+          setNumPages(doc.numPages);
+          setPdfFile(neededPDF);
+
+          let nextMode = session.mode;
+          if (nextMode === 'upload') nextMode = 'setup';
+          console.log('[App] Advancing to mode:', nextMode);
+          setMode(nextMode);
+        } else {
+          console.warn('[App] PDF not found anywhere. User MUST upload manually.');
+          alert(`Document no trobat. Per continuar, selecciona el fitxer "${recentSess.fileName}" des del teu ordinador.`);
+          setPendingModeAfterPDF(session.mode);
+          setMode('upload');
+        }
       }
+    } catch (err: any) {
+      console.error("Select session error", err);
+      alert(`Error carregant la sessió: ${err?.message || 'Error desconegut'}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -635,29 +731,23 @@ function App() {
   };
 
   const handleBack = () => {
-    if (mode === 'setup') setMode('upload');
+    console.log('[App] handleBack called, current mode:', mode);
+    if (mode === 'setup') {
+      setMode('upload');
+      setCurrentFileName(null);
+      setPdfFile(null);
+      setPdfDoc(null);
+      setNumPages(0);
+      setRecentSessions([]); // Force refresh on next dashboard visit
+      fetchRecentSessions();
+    }
     else if (mode === 'organize_pages') setMode('setup');
     else if (mode === 'configure_crops') setMode('organize_pages');
     else if (mode === 'correction') setMode('configure_crops');
+    else if (mode === 'results') setMode('correction');
+    else setMode('upload');
   };
 
-  const handleRestoreSession = async () => {
-    // User wants to restore — if we don't have the PDF file but it's on the cloud, we can download it
-    if (!pdfFile && currentFileName) {
-      const cloudFile = await loadPDFFromDrive(currentFileName);
-      if (cloudFile) {
-        const doc = await loadPDF(cloudFile);
-        setPdfDoc(doc);
-        setNumPages(doc.numPages);
-        setPdfFile(cloudFile);
-      } else {
-        alert("Pujar el fitxer PDF localment per continuar.");
-        return;
-      }
-    }
-    setPendingModeAfterPDF('correction');
-    setShowRestorePrompt(false);
-  };
 
   const handleNewSession = () => {
     if (currentFileName) {
@@ -667,7 +757,6 @@ function App() {
     setStudents([]);
     setAnnotations({});
     setPagesPerExam(1);
-    setShowRestorePrompt(false);
   };
 
   const handleUpdateAnnotations = (studentId: string, exerciseId: string, newAnnotations: import('./types').Annotation[]) => {
@@ -753,10 +842,10 @@ function App() {
                 className="btn-google"
                 onClick={handleAuthorize}
                 disabled={isAuthorizing}
-                style={{ padding: '4px 12px', fontSize: '0.75rem' }}
+                style={{ height: '32px', padding: '0 12px', fontSize: '0.85rem' }}
               >
-                <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" style={{ width: '14px', height: '14px' }} />
-                {isAuthorizing ? '...' : 'Connectar'}
+                <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" style={{ width: '16px', height: '16px' }} />
+                <span>{isAuthorizing ? '...' : 'Connectar'}</span>
               </button>
             )}
           </div>
@@ -766,41 +855,6 @@ function App() {
       {/* Main Content Area */}
       <main className="main-content">
 
-        {/* Session restore prompt */}
-        {showRestorePrompt && mode === 'upload' && (
-          <div style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', zIndex: 100
-          }}>
-            <div style={{
-              background: 'var(--bg-secondary)', borderRadius: '1rem', padding: '2rem',
-              maxWidth: '420px', width: '90%', border: '1px solid var(--border)',
-              boxShadow: '0 25px 60px rgba(0,0,0,0.4)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-                <RefreshCw size={24} color="var(--accent)" />
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Sessió guardada trobada</h2>
-              </div>
-              Hi ha una sessió de correcció guardada amb <strong style={{ color: 'var(--text-primary)' }}>{exercises.length} exercicis</strong> i <strong style={{ color: 'var(--text-primary)' }}>{students.length} alumnes</strong>. Vols continuar on ho vas deixar?
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <button
-                  className="btn btn-primary"
-                  style={{ flex: 1 }}
-                  onClick={handleRestoreSession}
-                >
-                  Continuar sessió
-                </button>
-                <button
-                  className="btn"
-                  style={{ flex: 1, background: 'var(--bg-tertiary)', border: '1px solid var(--border)' }}
-                  onClick={handleNewSession}
-                >
-                  Nova sessió
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Upload Overlay */}
         {mode === 'upload' && (
@@ -830,10 +884,10 @@ function App() {
                     className="btn-google"
                     onClick={handleAuthorize}
                     disabled={isAuthorizing}
-                    style={{ width: '280px' }}
+                    style={{ width: '280px', marginTop: '0.5rem' }}
                   >
                     <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" />
-                    {isAuthorizing ? 'Autoritzant...' : 'Connectar amb Google'}
+                    {isAuthorizing ? 'Connectant...' : 'Connectar amb Google'}
                   </button>
                 )}
               </div>
@@ -848,10 +902,7 @@ function App() {
                     {recentSessions.map(session => (
                       <div
                         key={session.fileName}
-                        onClick={() => {
-                          const mockEvent = { target: { files: [new File([], session.fileName, { type: 'application/pdf' })] } } as any;
-                          handleFileUpload(mockEvent);
-                        }}
+                        onClick={() => handleSelectSession(session)}
                         style={{
                           padding: '1rem',
                           background: 'var(--bg-tertiary)',
@@ -959,28 +1010,120 @@ function App() {
               </div>
 
               <div style={{ marginBottom: '1.5rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
-                  Llista d'alumnes (Experimental, un per línia)
-                </label>
-                <textarea
-                  placeholder="Joan Garcia&#10;Maria Lopez..."
-                  value={studentList}
-                  onChange={(e) => setStudentList(e.target.value)}
-                  style={{
-                    width: '100%',
-                    height: '120px',
-                    padding: '0.75rem',
-                    borderRadius: '0.5rem',
-                    border: '1px solid var(--border)',
-                    background: 'var(--bg-primary)',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.875rem',
-                    fontFamily: 'inherit',
-                    resize: 'vertical'
-                  }}
-                />
-                <p style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                  Si poses la llista, l'OCR intentarà associar el que llegeixi al nom més proper.
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <label style={{ fontWeight: 600, fontSize: '1.1rem' }}>
+                    Gestió d'Alumnes
+                  </label>
+                  <button
+                    onClick={() => {
+                      const input = prompt("Enganxa aquí la llista (un nom per línia):", studentList);
+                      if (input !== null) setStudentList(input);
+                    }}
+                    style={{ fontSize: '0.75rem', background: 'none', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: '4px', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                  >
+                    Enganxar llista de text
+                  </button>
+                </div>
+
+                <div style={{
+                  maxHeight: '300px',
+                  overflowY: 'auto',
+                  border: '1px solid var(--border)',
+                  borderRadius: '0.75rem',
+                  background: 'var(--bg-primary)'
+                }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                    <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-secondary)', borderBottom: '2px solid var(--border)' }}>
+                      <tr>
+                        <th style={{ textAlign: 'left', padding: '0.75rem' }}>Nom de l'alumne</th>
+                        <th style={{ textAlign: 'left', padding: '0.75rem' }}>Email (per enviar resultats)</th>
+                        <th style={{ width: '40px' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {studentList.split('\n').filter(n => n.trim().length > 0).map((name, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '0.75rem' }}>{name}</td>
+                          <td style={{ padding: '0.75rem' }}>
+                            <input
+                              type="email"
+                              placeholder="sense correu..."
+                              value={studentEmailMap[name] || ''}
+                              onChange={(e) => setStudentEmailMap(prev => ({ ...prev, [name]: e.target.value }))}
+                              style={{
+                                width: '100%',
+                                border: 'none',
+                                background: 'transparent',
+                                color: 'var(--accent)',
+                                fontSize: '0.85rem',
+                                outline: 'none'
+                              }}
+                            />
+                          </td>
+                          <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                            <button
+                              onClick={() => {
+                                const newList = studentList.split('\n').filter((_, i) => i !== idx).join('\n');
+                                setStudentList(newList);
+                              }}
+                              style={{ border: 'none', background: 'none', color: 'var(--danger)', cursor: 'pointer' }}
+                            >
+                              <X size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {studentList.split('\n').filter(n => n.trim().length > 0).length === 0 && (
+                        <tr>
+                          <td colSpan={3} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                            No hi ha alumnes. Importa'ls de Classroom o afegeix-los manualment.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    type="text"
+                    id="new-student-name"
+                    placeholder="Nou alumne..."
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const val = (e.target as HTMLInputElement).value.trim();
+                        if (val) {
+                          setStudentList(prev => prev ? prev + '\n' + val : val);
+                          (e.target as HTMLInputElement).value = '';
+                        }
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '0.5rem',
+                      borderRadius: '0.5rem',
+                      border: '1px solid var(--border)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)'
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const el = document.getElementById('new-student-name') as HTMLInputElement;
+                      const val = el.value.trim();
+                      if (val) {
+                        setStudentList(prev => prev ? prev + '\n' + val : val);
+                        el.value = '';
+                      }
+                    }}
+                    className="btn btn-secondary"
+                  >
+                    Afegir
+                  </button>
+                </div>
+
+                <p style={{ marginTop: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  <strong>Consell:</strong> Assegura't que el nom coincideixi amb el que l'alumne escriu a l'examen per a que l'OCR l'identifiqui.
                 </p>
               </div>
 
@@ -1113,6 +1256,13 @@ function App() {
                         if (minDistance < bestMatch.length * 0.4) {
                           addLog(`  → Fuzzy Match: "${finalName}" -> "${bestMatch}" (dist: ${minDistance})`);
                           finalName = bestMatch;
+
+                          // Look up email if available - Case insensitive
+                          const mappingKey = Object.keys(studentEmailMap).find(k => k.toLowerCase() === bestMatch.toLowerCase());
+                          if (mappingKey && studentEmailMap[mappingKey]) {
+                            updatedStudents[i].email = studentEmailMap[mappingKey];
+                            addLog(`  → Match Classroom Email: ${studentEmailMap[mappingKey]}`);
+                          }
                         }
                       }
 
