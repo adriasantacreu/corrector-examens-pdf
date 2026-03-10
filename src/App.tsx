@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Upload, FileText, Settings, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Globe, Cloud, CheckCircle2, AlertCircle, UserPlus, LogOut, UserCheck, MailQuestion, CheckCircle, List, X, ClipboardPaste, Send, UserMinus, Users } from 'lucide-react';
+import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from './types';
 import { loadPDF, type PDFDocumentProxy } from './utils/pdfUtils';
 import TemplateDefiner from './components/TemplateDefiner';
@@ -425,7 +425,7 @@ function App() {
       <main className="main-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
         {mode === 'upload' && (
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '15vh 2rem 4rem', overflowY: 'auto' }}>
-            <div style={{ marginBottom: '8rem', transform: 'rotate(-4.5deg)', flexShrink: 0 }}>
+            <div style={{ marginBottom: '6rem', transform: 'rotate(-4.5deg)', flexShrink: 0 }}>
               <FlowGradingLogo size="13rem" rotation={-7} extraThick={true} />
             </div>
             

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, Check, ChevronLeft, Sun, Moon, ArrowRight, ArrowLeft, LogOut } from 'lucide-react';
+import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, Check, ChevronLeft, Sun, Moon, ArrowDown, ArrowUp, LogOut } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import HandwrittenTitle from './HandwrittenTitle';
@@ -43,7 +43,6 @@ export default function PageOrganizer({
                 try {
                     const canvas = document.createElement('canvas');
                     // Apply inversion in dark mode for thumbnails too
-                    // Increased scale for better resolution in larger thumbnails
                     await renderPDFPageToCanvas(pdfDoc, i, canvas, 0.5, theme === 'dark');
                     const url = canvas.toDataURL('image/jpeg', 0.7);
                     if (!cancelled) {
@@ -177,17 +176,21 @@ export default function PageOrganizer({
                                         <input value={group.name} onChange={e => setGroups(prev => prev.map((g, i) => i === gi ? { ...g, name: e.target.value } : g))} style={{ fontWeight: 800, fontSize: '0.9rem', border: 'none', background: 'transparent', outline: 'none', color: 'var(--text-primary)', width: '100%' }} />
                                     </div>
 
-                                    {/* Ripple Buttons */}
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                        <button className="btn btn-secondary" onClick={() => ripplePullBackward(gi)} title="Atreure primera pàgina del següent alumne" style={{ padding: '0.4rem', borderRadius: '0.5rem', height: '36px' }}>
-                                            <ArrowLeft size={18} />
-                                        </button>
-                                        <button className="btn btn-secondary" onClick={() => ripplePushForward(gi)} title="Empènyer última pàgina d'aquest alumne" style={{ padding: '0.4rem', borderRadius: '0.5rem', height: '36px' }}>
-                                            <ArrowRight size={18} />
-                                        </button>
+                                    {/* Ripple Buttons (Vertical Arrows) */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '40px' }}>
+                                        {gi > 0 && (
+                                            <button className="btn btn-secondary" onClick={() => ripplePullBackward(gi - 1)} title="Atreure primera pàgina d'aquest alumne cap a l'anterior" style={{ padding: '0.4rem', borderRadius: '0.5rem', height: '36px' }}>
+                                                <ArrowUp size={18} />
+                                            </button>
+                                        )}
+                                        {gi < groups.length - 1 && (
+                                            <button className="btn btn-secondary" onClick={() => ripplePushForward(gi)} title="Empènyer última pàgina d'aquest alumne cap al següent" style={{ padding: '0.4rem', borderRadius: '0.5rem', height: '36px' }}>
+                                                <ArrowDown size={18} />
+                                            </button>
+                                        )}
                                     </div>
 
-                                    {/* Thumbnails Row - SIGNIFICANTLY INCREASED SIZE */}
+                                    {/* Thumbnails Row */}
                                     <div style={{ flex: 1, display: 'flex', gap: '1rem', overflowX: 'auto', padding: '1rem', background: 'var(--bg-tertiary)20', borderRadius: '1rem', minHeight: '240px' }}>
                                         {group.pageIndexes.map((p, pi) => (
                                             <div key={`${p}-${pi}`} draggable onDragStart={() => handleDragStart(gi, pi)} style={{ position: 'relative', cursor: 'grab', background: 'white', borderRadius: '0.6rem', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', overflow: 'hidden', flexShrink: 0 }}>
