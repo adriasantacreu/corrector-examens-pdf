@@ -44,6 +44,15 @@ interface PersistedState {
   accessToken?: string | null;
   userEmail?: string | null;
   fileName: string;
+  isSent?: boolean;
+  progress?: number;
+}
+
+interface RecentSession {
+  fileName: string;
+  progress: number;
+  isSent: boolean;
+  lastModified: string;
 }
 
 interface GlobalState {
@@ -118,6 +127,8 @@ function App() {
   const [pendingModeAfterPDF, setPendingModeAfterPDF] = useState<AppMode | null>(null);
 
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'idle'>('idle');
+  const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
+  const [isSent, setIsSent] = useState(false);
 
   const addLog = (msg: string) => { console.log('[App]', msg); setDebugLogs(prev => [...prev.slice(-200), msg]); };
 
@@ -205,10 +216,11 @@ function App() {
 
   useEffect(() => {
     if (accessToken) {
-      fetchCourses(accessToken);
       fetchUserInfo(accessToken);
+      fetchCourses(accessToken);
+      fetchRecentSessions();
     }
-  }, []);
+  }, [accessToken]);
 
   const importClassroomEmails = async (courseId: string) => {
     if (!accessToken) return;
@@ -306,6 +318,56 @@ function App() {
     }
   };
 
+  const calculateProgress = () => {
+    if (students.length === 0) return 0;
+    let totalExercises = students.length * exercises.length;
+    if (totalExercises === 0) return 0;
+
+    let completed = 0;
+    students.forEach(s => {
+      const studentAnns = annotations[s.id] || {};
+      exercises.forEach(ex => {
+        if (studentAnns[ex.id] && studentAnns[ex.id].length > 0) {
+          completed++;
+        }
+      });
+    });
+    return Math.round((completed / totalExercises) * 100);
+  };
+
+  const fetchRecentSessions = async () => {
+    if (!accessToken) return;
+    try {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=mimeType='application/json' and parents in 'appDataFolder' and name contains '.json'&spaces=appDataFolder&fields=files(id,name,modifiedTime)`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      const data = await res.json();
+      const files = data.files || [];
+
+      const sessions: RecentSession[] = [];
+      for (const file of files) {
+        if (file.name === 'correccio_app_global.json') continue;
+        try {
+          const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+          });
+          const content = await contentRes.json();
+          sessions.push({
+            fileName: content.fileName || file.name.replace('.json', ''),
+            progress: content.progress || 0,
+            isSent: content.isSent || false,
+            lastModified: file.modifiedTime
+          });
+        } catch (e) {
+          console.warn("Error loading session metadata for", file.name, e);
+        }
+      }
+      setRecentSessions(sessions.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()));
+    } catch (err) {
+      console.error("[App] Error fetching recent sessions", err);
+    }
+  };
+
   const loadFromDrive = async (fileName: string) => {
     if (!accessToken) return null;
     try {
@@ -319,7 +381,9 @@ function App() {
       const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       });
-      return await fileRes.json();
+      const data = await fileRes.json();
+      if (data.isSent !== undefined) setIsSent(data.isSent);
+      return data;
     } catch (err) {
       console.error("[App] Drive load error", err);
       return null;
@@ -412,7 +476,9 @@ function App() {
         lastStudentIdx: studentIdx,
         lastExerciseIdx: exerciseIdx,
         accessToken,
-        userEmail
+        userEmail,
+        isSent,
+        progress: calculateProgress()
       };
       saveState(stateToSave);
 
@@ -457,6 +523,7 @@ function App() {
         setCommentBank(session.commentBank);
         setStudentIdx(session.lastStudentIdx ?? 0);
         setExerciseIdx(session.lastExerciseIdx ?? 0);
+        setIsSent(session.isSent ?? false);
         setPendingModeAfterPDF(session.mode);
         setShowRestorePrompt(true);
       } else {
@@ -730,6 +797,69 @@ function App() {
                   </button>
                 )}
               </div>
+
+              {accessToken && recentSessions.length > 0 && (
+                <div style={{ marginTop: '3rem', width: '100%', maxWidth: '600px', textAlign: 'left' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+                    <RefreshCw size={18} color="var(--accent)" />
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Darreres sessions al núvol</h3>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {recentSessions.map(session => (
+                      <div
+                        key={session.fileName}
+                        onClick={() => {
+                          const mockEvent = { target: { files: [new File([], session.fileName, { type: 'application/pdf' })] } } as any;
+                          handleFileUpload(mockEvent);
+                        }}
+                        style={{
+                          padding: '1rem',
+                          background: 'var(--bg-tertiary)',
+                          borderRadius: '0.75rem',
+                          border: '1px solid var(--border)',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.5rem'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--accent)'}
+                        onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border)'}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
+                            {session.fileName}
+                          </span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                            {new Date(session.lastModified).toLocaleDateString()}
+                          </span>
+                        </div>
+
+                        <div style={{ width: '100%', height: '6px', background: 'var(--border)', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{ width: `${session.progress}%`, height: '100%', background: 'var(--accent)', transition: 'width 0.3s ease' }}></div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>{session.progress}% completat</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            {session.isSent ? (
+                              <>
+                                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--success)' }}></div>
+                                <span style={{ color: 'var(--success)' }}>Enviat</span>
+                              </>
+                            ) : (
+                              <>
+                                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--text-secondary)' }}></div>
+                                <span color="var(--text-secondary)">Pendent</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {pendingModeAfterPDF === 'correction' && (
                 <div style={{ marginTop: '1.5rem', width: '100%', display: 'flex', justifyContent: 'center' }}>
@@ -1048,6 +1178,8 @@ function App() {
             onAuthorize={handleAuthorize}
             courses={courses}
             isAuthorizing={isAuthorizing}
+            isSent={isSent}
+            onMarkAsSent={setIsSent}
           />
         )}
 

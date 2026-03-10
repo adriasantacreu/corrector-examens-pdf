@@ -18,9 +18,11 @@ interface Props {
     onAuthorize: () => void;
     courses: any[];
     isAuthorizing: boolean;
+    isSent: boolean;
+    onMarkAsSent: (sent: boolean) => void;
 }
 
-export default function ResultsView({ pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore, onUpdateStudents, onBack, accessToken, userEmail, onAuthorize, courses, isAuthorizing }: Props) {
+export default function ResultsView({ pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore, onUpdateStudents, onBack, accessToken, userEmail, onAuthorize, courses, isAuthorizing, isSent, onMarkAsSent }: Props) {
     const [isSendingAll, setIsSendingAll] = useState(false);
     const [sendStatuses, setSendStatuses] = useState<Record<string, 'pending' | 'sending' | 'success' | 'error'>>({});
 
@@ -289,11 +291,13 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
             }
             console.log("[ResultsView] Enviament massiu completat.");
             if (isTest) alert("S'han enviat tots els correus de prova al teu email.");
+            setIsSendingAll(false); // Changed from setIsMultiSending to setIsSendingAll
+            if (!isTest && students.every(s => s.email && (sendStatuses[s.id] === 'success' || sendStatuses[s.id] === 'pending'))) {
+                onMarkAsSent(true);
+            }
         } catch (err) {
-            console.error("[ResultsView] Error fatal en sendAll:", err);
-        } finally {
-            console.log("[ResultsView] Desbloquejant botons (isSendingAll=false)");
-            setIsSendingAll(false);
+            console.error("[ResultsView] Error in multi-send:", err);
+            setIsSendingAll(false); // Changed from setIsMultiSending to setIsSendingAll
         }
     };
 
@@ -324,7 +328,10 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                             <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></div>
                             <div>
-                                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Sessió: {userEmail}</span>
+                                <span style={{ fontWeight: 600, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    Sessió: {userEmail}
+                                    {isSent && <span style={{ background: '#10b981', color: 'white', padding: '1px 6px', borderRadius: '10px', fontSize: '10px' }}>ENVIAT</span>}
+                                </span>
                                 <p style={{ fontSize: '0.75rem', opacity: 0.8 }}>Google Classroom + Gmail actiu</p>
                             </div>
                         </div>
