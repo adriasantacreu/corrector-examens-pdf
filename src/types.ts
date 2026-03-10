@@ -6,6 +6,12 @@ export interface RubricItem {
   points: number; // positive or negative
 }
 
+export interface RubricSection {
+  id: string;
+  name: string;
+  items: RubricItem[];
+}
+
 export interface BaseExercise {
   id: string;
   type: ExerciseType;
@@ -13,7 +19,8 @@ export interface BaseExercise {
   name?: string;
   maxScore?: number;
   scoringMode?: 'from_max' | 'from_zero'; // 'from_max' is default
-  rubric?: RubricItem[]; // used when scoringMode === 'from_zero'
+  rubric?: RubricItem[]; // Legacy / Simple rubric
+  rubricSections?: RubricSection[]; // Advanced rubric with sections
   stampX?: number; // Global stamp position override
   stampY?: number;
   stampScale?: number;

@@ -3,7 +3,7 @@ import { Stage, Layer, Image as KonvaImage, Rect, Group, Text, Transformer } fro
 import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, Award, TextSelect, Sun, LogOut, RefreshCw, X } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
-import type { ExerciseDef, CropExercise, PagesExercise, RubricItem } from '../types';
+import type { ExerciseDef, CropExercise, PagesExercise, RubricItem, RubricSection } from '../types';
 import FlowGradingLogo from './FlowGradingLogo';
 import HandwrittenTitle from './HandwrittenTitle';
 
@@ -24,7 +24,6 @@ interface Props {
     ocrCompleted: boolean;
 }
 
-// Helper for natural number input (handles commas, dots, negative signs, etc)
 function NumericInput({ value, onChange, style, placeholder = "" }: {
     value: number | undefined,
     onChange: (val: number | undefined) => void,
@@ -96,7 +95,6 @@ export default function TemplateDefiner({
     const [exercises, setExercises] = useState<ExerciseDef[]>(initialExercises);
     const [lastAddedId, setLastAddedId] = useState<string | null>(null);
 
-    // Drawing state
     const [isDrawing, setIsDrawing] = useState(false);
     const [newCropRef, setNewCropRef] = useState<Partial<CropExercise> | null>(null);
     const [mode, setMode] = useState<'select' | 'draw' | 'draw_qr' | 'draw_ocr' | 'draw_total_score'>('select');
@@ -255,8 +253,9 @@ export default function TemplateDefiner({
                     type: finalType, 
                     pageIndex: currentPageIndex, 
                     x, y, width, height,
-                    scoringMode: 'from_zero', // Default to rubric mode starting from zero
-                    rubric: []
+                    scoringMode: 'from_zero', 
+                    rubric: [],
+                    rubricSections: []
                 };
                 setExercises(prev => [...prev, finalCrop]);
                 setLastAddedId(newId);
@@ -275,30 +274,70 @@ export default function TemplateDefiner({
         setExercises(prev => prev.map(ex => ex.id === id ? { ...ex, ...updates } as ExerciseDef : ex));
     };
 
-    const addRubricItem = (exId: string) => {
+    const addRubricSection = (exId: string) => {
         setExercises(prev => prev.map(ex => {
             if (ex.id === exId) {
-                const items = ex.rubric || [];
-                return { ...ex, rubric: [...items, { id: `r_${Date.now()}`, label: '', points: 0 }] };
+                const sections = ex.rubricSections || [];
+                return { ...ex, rubricSections: [...sections, { id: `s_${Date.now()}`, name: `Apartat ${sections.length + 1}`, items: [] }] };
             }
             return ex;
         }));
     };
 
-    const updateRubricItem = (exId: string, itemId: string, updates: Partial<RubricItem>) => {
+    const removeRubricSection = (exId: string, sectionId: string) => {
         setExercises(prev => prev.map(ex => {
             if (ex.id === exId) {
-                const items = (ex.rubric || []).map(item => item.id === itemId ? { ...item, ...updates } : item);
-                return { ...ex, rubric: items };
+                return { ...ex, rubricSections: (ex.rubricSections || []).filter(s => s.id !== sectionId) };
             }
             return ex;
         }));
     };
 
-    const removeRubricItem = (exId: string, itemId: string) => {
+    const updateRubricSection = (exId: string, sectionId: string, updates: Partial<RubricSection>) => {
         setExercises(prev => prev.map(ex => {
             if (ex.id === exId) {
-                return { ...ex, rubric: (ex.rubric || []).filter(i => i.id !== itemId) };
+                return { ...ex, rubricSections: (ex.rubricSections || []).map(s => s.id === sectionId ? { ...s, ...updates } : s) };
+            }
+            return ex;
+        }));
+    };
+
+    const addRubricItem = (exId: string, sectionId?: string) => {
+        setExercises(prev => prev.map(ex => {
+            if (ex.id === exId) {
+                if (sectionId) {
+                    return { ...ex, rubricSections: (ex.rubricSections || []).map(s => s.id === sectionId ? { ...s, items: [...s.items, { id: `r_${Date.now()}`, label: '', points: 0 }] } : s) };
+                } else {
+                    const items = ex.rubric || [];
+                    return { ...ex, rubric: [...items, { id: `r_${Date.now()}`, label: '', points: 0 }] };
+                }
+            }
+            return ex;
+        }));
+    };
+
+    const updateRubricItem = (exId: string, itemId: string, updates: Partial<RubricItem>, sectionId?: string) => {
+        setExercises(prev => prev.map(ex => {
+            if (ex.id === exId) {
+                if (sectionId) {
+                    return { ...ex, rubricSections: (ex.rubricSections || []).map(s => s.id === sectionId ? { ...s, items: s.items.map(item => item.id === itemId ? { ...item, ...updates } : item) } : s) };
+                } else {
+                    const items = (ex.rubric || []).map(item => item.id === itemId ? { ...item, ...updates } : item);
+                    return { ...ex, rubric: items };
+                }
+            }
+            return ex;
+        }));
+    };
+
+    const removeRubricItem = (exId: string, itemId: string, sectionId?: string) => {
+        setExercises(prev => prev.map(ex => {
+            if (ex.id === exId) {
+                if (sectionId) {
+                    return { ...ex, rubricSections: (ex.rubricSections || []).map(s => s.id === sectionId ? { ...s, items: s.items.filter(i => i.id !== itemId) } : s) };
+                } else {
+                    return { ...ex, rubric: (ex.rubric || []).filter(i => i.id !== itemId) };
+                }
             }
             return ex;
         }));
@@ -317,7 +356,6 @@ export default function TemplateDefiner({
 
     return (
         <div style={{ display: 'flex', width: '100%', flex: 1, flexDirection: 'column', minHeight: 0 }}>
-            {/* Unified Header */}
             <header className="header" style={{ flexShrink: 0 }}>
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
                     {onBack && (
@@ -436,7 +474,6 @@ export default function TemplateDefiner({
                                                     
                                                     <div style={{ flex: 1 }}></div>
                                                     
-                                                    {/* Segmented Control / Switch for Scoring Mode */}
                                                     <div style={{ display: 'flex', background: 'var(--bg-primary)', borderRadius: '0.5rem', padding: '2px', border: '1px solid var(--border)', height: '28px' }}>
                                                         <button 
                                                             onClick={(e) => { e.stopPropagation(); updateExerciseMeta(ex.id, { scoringMode: 'from_zero' }); }}
@@ -457,37 +494,69 @@ export default function TemplateDefiner({
                                                     </div>
                                                 </div>
 
-                                                {/* Rubric Items Editor */}
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', borderTop: '1px solid var(--border)', paddingTop: '0.5rem' }}>
+                                                {/* Advanced Rubric with Sections */}
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', borderTop: '1px solid var(--border)', paddingTop: '0.5rem' }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                        <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Criteris de rúbrica</span>
-                                                        <button onClick={(e) => { e.stopPropagation(); addRubricItem(ex.id); }} className="btn btn-icon" style={{ padding: '2px', height: '20px', width: '20px', color: 'var(--accent)' }}>
+                                                        <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Apartats i Rúbrica</span>
+                                                        <button onClick={(e) => { e.stopPropagation(); addRubricSection(ex.id); }} className="btn btn-icon" title="Afegir Apartat" style={{ padding: '2px', height: '20px', width: '20px', color: 'var(--accent)' }}>
                                                             <Plus size={14} />
                                                         </button>
                                                     </div>
-                                                    
-                                                    {(ex.rubric || []).map((item) => (
-                                                        <div key={item.id} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                                                            <input 
-                                                                type="text" 
-                                                                value={item.label} 
-                                                                placeholder="Concepte..." 
-                                                                onChange={e => updateRubricItem(ex.id, item.id, { label: e.target.value })}
-                                                                style={{ flex: 1, fontSize: '0.7rem', padding: '0.2rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
-                                                                onClick={e => e.stopPropagation()}
-                                                            />
-                                                            <NumericInput 
-                                                                value={item.points} 
-                                                                onChange={val => updateRubricItem(ex.id, item.id, { points: val || 0 })} 
-                                                                style={{ width: '40px', textAlign: 'center' }} 
-                                                            />
-                                                            <button onClick={(e) => { e.stopPropagation(); removeRubricItem(ex.id, item.id); }} style={{ padding: '4px', color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                                                                <X size={14} />
-                                                            </button>
+
+                                                    {(ex.rubricSections || []).map((section) => (
+                                                        <div key={section.id} style={{ background: 'rgba(0,0,0,0.02)', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
+                                                            <div style={{ display: 'flex', gap: '4px', marginBottom: '0.4rem', alignItems: 'center' }}>
+                                                                <input 
+                                                                    value={section.name} 
+                                                                    onChange={e => updateRubricSection(ex.id, section.id, { name: e.target.value })}
+                                                                    style={{ flex: 1, fontSize: '0.7rem', fontWeight: 800, background: 'transparent', border: 'none', borderBottom: '1px dashed var(--border)' }}
+                                                                    onClick={e => e.stopPropagation()}
+                                                                />
+                                                                <button onClick={(e) => { e.stopPropagation(); addRubricItem(ex.id, section.id); }} className="btn-icon" style={{ padding: '2px' }}><Plus size={12} /></button>
+                                                                <button onClick={(e) => { e.stopPropagation(); removeRubricSection(ex.id, section.id); }} className="btn-icon" style={{ padding: '2px', color: 'var(--danger)' }}><X size={12} /></button>
+                                                            </div>
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                                                                {section.items.map(item => (
+                                                                    <div key={item.id} style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                                                                        <input 
+                                                                            value={item.label} 
+                                                                            placeholder="Criteri..." 
+                                                                            onChange={e => updateRubricItem(ex.id, item.id, { label: e.target.value }, section.id)}
+                                                                            style={{ flex: 1, fontSize: '0.65rem', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '2px', padding: '1px 4px' }}
+                                                                            onClick={e => e.stopPropagation()}
+                                                                        />
+                                                                        <NumericInput value={item.points} onChange={val => updateRubricItem(ex.id, item.id, { points: val || 0 }, section.id)} style={{ width: '35px', fontSize: '0.65rem' }} />
+                                                                        <button onClick={(e) => { e.stopPropagation(); removeRubricItem(ex.id, item.id, section.id); }} style={{ color: 'var(--danger)', border: 'none', background: 'transparent', cursor: 'pointer' }}><X size={10} /></button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
                                                         </div>
                                                     ))}
-                                                    {(ex.rubric || []).length === 0 && (
-                                                        <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Clica + per afegir criteris</span>
+
+                                                    {/* Legacy Rubric Items (if any exist but no sections) */}
+                                                    {(!ex.rubricSections || ex.rubricSections.length === 0) && (ex.rubric || []).length > 0 && (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                                                            {(ex.rubric || []).map((item) => (
+                                                                <div key={item.id} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                                                                    <input 
+                                                                        type="text" 
+                                                                        value={item.label} 
+                                                                        placeholder="Concepte..." 
+                                                                        onChange={e => updateRubricItem(ex.id, item.id, { label: e.target.value })}
+                                                                        style={{ flex: 1, fontSize: '0.7rem', padding: '0.2rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                                                                        onClick={e => e.stopPropagation()}
+                                                                    />
+                                                                    <NumericInput value={item.points} onChange={val => updateRubricItem(ex.id, item.id, { points: val || 0 })} style={{ width: '40px', textAlign: 'center' }} />
+                                                                    <button onClick={(e) => { e.stopPropagation(); removeRubricItem(ex.id, item.id); }} style={{ padding: '4px', color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}><X size={14} /></button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {(!ex.rubricSections || ex.rubricSections.length === 0) && (ex.rubric || []).length === 0 && (
+                                                        <button onClick={(e) => { e.stopPropagation(); addRubricItem(ex.id); }} className="btn btn-secondary" style={{ fontSize: '0.65rem', padding: '0.3rem' }}>
+                                                            <Plus size={12} /> Afegir criteri simple
+                                                        </button>
                                                     )}
                                                 </div>
                                             </div>
@@ -499,9 +568,7 @@ export default function TemplateDefiner({
                     </div>
                 </div>
 
-                {/* Editor Main Canvas */}
                 <div className="workspace" ref={containerRef} style={{ background: 'var(--bg-tertiary)', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minHeight: 0, position: 'relative', margin: 0, padding: 0 }}>
-                    {/* Floating Pagination controls */}
                     <div className="glass-dark" style={{ position: 'absolute', top: '1rem', zIndex: 10, display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.5rem 1rem', borderRadius: '2rem' }}>
                         <button className="btn-icon" style={{ color: 'white' }} disabled={currentPageIndex === 0} onClick={() => setCurrentPageIndex(p => Math.max(0, p - 1))}><ChevronLeft size={20} /></button>
                         <span style={{ color: 'white', fontWeight: 700 }}>Pàgina {currentPageIndex + 1} / {pagesPerExam}</span>
