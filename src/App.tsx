@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, AlertCircle, HelpCircle, CheckCircle2 } from 'lucide-react';
+import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, AlertCircle, HelpCircle } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from './types';
 import { loadPDF, type PDFDocumentProxy } from './utils/pdfUtils';
 import TemplateDefiner from './components/TemplateDefiner';
@@ -94,7 +94,6 @@ function App() {
   const [showPasteArea, setShowPasteArea] = useState(false);
   const [ocrCompleted, setOcrCompleted] = useState(false);
 
-  // PRETTY DIALOG STATE
   const [dialog, setDialog] = useState<DialogState>({ show: false, title: '', message: '', type: 'alert' });
 
   const showAlert = (title: string, message: string) => setDialog({ show: true, title, message, type: 'alert' });
@@ -411,7 +410,6 @@ function App() {
     <div className={`app-container ${mode === 'upload' ? 'home-page' : ''}`} style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {isProcessing && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}><div className="card" style={{ textAlign: 'center', minWidth: '300px' }}><div className="loader" style={{ margin: '0 auto 1.5rem', width: '40px', height: '40px' }}></div><h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{processingMessage}</h2></div></div>}
       
-      {/* GLOBAL DIALOG SYSTEM */}
       {dialog.show && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
             <div className="card" style={{ maxWidth: '400px', width: '90%', padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '1.5rem', border: '1px solid var(--border)', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
@@ -462,12 +460,12 @@ function App() {
 
       <main className="main-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
         {mode === 'upload' && (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '15vh 2rem 4rem', overflowY: 'auto' }}>
-            <div style={{ marginBottom: '6rem', transform: 'rotate(-4.5deg)', flexShrink: 0 }}>
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '20vh 2rem 4rem', overflowY: 'auto' }}>
+            <div style={{ marginBottom: '10rem', transform: 'rotate(-4.5deg)', flexShrink: 0 }}>
               <FlowGradingLogo size="13rem" rotation={-7} extraThick={true} />
             </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', alignItems: 'center', marginBottom: '4rem', flexShrink: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', alignItems: 'center', marginBottom: '6rem', flexShrink: 0 }}>
               <label className="btn btn-primary" style={{ padding: '1.2rem 4rem', fontSize: '1.3rem', height: '56px', borderRadius: '2rem', boxShadow: '0 10px 25px var(--accent-light)' }}>
                 <input type="file" accept="application/pdf" onChange={handleFileUpload} style={{ display: 'none' }} />
                 <Upload size={26} /> Pujar nou PDF

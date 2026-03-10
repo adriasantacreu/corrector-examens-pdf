@@ -37,23 +37,61 @@ export default function PageOrganizer({
     useEffect(() => {
         let cancelled = false;
         const totalPages = pdfDoc.numPages;
-        const loadAll = async () => {
+        
+        // CUSTOM THUMBNAIL GENERATION ORDER
+        // 1. All Page 1s, 2. All Last Pages, 3. All Page 2s, 4. All N-1 pages...
+        const generateOrder = () => {
+            const order: number[] = [];
+            const processed = new Set<number>();
+            
+            for (let p = 0; p < pagesPerExam; p++) {
+                // p-th page of each student
+                for (let i = 0; i < initialGroups.length; i++) {
+                    const page = initialGroups[i].pageIndexes[p];
+                    if (page && !processed.has(page)) {
+                        order.push(page);
+                        processed.add(page);
+                    }
+                }
+                // (N-p)-th page of each student
+                const lastP = pagesPerExam - 1 - p;
+                if (lastP > p) {
+                    for (let i = 0; i < initialGroups.length; i++) {
+                        const page = initialGroups[i].pageIndexes[lastP];
+                        if (page && !processed.has(page)) {
+                            order.push(page);
+                            processed.add(page);
+                        }
+                    }
+                }
+            }
+            
+            // Add any missing pages (just in case)
             for (let i = 1; i <= totalPages; i++) {
+                if (!processed.has(i)) order.push(i);
+            }
+            return order;
+        };
+
+        const loadOrdered = async () => {
+            const order = generateOrder();
+            for (const pageNum of order) {
                 if (cancelled) return;
                 try {
                     const canvas = document.createElement('canvas');
                     // THUMBNAILS STAY LIGHT (false for invert)
-                    await renderPDFPageToCanvas(pdfDoc, i, canvas, 0.5, false);
+                    await renderPDFPageToCanvas(pdfDoc, pageNum, canvas, 0.5, false);
                     const url = canvas.toDataURL('image/jpeg', 0.7);
                     if (!cancelled) {
-                        setThumbnails(prev => ({ ...prev, [i]: url }));
+                        setThumbnails(prev => ({ ...prev, [pageNum]: url }));
                     }
                 } catch { }
             }
         };
-        loadAll();
+        
+        loadOrdered();
         return () => { cancelled = true; };
-    }, [pdfDoc]); // Removed theme from dependency as we don't want them to change
+    }, [pdfDoc, initialGroups, pagesPerExam]);
 
     const ripplePushForward = (groupIdx: number) => {
         setGroups(prev => {
@@ -74,6 +112,30 @@ export default function PageOrganizer({
                 if (next[i + 1].pageIndexes.length === 0) break;
                 const firstPageOfNext = next[i + 1].pageIndexes.shift()!;
                 next[i].pageIndexes.push(firstPageOfNext);
+            }
+            return next;
+        });
+    };
+
+    const shiftOneDown = (gi: number) => {
+        if (gi >= groups.length - 1) return;
+        setGroups(prev => {
+            const next = prev.map(g => ({ ...g, pageIndexes: [...g.pageIndexes] }));
+            if (next[gi].pageIndexes.length > 0) {
+                const page = next[gi].pageIndexes.pop()!;
+                next[gi + 1].pageIndexes.unshift(page);
+            }
+            return next;
+        });
+    };
+
+    const shiftOneUp = (gi: number) => {
+        if (gi <= 0) return;
+        setGroups(prev => {
+            const next = prev.map(g => ({ ...g, pageIndexes: [...g.pageIndexes] }));
+            if (next[gi].pageIndexes.length > 0) {
+                const page = next[gi].pageIndexes.shift()!;
+                next[gi - 1].pageIndexes.push(page);
             }
             return next;
         });
@@ -161,7 +223,7 @@ export default function PageOrganizer({
                     <div style={{ marginBottom: '3rem' }}>
                         <HandwrittenTitle size="3rem" color="purple">Organitzador de pàgines</HandwrittenTitle>
                         <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem', fontSize: '1.1rem' }}>
-                            Ajusta l'ordre dels exàmens. Utilitza les fletxes per desplaçar pàgines en cascada.
+                            Ajusta l'ordre dels exàmens. Utilitza les fletxes per desplaçar pàgines. Les dobles fletxes mouen en cascada.
                             {inconsistentCount > 0 && <span style={{ color: 'var(--danger)', marginLeft: '1rem', fontWeight: 700 }}>⚠️ {inconsistentCount} alumnes amb error</span>}
                         </p>
                     </div>
@@ -176,17 +238,27 @@ export default function PageOrganizer({
                                         <input value={group.name} onChange={e => setGroups(prev => prev.map((g, i) => i === gi ? { ...g, name: e.target.value } : g))} style={{ fontWeight: 800, fontSize: '0.9rem', border: 'none', background: 'transparent', outline: 'none', color: 'var(--text-primary)', width: '100%' }} />
                                     </div>
 
-                                    {/* Ripple Buttons (Vertical Arrows) */}
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '40px' }}>
+                                    {/* Action Buttons (Vertical Arrows) */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '40px' }}>
                                         {gi > 0 && (
-                                            <button className="btn btn-secondary" onClick={() => ripplePullBackward(gi - 1)} title="Atreure primera pàgina d'aquest alumne cap a l'anterior" style={{ padding: '0.4rem', borderRadius: '0.5rem', height: '36px' }}>
-                                                <ArrowUp size={18} />
-                                            </button>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                <button className="btn btn-secondary" onClick={() => ripplePullBackward(gi - 1)} title="Moure EN CASCADA amunt" style={{ padding: '0.2rem', borderRadius: '0.4rem', height: '28px', border: '1px solid var(--accent)' }}>
+                                                    <ArrowUp size={14} strokeWidth={3} />
+                                                </button>
+                                                <button className="btn btn-secondary" onClick={() => shiftOneUp(gi)} title="Moure només 1 pàgina amunt" style={{ padding: '0.2rem', borderRadius: '0.4rem', height: '28px' }}>
+                                                    <ArrowUp size={14} />
+                                                </button>
+                                            </div>
                                         )}
                                         {gi < groups.length - 1 && (
-                                            <button className="btn btn-secondary" onClick={() => ripplePushForward(gi)} title="Empènyer última pàgina d'aquest alumne cap al següent" style={{ padding: '0.4rem', borderRadius: '0.5rem', height: '36px' }}>
-                                                <ArrowDown size={18} />
-                                            </button>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                <button className="btn btn-secondary" onClick={() => shiftOneDown(gi)} title="Moure només 1 pàgina avall" style={{ padding: '0.2rem', borderRadius: '0.4rem', height: '28px' }}>
+                                                    <ArrowDown size={14} />
+                                                </button>
+                                                <button className="btn btn-secondary" onClick={() => ripplePushForward(gi)} title="Moure EN CASCADA avall" style={{ padding: '0.2rem', borderRadius: '0.4rem', height: '28px', border: '1px solid var(--accent)' }}>
+                                                    <ArrowDown size={14} strokeWidth={3} />
+                                                </button>
+                                            </div>
                                         )}
                                     </div>
 
