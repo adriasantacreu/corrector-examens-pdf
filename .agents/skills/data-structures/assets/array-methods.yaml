@@ -1,0 +1,311 @@
+# JavaScript Array Methods Reference
+# Complete guide to built-in array operations
+
+# Array Creation
+creation:
+  literal:
+    syntax: "[item1, item2, ...]"
+    example: "const arr = [1, 2, 3];"
+
+  constructor:
+    syntax: "new Array(length)"
+    example: "const arr = new Array(5);"
+    note: "Creates sparse array with undefined values"
+
+  from:
+    syntax: "Array.from(iterable, mapFn?)"
+    example: "Array.from('hello')  // ['h', 'e', 'l', 'l', 'o']"
+    use_cases:
+      - "Convert iterables to arrays"
+      - "Create array with transformation"
+      - "Clone arrays"
+
+  of:
+    syntax: "Array.of(...items)"
+    example: "Array.of(1, 2, 3)  // [1, 2, 3]"
+    note: "Unlike new Array(3), creates [3] not sparse"
+
+  fill:
+    syntax: "new Array(n).fill(value)"
+    example: "new Array(5).fill(0)  // [0, 0, 0, 0, 0]"
+
+# Mutating Methods (modify original array)
+mutating_methods:
+  push:
+    syntax: "arr.push(...items)"
+    returns: "New length"
+    complexity: "O(1)"
+    example: "[1, 2].push(3)  // returns 3, arr = [1, 2, 3]"
+
+  pop:
+    syntax: "arr.pop()"
+    returns: "Removed element"
+    complexity: "O(1)"
+    example: "[1, 2, 3].pop()  // returns 3, arr = [1, 2]"
+
+  shift:
+    syntax: "arr.shift()"
+    returns: "Removed element"
+    complexity: "O(n)"
+    example: "[1, 2, 3].shift()  // returns 1, arr = [2, 3]"
+    note: "Slow for large arrays - reindexes all elements"
+
+  unshift:
+    syntax: "arr.unshift(...items)"
+    returns: "New length"
+    complexity: "O(n)"
+    example: "[2, 3].unshift(1)  // returns 3, arr = [1, 2, 3]"
+
+  splice:
+    syntax: "arr.splice(start, deleteCount, ...items)"
+    returns: "Array of removed elements"
+    complexity: "O(n)"
+    example: "[1, 2, 3].splice(1, 1, 'a')  // returns [2], arr = [1, 'a', 3]"
+    use_cases:
+      - "Remove elements at index"
+      - "Insert elements at index"
+      - "Replace elements"
+
+  sort:
+    syntax: "arr.sort(compareFn?)"
+    returns: "Sorted array (same reference)"
+    complexity: "O(n log n)"
+    default_behavior: "Converts to strings and sorts"
+    examples:
+      numeric: "[3, 1, 2].sort((a, b) => a - b)  // [1, 2, 3]"
+      descending: "[1, 2, 3].sort((a, b) => b - a)  // [3, 2, 1]"
+      objects: "arr.sort((a, b) => a.name.localeCompare(b.name))"
+
+  reverse:
+    syntax: "arr.reverse()"
+    returns: "Reversed array (same reference)"
+    complexity: "O(n)"
+    example: "[1, 2, 3].reverse()  // [3, 2, 1]"
+
+  fill:
+    syntax: "arr.fill(value, start?, end?)"
+    returns: "Modified array"
+    complexity: "O(n)"
+    example: "[1, 2, 3].fill(0, 1)  // [1, 0, 0]"
+
+  copyWithin:
+    syntax: "arr.copyWithin(target, start, end?)"
+    returns: "Modified array"
+    complexity: "O(n)"
+    example: "[1, 2, 3, 4].copyWithin(0, 2)  // [3, 4, 3, 4]"
+
+# Non-Mutating Methods (return new array/value)
+non_mutating_methods:
+  # Iteration Methods
+  forEach:
+    syntax: "arr.forEach(callback)"
+    returns: "undefined"
+    complexity: "O(n)"
+    callback_args: "(element, index, array)"
+    example: "[1, 2, 3].forEach(x => console.log(x))"
+    note: "Cannot break early - use for...of if needed"
+
+  map:
+    syntax: "arr.map(callback)"
+    returns: "New array with transformed elements"
+    complexity: "O(n)"
+    callback_args: "(element, index, array)"
+    example: "[1, 2, 3].map(x => x * 2)  // [2, 4, 6]"
+
+  filter:
+    syntax: "arr.filter(callback)"
+    returns: "New array with elements that pass test"
+    complexity: "O(n)"
+    callback_args: "(element, index, array)"
+    example: "[1, 2, 3, 4].filter(x => x % 2 === 0)  // [2, 4]"
+
+  reduce:
+    syntax: "arr.reduce(callback, initialValue?)"
+    returns: "Accumulated result"
+    complexity: "O(n)"
+    callback_args: "(accumulator, element, index, array)"
+    examples:
+      sum: "[1, 2, 3].reduce((acc, x) => acc + x, 0)  // 6"
+      max: "[1, 5, 3].reduce((max, x) => x > max ? x : max)"
+      group: |
+        arr.reduce((groups, item) => {
+          const key = item.category;
+          groups[key] = groups[key] || [];
+          groups[key].push(item);
+          return groups;
+        }, {})
+
+  reduceRight:
+    syntax: "arr.reduceRight(callback, initialValue?)"
+    returns: "Accumulated result (right to left)"
+    complexity: "O(n)"
+
+  flat:
+    syntax: "arr.flat(depth?)"
+    returns: "New flattened array"
+    complexity: "O(n)"
+    examples:
+      - "[1, [2, 3]].flat()  // [1, 2, 3]"
+      - "[1, [2, [3]]].flat(2)  // [1, 2, 3]"
+      - "[1, [2, [3, [4]]]].flat(Infinity)  // [1, 2, 3, 4]"
+
+  flatMap:
+    syntax: "arr.flatMap(callback)"
+    returns: "New flattened array (one level)"
+    complexity: "O(n)"
+    example: "[1, 2].flatMap(x => [x, x * 2])  // [1, 2, 2, 4]"
+
+  # Search Methods
+  find:
+    syntax: "arr.find(callback)"
+    returns: "First matching element or undefined"
+    complexity: "O(n)"
+    example: "[1, 2, 3].find(x => x > 1)  // 2"
+
+  findIndex:
+    syntax: "arr.findIndex(callback)"
+    returns: "Index of first match or -1"
+    complexity: "O(n)"
+    example: "[1, 2, 3].findIndex(x => x > 1)  // 1"
+
+  findLast:
+    syntax: "arr.findLast(callback)"
+    returns: "Last matching element or undefined"
+    complexity: "O(n)"
+    introduced: "ES2023"
+
+  findLastIndex:
+    syntax: "arr.findLastIndex(callback)"
+    returns: "Index of last match or -1"
+    complexity: "O(n)"
+    introduced: "ES2023"
+
+  indexOf:
+    syntax: "arr.indexOf(element, fromIndex?)"
+    returns: "First index of element or -1"
+    complexity: "O(n)"
+    comparison: "Strict equality (===)"
+
+  lastIndexOf:
+    syntax: "arr.lastIndexOf(element, fromIndex?)"
+    returns: "Last index of element or -1"
+    complexity: "O(n)"
+
+  includes:
+    syntax: "arr.includes(element, fromIndex?)"
+    returns: "boolean"
+    complexity: "O(n)"
+    note: "Can find NaN (unlike indexOf)"
+
+  # Test Methods
+  every:
+    syntax: "arr.every(callback)"
+    returns: "true if all elements pass test"
+    complexity: "O(n)"
+    short_circuits: true
+    example: "[2, 4, 6].every(x => x % 2 === 0)  // true"
+
+  some:
+    syntax: "arr.some(callback)"
+    returns: "true if at least one element passes"
+    complexity: "O(n)"
+    short_circuits: true
+    example: "[1, 2, 3].some(x => x > 2)  // true"
+
+  # Copy Methods
+  slice:
+    syntax: "arr.slice(start?, end?)"
+    returns: "New array (shallow copy)"
+    complexity: "O(n)"
+    examples:
+      - "[1, 2, 3].slice(1)  // [2, 3]"
+      - "[1, 2, 3].slice(0, 2)  // [1, 2]"
+      - "[1, 2, 3].slice(-2)  // [2, 3]"
+    use_cases:
+      - "Clone array: arr.slice()"
+      - "Get subarray"
+      - "Remove first/last elements (immutably)"
+
+  concat:
+    syntax: "arr.concat(...arrays)"
+    returns: "New merged array"
+    complexity: "O(n)"
+    example: "[1, 2].concat([3, 4], [5])  // [1, 2, 3, 4, 5]"
+    note: "Prefer spread: [...arr1, ...arr2]"
+
+  toSorted:
+    syntax: "arr.toSorted(compareFn?)"
+    returns: "New sorted array"
+    complexity: "O(n log n)"
+    introduced: "ES2023"
+    note: "Immutable version of sort()"
+
+  toReversed:
+    syntax: "arr.toReversed()"
+    returns: "New reversed array"
+    complexity: "O(n)"
+    introduced: "ES2023"
+    note: "Immutable version of reverse()"
+
+  toSpliced:
+    syntax: "arr.toSpliced(start, deleteCount, ...items)"
+    returns: "New array with changes"
+    complexity: "O(n)"
+    introduced: "ES2023"
+    note: "Immutable version of splice()"
+
+  with:
+    syntax: "arr.with(index, value)"
+    returns: "New array with replaced element"
+    complexity: "O(n)"
+    introduced: "ES2023"
+    example: "[1, 2, 3].with(1, 'a')  // [1, 'a', 3]"
+
+  # String Methods
+  join:
+    syntax: "arr.join(separator?)"
+    returns: "String"
+    complexity: "O(n)"
+    example: "[1, 2, 3].join('-')  // '1-2-3'"
+
+  toString:
+    syntax: "arr.toString()"
+    returns: "String (comma-separated)"
+    example: "[1, 2, 3].toString()  // '1,2,3'"
+
+# Static Methods
+static_methods:
+  isArray:
+    syntax: "Array.isArray(value)"
+    returns: "boolean"
+    example: "Array.isArray([])  // true"
+    note: "Most reliable way to check for arrays"
+
+  from:
+    syntax: "Array.from(arrayLike, mapFn?, thisArg?)"
+    returns: "New array"
+    examples:
+      - "Array.from('abc')  // ['a', 'b', 'c']"
+      - "Array.from({length: 3}, (_, i) => i)  // [0, 1, 2]"
+      - "Array.from(new Set([1, 1, 2]))  // [1, 2]"
+
+  of:
+    syntax: "Array.of(...items)"
+    returns: "New array"
+    example: "Array.of(3)  // [3] (not [undefined, undefined, undefined])"
+
+# Common Patterns
+patterns:
+  remove_duplicates: "[...new Set(arr)]"
+  clone_array: "[...arr] or arr.slice()"
+  last_element: "arr[arr.length - 1] or arr.at(-1)"
+  check_empty: "arr.length === 0"
+  clear_array: "arr.length = 0"
+  shuffle: "arr.sort(() => Math.random() - 0.5)"
+  chunk: |
+    function chunk(arr, size) {
+      return Array.from({ length: Math.ceil(arr.length / size) },
+        (_, i) => arr.slice(i * size, i * size + size));
+    }
+  unique_by_key: |
+    [...new Map(arr.map(item => [item.id, item])).values()]

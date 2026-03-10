@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "skills": {
+    "clean-codejs-functions": {
+      "source": "damianwrooby/javascript-clean-code-skills",
+      "sourceType": "github",
+      "computedHash": "92f4c4a63b1ef6523048f4b0b6b48fc203b7df5c2c54ee99a9ff5ec78f8a50a0"
+    },
+    "clean-codejs-modules": {
+      "source": "damianwrooby/javascript-clean-code-skills",
+      "sourceType": "github",
+      "computedHash": "2122de818aead67e7c461623691b636ebd1478c384824fcf82087a4fb6cc5ddd"
+    },
+    "clean-codejs-naming": {
+      "source": "damianwrooby/javascript-clean-code-skills",
+      "sourceType": "github",
+      "computedHash": "e0fab5371b63632e6f0d35638830bc798367fa9e4c0496884221479fa25d7baa"
+    },
+    "clean-codejs-objects": {
+      "source": "damianwrooby/javascript-clean-code-skills",
+      "sourceType": "github",
+      "computedHash": "75739192380703aa697e86ff3b26d5f2c18fd293d734813f1f3e0dd53f94b6e8"
+    },
+    "data-structures": {
+      "source": "pluginagentmarketplace/custom-plugin-javascript",
+      "sourceType": "github",
+      "computedHash": "7e5e7c324974a185173dc5f8ee74f8c7c6841d3d0aeaf98e51d0ef6257fcb297"
+    },
+    "frontend-design": {
+      "source": "buildatscale-tv/gemini-skills",
+      "sourceType": "github",
+      "computedHash": "119fe4633fbc285ad8d21efe8ea6a1393d0a19d48e621b013c30cc8411116032"
+    },
+    "nano-banana-pro": {
+      "source": "buildatscale-tv/gemini-skills",
+      "sourceType": "github",
+      "computedHash": "88ebeb0b4fd1aa7a24737966d1b541ae7e88b8edc8da406b0fca0999d920083d"
+    }
+  }
+}

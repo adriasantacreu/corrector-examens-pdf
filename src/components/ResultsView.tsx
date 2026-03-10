@@ -1,8 +1,11 @@
-import { useState } from 'react';
-import { Mail, Send, CheckCircle2, AlertCircle, ChevronLeft, Beaker, RefreshCw } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { ChevronLeft, Mail, Send, CheckCircle2, Download, Sun, Moon, Trophy, UserCheck, RefreshCw, MailQuestion, CheckCircle, FileDown, Layers } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from '../types';
-import { generateStudentPDF } from '../utils/pdfExport';
+import { generateStudentPDF, exportAnnotatedPDF } from '../utils/pdfExport';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
+import FlowGradingLogo from './FlowGradingLogo';
+import HandwrittenTitle from './HandwrittenTitle';
+import Highlighter from './Highlighter';
 
 interface Props {
     pdfDoc: PDFDocumentProxy;
@@ -13,412 +16,205 @@ interface Props {
     targetMaxScore: number;
     onUpdateStudents: (students: Student[]) => void;
     onBack: () => void;
-    accessToken: string | null;
-    userEmail: string | null;
-    onAuthorize: () => void;
-    courses: any[];
-    isAuthorizing: boolean;
-    isSent: boolean;
-    onMarkAsSent: (sent: boolean) => void;
+    accessToken?: string | null;
+    userEmail?: string | null;
+    onAuthorize?: () => void;
+    courses?: any[];
+    isAuthorizing?: boolean;
+    theme?: 'light' | 'dark';
+    onToggleTheme?: () => void;
+    classroomStudents?: any[];
 }
 
-export default function ResultsView({ pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore, onUpdateStudents, onBack, accessToken, userEmail, onAuthorize, courses, isAuthorizing, isSent, onMarkAsSent }: Props) {
-    const [isSendingAll, setIsSendingAll] = useState(false);
+export default function ResultsView({ pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore, onUpdateStudents, onBack, accessToken, userEmail, onAuthorize, courses = [], isAuthorizing, theme, onToggleTheme, classroomStudents = [] }: Props) {
     const [sendStatuses, setSendStatuses] = useState<Record<string, 'pending' | 'sending' | 'success' | 'error'>>({});
+    const [isSendingAll, setIsSendingAll] = useState(false);
+    const [isExportingAll, setIsExportingAll] = useState(false);
 
-    const agentDebugLog = (
-        hypothesisId: string,
-        location: string,
-        message: string,
-        data: any = {},
-        runId: string = 'initial'
-    ) => {
-        // #region agent log
-        fetch('http://127.0.0.1:7480/ingest/a6df652c-8a3b-4565-80ea-18f2b272eb6e', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Debug-Session-Id': '4dc664'
-            },
-            body: JSON.stringify({
-                sessionId: '4dc664',
-                runId,
-                hypothesisId,
-                location,
-                message,
-                data,
-                timestamp: Date.now()
-            })
-        }).catch(() => { });
-        // #endregion
-    };
-
-    const importClassroomEmails = async (courseId: string) => {
-        if (!accessToken) return;
-        try {
-            const res = await fetch(`https://classroom.googleapis.com/v1/courses/${courseId}/students`, {
-                headers: { 'Authorization': `Bearer ${accessToken}` }
-            });
-            const data = await res.json();
-            const classroomStudents = data.students || [];
-
-            const updatedStudents = students.map(s => ({ ...s }));
-            let matchesFound = 0;
-
-            classroomStudents.forEach((cs: any) => {
-                const fullName = cs.profile.name.fullName.toLowerCase();
-                const email = cs.profile.emailAddress;
-
-                const match = updatedStudents.find(s => {
-                    const localName = s.name.toLowerCase();
-                    return fullName.includes(localName) || localName.includes(fullName);
-                });
-
-                if (match) {
-                    match.email = email;
-                    matchesFound++;
-                }
-            });
-
-            onUpdateStudents(updatedStudents);
-            alert(`S'han trobat i assignat ${matchesFound} emails d'alumnes de Classroom.`);
-        } catch (err) {
-            console.error("[ResultsView] Error fetching students", err);
-        }
-    };
-
-    const calculateStudentScore = (studentId: string) => {
+    const calculateScore = (studentId: string) => {
+        const gradable = exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages');
         let total = 0;
-        let maxPossible = 0;
-
-        for (const ex of exercises) {
-            if (ex.type !== 'crop' && ex.type !== 'pages') continue;
-
-            const exAnns = annotations[studentId]?.[ex.id] || [];
-            const exRubricCounts = rubricCounts[studentId]?.[ex.id] || {};
-
-            const highlightAdj = exAnns.reduce((s, a) => (a.type === 'highlighter' && typeof a.points === 'number' ? s + a.points : (a.type === 'text' && typeof a.score === 'number' ? s + a.score : s)), 0);
-            const rubricBase = (ex.scoringMode === 'from_zero' && ex.rubric) ? ex.rubric.reduce((s, item) => s + item.points * (exRubricCounts[item.id] ?? 0), 0) : (ex.maxScore ?? 0);
-
-            total += (rubricBase + highlightAdj);
-            maxPossible += (ex.maxScore ?? 0);
-        }
-
-        const normalized = maxPossible > 0 ? (total / maxPossible) * targetMaxScore : 0;
-        return {
-            raw: total,
-            max: maxPossible,
-            normalized: Math.round(normalized * 100) / 100
-        };
+        gradable.forEach(ex => {
+            const anns = annotations[studentId]?.[ex.id] || [];
+            const exRubric = rubricCounts[studentId]?.[ex.id] || {};
+            const adjustment = anns.reduce((sum: number, ann: any) => sum + (ann.points || 0), 0);
+            let exScore = 0;
+            if (ex.scoringMode === 'from_zero' && ex.rubric) {
+                exScore = ex.rubric.reduce((sum: number, item: any) => sum + (item.points * (exRubric[item.id] ?? 0)), 0) + adjustment;
+            } else {
+                exScore = (ex.maxScore || 0) + adjustment;
+            }
+            total += Math.max(0, exScore);
+        });
+        const maxPossible = gradable.reduce((sum, ex) => sum + (ex.maxScore || 0), 0);
+        return maxPossible > 0 ? (total * targetMaxScore / maxPossible) : 0;
     };
 
-    const sendEmail = async (student: Student, isTest: boolean = false) => {
-        console.log(`[ResultsView] Iniciant enviament per a ${student.name} (Test: ${isTest})`);
-        if (!accessToken) {
-            console.error("[ResultsView] Error: No hi ha accessToken");
-            return;
-        }
-        const targetEmail = isTest ? userEmail : student.email;
-        if (!targetEmail) {
-            console.warn(`[ResultsView] Avís: Sense correu destí per a ${student.name}`);
-            return;
-        }
+    const stats = useMemo(() => {
+        const scores = students.map(s => calculateScore(s.id));
+        const avg = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2) : "0.00";
+        const withEmail = students.filter(s => !!s.email).length;
+        return { avg, withEmail };
+    }, [students, exercises, annotations, rubricCounts, targetMaxScore]);
 
-        if (!isTest) setSendStatuses(prev => ({ ...prev, [student.id]: 'sending' }));
-
+    const downloadAll = async () => {
+        setIsExportingAll(true);
         try {
-            console.log(`[ResultsView] Calculant nota per a ${student.name}...`);
-            const score = calculateStudentScore(student.id);
+            const blob = await exportAnnotatedPDF(pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Correccions_Totals_${new Date().toISOString().slice(0,10)}.pdf`;
+            a.click();
+        } catch (e) {
+            alert("Error exportant el PDF complet");
+        } finally {
+            setIsExportingAll(false);
+        }
+    };
 
-            // Calculate scale factor: targetMaxScore / sum of all exercises maxScore
-            const totalExercisesMax = exercises.reduce((sum, ex) => {
-                if (ex.type === 'crop' || ex.type === 'pages') return sum + (ex.maxScore ?? 0);
-                return sum;
-            }, 0);
-            const scaleFactor = totalExercisesMax > 0 ? (targetMaxScore / totalExercisesMax) : 1;
-
-            agentDebugLog(
-                'H4_email_pdf',
-                'src/components/ResultsView.tsx:154',
-                'Preparing PDF for student email',
-                {
-                    studentId: student.id,
-                    isTest,
-                    score,
-                    totalExercisesMax,
-                    targetMaxScore,
-                    scaleFactor
-                }
-            );
-
-            console.log(`[ResultsView] Generant PDF per a ${student.name}... Factor escala: ${scaleFactor}`);
-            const pdfBlob = await generateStudentPDF(
-                pdfDoc,
-                student,
-                exercises,
-                annotations,
-                rubricCounts,
-                scaleFactor
-            );
-            console.log(`[ResultsView] PDF generat correctament. Mida blob: ${pdfBlob.size} bytes`);
-
+    const sendEmail = async (student: Student) => {
+        if (!accessToken || !student.email) return;
+        setSendStatuses(prev => ({ ...prev, [student.id]: 'sending' }));
+        try {
+            const scoreValue = calculateScore(student.id).toFixed(2);
+            const gradableEx = exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages');
+            const maxPossible = gradableEx.reduce((sum, ex) => sum + (ex.maxScore || 0), 0);
+            const scale = maxPossible > 0 ? (targetMaxScore / maxPossible) : 1;
+            
+            const pdfBlob = await generateStudentPDF(pdfDoc, student, exercises, annotations, rubricCounts, scale);
             const reader = new FileReader();
-            const base64Promise = new Promise<string>((resolve, reject) => {
+            const base64 = await new Promise<string>((resolve) => {
                 reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-                reader.onerror = reject;
+                reader.readAsDataURL(pdfBlob);
             });
-            reader.readAsDataURL(pdfBlob);
-            const pdfBase64 = await base64Promise;
-            console.log(`[ResultsView] PDF convertit a Base64.`);
 
-            const subject = `${isTest ? '[TEST] ' : ''}Nota Examen: ${student.name}`;
-            const body = `Hola ${student.name},\n\nLa teva nota de l'examen és: ${score.normalized} / ${targetMaxScore}.\n\nT'adjuntem el PDF amb la correcció detallada.\n\nSalutacions,\nEl teu professor.`;
-
+            const subject = `Nota examen: ${student.name}`;
+            const body = `Hola ${student.name},\n\nLa teva nota de l'examen és: ${scoreValue} / ${targetMaxScore}.\n\nT'adjuntem el PDF amb la correcció detallada.\n\nSalutacions,\nEl teu professor.`;
             const boundary = "foo_bar_baz";
-            const utf8Subject = `=?utf-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`;
-
-            const emailLines = [
-                `To: ${targetEmail}`,
-                `Subject: ${utf8Subject}`,
-                'MIME-Version: 1.0',
-                `Content-Type: multipart/mixed; boundary="${boundary}"`,
-                '',
-                `--${boundary}`,
-                'Content-Type: text/plain; charset=utf-8',
-                'Content-Transfer-Encoding: 7bit',
-                '',
-                body,
-                '',
-                `--${boundary}`,
-                `Content-Type: application/pdf; name="Correccio_${student.name.replace(/\s+/g, '_')}.pdf"`,
-                'Content-Transfer-Encoding: base64',
-                'Content-Disposition: attachment; filename="Correccio_' + student.name.replace(/\s+/g, '_') + '.pdf"',
-                '',
-                pdfBase64,
-                '',
-                `--${boundary}--`
+            const emailContent = [
+                `To: ${student.email}`, `Subject: =?utf-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
+                'MIME-Version: 1.0', `Content-Type: multipart/mixed; boundary="${boundary}"`, '',
+                `--${boundary}`, 'Content-Type: text/plain; charset=utf-8', '', body, '',
+                `--${boundary}`, `Content-Type: application/pdf; name="Correccio_${student.name.replace(/\s+/g, '_')}.pdf"`,
+                'Content-Transfer-Encoding: base64', `Content-Disposition: attachment; filename="Correccio_${student.name.replace(/\s+/g, '_')}.pdf"`, '',
+                base64, '', `--${boundary}--`
             ].join('\r\n');
 
-            const encodedEmail = btoa(unescape(encodeURIComponent(emailLines)))
-                .replace(/\+/g, '-')
-                .replace(/\//g, '_')
-                .replace(/=+$/, '');
-
-            console.log(`[ResultsView] Fent petició a Gmail API per a ${student.name}...`);
-            const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ raw: encodedEmail })
+            const encoded = btoa(unescape(encodeURIComponent(emailContent))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+            await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+                method: 'POST', headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ raw: encoded })
             });
-
-            if (response.ok) {
-                console.log(`[ResultsView] Correu enviat amb ÈXIT a ${student.name}`);
-                agentDebugLog(
-                    'H4_email_pdf',
-                    'src/components/ResultsView.tsx:224',
-                    'Email sent successfully',
-                    {
-                        studentId: student.id,
-                        isTest,
-                        httpStatus: response.status
-                    }
-                );
-                if (!isTest) setSendStatuses(prev => ({ ...prev, [student.id]: 'success' }));
-            } else {
-                const errData = await response.json();
-                console.error(`[ResultsView] Error Gmail API per a ${student.name}:`, errData);
-                agentDebugLog(
-                    'H4_email_pdf',
-                    'src/components/ResultsView.tsx:228',
-                    'Email send failed',
-                    {
-                        studentId: student.id,
-                        isTest,
-                        httpStatus: response.status,
-                        error: errData?.error || errData
-                    }
-                );
-                if (!isTest) setSendStatuses(prev => ({ ...prev, [student.id]: 'error' }));
-            }
-        } catch (err) {
-            console.error(`[ResultsView] Excepció enviant email a ${student.name}:`, err);
-            agentDebugLog(
-                'H4_email_pdf',
-                'src/components/ResultsView.tsx:232',
-                'Unhandled exception while sending email',
-                {
-                    studentId: student.id,
-                    isTest,
-                    errorMessage: (err as any)?.message || String(err)
-                }
-            );
-            if (!isTest) setSendStatuses(prev => ({ ...prev, [student.id]: 'error' }));
-        }
-    };
-
-    const sendAll = async (isTest: boolean = false) => {
-        console.log(`[ResultsView] Iniciant enviament massiu. Mode test: ${isTest}`);
-        if (isTest && !userEmail) {
-            console.warn("[ResultsView] Abortat: mode test però sense userEmail.");
-            return;
-        }
-
-        setIsSendingAll(true);
-        console.log("[ResultsView] Botons bloquejats (isSendingAll=true)");
-
-        try {
-            // Fix: In test mode, we want to allow re-sending even if status is 'success'
-            const studentsToMail = students.filter(s => {
-                if (isTest) return true; // Sempre enviem a tothom en mode test
-                return s.email && sendStatuses[s.id] !== 'success'; // En mode real, només si té email i no està enviat
-            });
-
-            console.log(`[ResultsView] Alumnes pendents d'enviar: ${studentsToMail.length}`);
-
-            if (isTest) {
-                const confirmTest = confirm(`S'enviaran ${studentsToMail.length} correus de prova a ${userEmail}. Vols continuar?`);
-                if (!confirmTest) {
-                    console.log("[ResultsView] Usuari ha cancel·lat l'enviament de prova.");
-                    return;
-                }
-            }
-
-            for (const s of studentsToMail) {
-                await sendEmail(s, isTest);
-            }
-            console.log("[ResultsView] Enviament massiu completat.");
-            if (isTest) alert("S'han enviat tots els correus de prova al teu email.");
-            setIsSendingAll(false); // Changed from setIsMultiSending to setIsSendingAll
-            if (!isTest && students.every(s => s.email && (sendStatuses[s.id] === 'success' || sendStatuses[s.id] === 'pending'))) {
-                onMarkAsSent(true);
-            }
-        } catch (err) {
-            console.error("[ResultsView] Error in multi-send:", err);
-            setIsSendingAll(false); // Changed from setIsMultiSending to setIsSendingAll
+            setSendStatuses(prev => ({ ...prev, [student.id]: 'success' }));
+        } catch {
+            setSendStatuses(prev => ({ ...prev, [student.id]: 'error' }));
         }
     };
 
     return (
-        <div className="app-container" style={{ padding: '2rem', maxWidth: '1000px', margin: '0 auto', height: '100vh', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem', flexShrink: 0 }}>
-                <button className="btn-icon" onClick={onBack}><ChevronLeft /></button>
-                <h1 style={{ fontSize: '1.8rem', fontWeight: 700 }}>Resum i Enviament de Notes</h1>
-            </div>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'var(--bg-primary)' }}>
+            <header className="header">
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                    <button className="btn btn-secondary" onClick={onBack} style={{ padding: '0.4rem 0.8rem' }}><ChevronLeft size={18} /> Enrere</button>
+                </div>
+                <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+                    <FlowGradingLogo size="2rem" />
+                </div>
+                <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '1rem', alignItems: 'center' }}>
+                    {onToggleTheme && <button className="btn-icon" onClick={onToggleTheme}>{theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}</button>}
+                    <button className="btn btn-secondary" onClick={downloadAll} disabled={isExportingAll}><Layers size={18} /> Descarregar tots</button>
+                    <button className="btn btn-primary" onClick={() => setIsSendingAll(true)} disabled={!accessToken || stats.withEmail === 0}><Send size={18} /> Enviar tot</button>
+                </div>
+            </header>
 
-            {!accessToken ? (
-                <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                    <div className="card" style={{ textAlign: 'center', padding: '3rem', background: 'var(--bg-secondary)', maxWidth: '500px', width: '100%' }}>
-                        <Mail size={48} style={{ marginBottom: '1.5rem', color: 'var(--accent)' }} />
-                        <h2 style={{ marginBottom: '1rem' }}>Connecta amb Google</h2>
-                        <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>
-                            Necessitem permís per enviar correus i llegir el Classroom.
-                        </p>
-                        <button className="btn-google" onClick={onAuthorize} disabled={isAuthorizing} style={{ padding: '0 12px' }}>
-                            <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" />
-                            {isAuthorizing ? 'Autoritzant...' : 'Connectar amb Google'}
-                        </button>
+            <main style={{ flex: 1, overflow: 'auto', padding: '2.5rem' }}>
+                <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
+                    <div style={{ marginBottom: '3rem' }}>
+                        <HandwrittenTitle size="3rem">Resultats i enviament</HandwrittenTitle>
+                        <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem', fontSize: '1.1rem' }}>Revisa les notes finals i envia les correccions.</p>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
+                        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1.5rem', border: '1px solid var(--border)' }}>
+                            <div style={{ padding: '0.75rem', background: 'var(--accent-light)', borderRadius: '1rem', color: 'var(--accent)' }}><UserCheck size={28} /></div>
+                            <div><div style={{ fontSize: '1.75rem', fontWeight: 900 }}>{students.length}</div><div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase' }}>Alumnes totals</div></div>
+                        </div>
+                        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1.5rem', border: '1px solid var(--border)' }}>
+                            <div style={{ padding: '0.75rem', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '1rem', color: '#10b981' }}><Trophy size={28} /></div>
+                            <div><div style={{ fontSize: '1.75rem', fontWeight: 900 }}>{stats.avg}</div><div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase' }}>Mitjana classe</div></div>
+                        </div>
+                        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1.5rem', border: '1px solid var(--border)' }}>
+                            <div style={{ padding: '0.75rem', background: 'var(--bg-tertiary)', borderRadius: '1rem', color: 'var(--text-secondary)' }}><Mail size={28} /></div>
+                            <div><div style={{ fontSize: '1.75rem', fontWeight: 900 }}>{stats.withEmail}</div><div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase' }}>Amb correu</div></div>
+                        </div>
+                    </div>
+
+                    <div className="card" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--border)', borderRadius: '1.5rem' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                            <thead style={{ background: 'var(--bg-tertiary)' }}>
+                                <tr>
+                                    <th style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Alumne / OCR</th>
+                                    <th style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Vinculació Classroom</th>
+                                    <th style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-secondary)', textAlign: 'center' }}>Nota</th>
+                                    <th style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-secondary)', textAlign: 'right' }}>Accions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {students.map((student, idx) => {
+                                    const scoreValue = calculateScore(student.id);
+                                    const status = sendStatuses[student.id];
+                                    return (
+                                        <tr key={student.id} style={{ borderBottom: '1px solid var(--border)', background: idx % 2 === 0 ? 'transparent' : 'var(--bg-tertiary)05' }}>
+                                            <td style={{ padding: '1rem 1.5rem' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                                    {student.nameCropUrl && <img src={student.nameCropUrl} alt="OCR" style={{ height: '32px', borderRadius: '6px', border: '1px solid var(--border)', background: 'white' }} />}
+                                                    <div style={{ fontWeight: 700, fontSize: '1rem' }}>{student.name}</div>
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '1rem 1.5rem' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    <select 
+                                                        value={student.email || ''} 
+                                                        onChange={e => {
+                                                            const email = e.target.value;
+                                                            const classroomStudent = classroomStudents.find(cs => cs.profile.emailAddress === email);
+                                                            onUpdateStudents(students.map(s => s.id === student.id ? { ...s, email, name: classroomStudent ? classroomStudent.profile.name.fullName : s.name } : s));
+                                                        }}
+                                                        style={{ fontSize: '0.85rem', padding: '0.4rem', borderRadius: '0.4rem', border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', width: '100%' }}
+                                                    >
+                                                        <option value="">No vinculat</option>
+                                                        {classroomStudents.map(cs => <option key={cs.profile.emailAddress} value={cs.profile.emailAddress}>{cs.profile.name.fullName} ({cs.profile.emailAddress})</option>)}
+                                                    </select>
+                                                    {student.email ? <CheckCircle size={18} color="var(--success)" /> : <MailQuestion size={18} color="var(--danger)" />}
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
+                                                <Highlighter color={scoreValue >= targetMaxScore/2 ? 'green' : 'red'} textStyle={{ fontSize: '1.25rem', fontWeight: 900 }}>{scoreValue.toFixed(2)}</Highlighter>
+                                            </td>
+                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
+                                                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                                                    {status === 'success' ? <div style={{ color: 'var(--success)', display:'flex', alignItems:'center', gap:'4px', fontWeight: 800 }}><CheckCircle2 size={20} /> Enviat</div> :
+                                                        <button className="btn btn-icon" onClick={() => sendEmail(student)} disabled={!accessToken || !student.email || status === 'sending'} style={{ color: 'var(--accent)', background: 'var(--accent-light)' }} title="Enviar correu"><Send size={18} /></button>
+                                                    }
+                                                    <button className="btn btn-icon" onClick={async () => {
+                                                        const gradableEx = exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages');
+                                                        const maxPossible = gradableEx.reduce((sum, ex) => sum + (ex.maxScore || 0), 0);
+                                                        const scale = maxPossible > 0 ? (targetMaxScore / maxPossible) : 1;
+                                                        const blob = await generateStudentPDF(pdfDoc, student, exercises, annotations, rubricCounts, scale);
+                                                        const url = URL.createObjectURL(blob);
+                                                        const a = document.createElement('a'); a.href = url; a.download = `Correccio_${student.name.replace(/\s+/g, '_')}.pdf`; a.click();
+                                                    }} style={{ background: 'var(--bg-tertiary)' }} title="Baixar PDF"><FileDown size={18} /></button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
-            ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', flex: 1, overflow: 'hidden' }}>
-                    <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--accent-light)', border: '1px solid var(--accent)', flexShrink: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></div>
-                            <div>
-                                <span style={{ fontWeight: 600, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    Sessió: {userEmail}
-                                    {isSent && <span style={{ background: '#10b981', color: 'white', padding: '1px 6px', borderRadius: '10px', fontSize: '10px' }}>ENVIAT</span>}
-                                </span>
-                                <p style={{ fontSize: '0.75rem', opacity: 0.8 }}>Google Classroom + Gmail actiu</p>
-                            </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            {courses.length > 0 && (
-                                <select
-                                    onChange={(e) => importClassroomEmails(e.target.value)}
-                                    style={{ padding: '0.4rem', borderRadius: '0.4rem', border: '1px solid var(--accent)', fontSize: '0.8rem', background: 'white' }}
-                                    defaultValue=""
-                                >
-                                    <option value="" disabled>Importar de Classroom...</option>
-                                    {courses.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                </select>
-                            )}
-                            <button className="btn btn-secondary" onClick={() => sendAll(true)} disabled={isSendingAll}>
-                                <Beaker size={18} /> Prova (enviar-me a mi)
-                            </button>
-                            <button className="btn btn-primary" onClick={() => sendAll(false)} disabled={isSendingAll}>
-                                <Send size={18} /> Enviar a tots
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', flex: 1 }}>
-                        <div style={{ overflowY: 'auto', flex: 1 }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                                <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-tertiary)' }}>
-                                    <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                                        <th style={{ padding: '1rem' }}>Alumne</th>
-                                        <th style={{ padding: '1rem' }}>Email</th>
-                                        <th style={{ padding: '1rem', textAlign: 'center' }}>Nota ({targetMaxScore})</th>
-                                        <th style={{ padding: '1rem', textAlign: 'right' }}>Acció</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {students.map(student => {
-                                        const score = calculateStudentScore(student.id);
-                                        const status = sendStatuses[student.id];
-
-                                        return (
-                                            <tr key={student.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                                <td style={{ padding: '1rem', fontWeight: 600 }}>{student.name}</td>
-                                                <td style={{ padding: '1rem', color: student.email ? 'inherit' : 'var(--danger)', fontSize: '0.9rem' }}>
-                                                    {student.email || 'Falta email'}
-                                                </td>
-                                                <td style={{ padding: '1rem', textAlign: 'center' }}>
-                                                    <span style={{
-                                                        padding: '0.2rem 0.6rem', borderRadius: '1rem',
-                                                        background: score.normalized >= (targetMaxScore / 2) ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                                        color: score.normalized >= (targetMaxScore / 2) ? '#10b981' : '#ef4444',
-                                                        fontWeight: 700
-                                                    }}>
-                                                        {score.normalized}
-                                                    </span>
-                                                </td>
-                                                <td style={{ padding: '1rem', textAlign: 'right' }}>
-                                                    {!student.email ? (
-                                                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>N/A</span>
-                                                    ) : status === 'success' ? (
-                                                        <div style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'flex-end' }}>
-                                                            <CheckCircle2 size={18} /> Enviat
-                                                        </div>
-                                                    ) : status === 'error' ? (
-                                                        <div style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'flex-end' }}>
-                                                            <AlertCircle size={18} /> Error
-                                                            <button className="btn-icon" onClick={() => sendEmail(student)} style={{ color: 'var(--accent)' }}><RefreshCw size={14} /></button>
-                                                        </div>
-                                                    ) : (
-                                                        <button
-                                                            className="btn btn-secondary"
-                                                            style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
-                                                            onClick={() => sendEmail(student)}
-                                                            disabled={status === 'sending'}
-                                                        >
-                                                            {status === 'sending' ? 'Enviant...' : 'Enviar'}
-                                                        </button>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            )}
+            </main>
         </div>
     );
 }

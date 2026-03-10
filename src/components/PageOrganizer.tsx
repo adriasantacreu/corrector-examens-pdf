@@ -1,7 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, AlertTriangle, Check } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, Check, ChevronLeft, Sun, Moon, ArrowRight, ArrowLeft, LogOut } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
+import HandwrittenTitle from './HandwrittenTitle';
+import FlowGradingLogo from './FlowGradingLogo';
 
 interface StudentGroup {
     id: string;
@@ -15,242 +17,78 @@ interface Props {
     pagesPerExam: number;
     onConfirm: (groups: StudentGroup[]) => void;
     onBack: () => void;
-    debugLogs?: string[];
+    theme?: 'light' | 'dark';
+    onToggleTheme?: () => void;
+    accessToken: string | null;
+    userEmail: string | null;
+    userPicture: string | null;
+    onAuthorize: () => void;
+    onLogout: () => void;
 }
 
-// Helper for natural number input (handles commas, dots, negative signs, etc)
-function NumericInput({ value, onChange, style, placeholder = "" }: {
-    value: number | undefined,
-    onChange: (val: number | undefined) => void,
-    style?: React.CSSProperties,
-    placeholder?: string
-}) {
-    const [tempValue, setTempValue] = useState<string>(value !== undefined ? value.toString().replace('.', ',') : "");
-
-    useEffect(() => {
-        if (value !== undefined) {
-            const currentStr = value.toString().replace('.', ',');
-            if (parseFloat(tempValue.replace(',', '.')) !== value) {
-                setTempValue(currentStr);
-            }
-        } else if (tempValue !== "") {
-            setTempValue("");
-        }
-    }, [value]);
-
-    return (
-        <input
-            type="text"
-            inputMode="decimal"
-            placeholder={placeholder}
-            value={tempValue}
-            onChange={(e) => {
-                const val = e.target.value.replace('.', ',');
-                if (val === "" || val === "-" || /^-?\d*,?\d*$/.test(val)) {
-                    setTempValue(val);
-                    const parsed = parseFloat(val.replace(',', '.'));
-                    if (!isNaN(parsed)) {
-                        onChange(parsed);
-                    } else if (val === "" || val === "-") {
-                        onChange(undefined);
-                    }
-                }
-            }}
-            onBlur={() => {
-                const parsed = parseFloat(tempValue.replace(',', '.'));
-                if (isNaN(parsed)) {
-                    setTempValue(value !== undefined ? value.toString().replace('.', ',') : "");
-                    onChange(value);
-                } else {
-                    setTempValue(parsed.toString().replace('.', ','));
-                    onChange(parsed);
-                }
-            }}
-            style={{
-                background: 'var(--bg-primary)',
-                border: '1px solid var(--border)',
-                borderRadius: '4px',
-                color: 'var(--text-primary)',
-                padding: '0.2rem 0.3rem',
-                fontSize: '0.75rem',
-                ...style
-            }}
-        />
-    );
-}
-
-export default function PageOrganizer({ pdfDoc, initialGroups, pagesPerExam, onConfirm, onBack, debugLogs = [] }: Props) {
+export default function PageOrganizer({ 
+    pdfDoc, initialGroups, pagesPerExam, onConfirm, onBack, theme, onToggleTheme,
+    accessToken, userEmail, userPicture, onAuthorize, onLogout
+}: Props) {
     const [groups, setGroups] = useState<StudentGroup[]>(initialGroups);
-
-    const propagateOrder = (groupIdx: number) => {
-        if (!window.confirm("Vols aplicar aquest ordre de pàgines a TOTS els alumnes següents?")) return;
-        const templateOrder = groups[groupIdx].pageIndexes;
-        setGroups(prev => prev.map((g, i) => i > groupIdx ? { ...g, pageIndexes: [...templateOrder] } : g));
-    };
-
-    const shiftPages = (groupIdx: number, delta: number) => {
-        if (!window.confirm(`Vols desplaçar ${delta > 0 ? '+' : ''}${delta} totes les pàgines de TOTS els alumnes a partir d'aquest?`)) return;
-        const totalPdfPages = pdfDoc.numPages;
-        setGroups(prev => prev.map((g, i) => {
-            if (i >= groupIdx) {
-                return { ...g, pageIndexes: g.pageIndexes.map(p => Math.min(totalPdfPages, Math.max(1, p + delta))) };
-            }
-            return g;
-        }));
-    };
     const [thumbnails, setThumbnails] = useState<Record<number, string>>({});
     const [dragState, setDragState] = useState<{ fromGroup: number; fromPage: number } | null>(null);
-    const [showLogs, setShowLogs] = useState(false);
-    const logsRef = useRef<HTMLDivElement>(null);
 
-    // Load thumbnails progressively - show UI first, stream results
     useEffect(() => {
-        const allPages = new Set<number>();
-        initialGroups.forEach(g => g.pageIndexes.forEach(p => allPages.add(p)));
-        const pages = Array.from(allPages).sort((a, b) => a - b);
-
-        setThumbnails({}); // reset on doc change
-
         let cancelled = false;
-        const BATCH = 3; // render N pages concurrently
-
-        const loadBatch = async () => {
-            for (let i = 0; i < pages.length; i += BATCH) {
+        const totalPages = pdfDoc.numPages;
+        const loadAll = async () => {
+            for (let i = 1; i <= totalPages; i++) {
                 if (cancelled) return;
-                const batch = pages.slice(i, i + BATCH);
-                const results = await Promise.all(
-                    batch.map(async page => {
-                        try {
-                            const canvas = document.createElement('canvas');
-                            await renderPDFPageToCanvas(pdfDoc, page, canvas, 0.3);
-                            return { page, url: canvas.toDataURL('image/jpeg', 0.65) };
-                        } catch { return null; }
-                    })
-                );
-                if (cancelled) return;
-                setThumbnails(prev => {
-                    const next = { ...prev };
-                    results.forEach(r => { if (r) next[r.page] = r.url; });
-                    return next;
-                });
-            }
-        };
-        loadBatch();
-        return () => { cancelled = true; };
-    }, [pdfDoc, initialGroups]);
-
-    useEffect(() => {
-        if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight;
-    }, [debugLogs]);
-
-    const removePage = useCallback((groupIdx: number, pageIdx: number) => {
-        setGroups(prev => prev.map((g, gi) => {
-            if (gi !== groupIdx) return g;
-            const newPages = g.pageIndexes.filter((_, pi) => pi !== pageIdx);
-            return { ...g, pageIndexes: newPages };
-        }));
-    }, []);
-
-    const removeGroup = useCallback((groupIdx: number) => {
-        setGroups(prev => prev.filter((_, gi) => gi !== groupIdx));
-    }, []);
-
-    const addGroupAfter = useCallback((groupIdx: number) => {
-        const newGroup: StudentGroup = {
-            id: `student_custom_${Date.now()}`,
-            name: `Alumne nou`,
-            pageIndexes: []
-        };
-        setGroups(prev => {
-            const copy = [...prev];
-            copy.splice(groupIdx + 1, 0, newGroup);
-            return copy;
-        });
-    }, []);
-
-    const movePageToGroup = useCallback((fromGroupIdx: number, fromPageIdx: number, toGroupIdx: number) => {
-        setGroups(prev => {
-            const copy = prev.map(g => ({ ...g, pageIndexes: [...g.pageIndexes] }));
-            const [page] = copy[fromGroupIdx].pageIndexes.splice(fromPageIdx, 1);
-            copy[toGroupIdx].pageIndexes.push(page);
-            return copy;
-        });
-    }, []);
-
-    // Set the slot of the page at array position `fromIdx` to `newSlot` (both 0-based),
-    // and cascade all subsequent pages sequentially: newSlot, newSlot+1, newSlot+2...
-    // Pages before fromIdx are kept unchanged. -1 gaps are inserted if newSlot > fromIdx.
-    const rebaseFromPage = useCallback((groupIdx: number, fromIdx: number, newSlot: number) => {
-        if (newSlot === fromIdx) return;
-        setGroups(prev => {
-            const group = prev[groupIdx];
-            const arr = group.pageIndexes;
-
-            // Pages before the edited position (keep as-is)
-            const before = arr.slice(0, fromIdx);
-
-            // Real pages from the edited position onwards (skip any existing -1 gaps)
-            const tail = arr.slice(fromIdx).filter(p => p !== -1);
-
-            // Build the new array segment: pad with -1 if newSlot > fromIdx, then tail sequentially
-            const gap = Math.max(0, newSlot - fromIdx);
-            const newTail = [...Array(gap).fill(-1), ...tail];
-
-            // Merge with before pages
-            let merged = [...before, ...newTail];
-
-            // Trim trailing -1s
-            while (merged.length > 1 && merged[merged.length - 1] === -1) merged.pop();
-
-            return prev.map((g, gi) => gi === groupIdx ? { ...g, pageIndexes: merged } : g);
-        });
-    }, []);
-
-    // When user sets a custom page count for student at `groupIdx`,
-    // pool all pages from that row onwards and redistribute:
-    // that student gets `newCount` pages, each following student gets `pagesPerExam`.
-    const recascadeFromGroup = useCallback((groupIdx: number, newCount: number) => {
-        if (newCount < 1) return;
-        setGroups(prev => {
-            // Collect all remaining pages (flat, in order) from groupIdx onwards
-            const allRemainingPages: number[] = [];
-            for (let i = groupIdx; i < prev.length; i++) {
-                allRemainingPages.push(...prev[i].pageIndexes);
-            }
-
-            const updated = [...prev];
-            let cursor = 0;
-
-            for (let i = groupIdx; i < updated.length; i++) {
-                const count = i === groupIdx ? newCount : pagesPerExam;
-                updated[i] = {
-                    ...updated[i],
-                    pageIndexes: allRemainingPages.slice(cursor, cursor + count)
-                };
-                cursor += count;
-                if (cursor >= allRemainingPages.length) {
-                    // No more pages — clear the rest
-                    for (let j = i + 1; j < updated.length; j++) {
-                        updated[j] = { ...updated[j], pageIndexes: [] };
+                try {
+                    const canvas = document.createElement('canvas');
+                    // Apply inversion in dark mode for thumbnails too
+                    await renderPDFPageToCanvas(pdfDoc, i, canvas, 0.35, theme === 'dark');
+                    const url = canvas.toDataURL('image/jpeg', 0.7);
+                    if (!cancelled) {
+                        setThumbnails(prev => ({ ...prev, [i]: url }));
                     }
-                    break;
-                }
+                } catch { }
             }
-            return updated;
+        };
+        loadAll();
+        return () => { cancelled = true; };
+    }, [pdfDoc, theme]); // Added theme to dependency to re-render thumbnails on toggle
+
+    const ripplePushForward = (groupIdx: number) => {
+        setGroups(prev => {
+            const next = prev.map(g => ({ ...g, pageIndexes: [...g.pageIndexes] }));
+            for (let i = groupIdx; i < next.length - 1; i++) {
+                if (next[i].pageIndexes.length === 0) continue;
+                const lastPage = next[i].pageIndexes.pop()!;
+                next[i + 1].pageIndexes.unshift(lastPage);
+            }
+            return next;
         });
-    }, [pagesPerExam]);
-
-    const handleDragStart = (groupIdx: number, pageIdx: number) => {
-        setDragState({ fromGroup: groupIdx, fromPage: pageIdx });
     };
 
-    const handleDrop = (toGroupIdx: number) => {
-        if (!dragState) return;
-        if (dragState.fromGroup === toGroupIdx) { setDragState(null); return; }
-        movePageToGroup(dragState.fromGroup, dragState.fromPage, toGroupIdx);
-        setDragState(null);
+    const ripplePullBackward = (groupIdx: number) => {
+        setGroups(prev => {
+            const next = prev.map(g => ({ ...g, pageIndexes: [...g.pageIndexes] }));
+            for (let i = groupIdx; i < next.length - 1; i++) {
+                if (next[i + 1].pageIndexes.length === 0) break;
+                const firstPageOfNext = next[i + 1].pageIndexes.shift()!;
+                next[i].pageIndexes.push(firstPageOfNext);
+            }
+            return next;
+        });
     };
 
+    const removePage = (gi: number, pi: number) => {
+        setGroups(prev => {
+            const next = prev.map(g => ({ ...g, pageIndexes: [...g.pageIndexes] }));
+            next[gi].pageIndexes.splice(pi, 1);
+            return next;
+        });
+    };
+
+    const removeGroup = (idx: number) => setGroups(prev => prev.filter((_, i) => i !== idx));
+    
     const moveGroupUp = (idx: number) => {
         if (idx === 0) return;
         setGroups(prev => {
@@ -261,238 +99,122 @@ export default function PageOrganizer({ pdfDoc, initialGroups, pagesPerExam, onC
     };
 
     const moveGroupDown = (idx: number) => {
+        if (idx === groups.length - 1) return;
         setGroups(prev => {
-            if (idx >= prev.length - 1) return prev;
             const copy = [...prev];
             [copy[idx], copy[idx + 1]] = [copy[idx + 1], copy[idx]];
             return copy;
         });
     };
 
-    const inconsistentGroups = groups.filter(g => g.pageIndexes.length !== pagesPerExam);
+    const handleDragStart = (groupIdx: number, pageIdx: number) => setDragState({ fromGroup: groupIdx, fromPage: pageIdx });
+    
+    const handleDrop = (toGroupIdx: number) => {
+        if (!dragState) return;
+        if (dragState.fromGroup === toGroupIdx) { setDragState(null); return; }
+        setGroups(prev => {
+            const copy = prev.map(g => ({ ...g, pageIndexes: [...g.pageIndexes] }));
+            const [page] = copy[dragState.fromGroup].pageIndexes.splice(dragState.fromPage, 1);
+            copy[toGroupIdx].pageIndexes.push(page);
+            return copy;
+        });
+        setDragState(null);
+    };
+
+    const inconsistentCount = groups.filter(g => g.pageIndexes.length !== pagesPerExam).length;
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', width: '100%', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-            {/* Header */}
-            <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '1rem', flexShrink: 0 }}>
-                <button className="btn-icon" onClick={onBack} title="Tornar">&#8592;</button>
-                <div style={{ flex: 1 }}>
-                    <h2 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.25rem' }}>Organitzador de pàgines</h2>
-                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                        Cada fila és un alumne. Arrossega pàgines entre alumnes, elimina les sobrants, o afegeix files noves.
-                        {inconsistentGroups.length > 0 && (
-                            <span style={{ color: '#f59e0b', marginLeft: '0.5rem' }}>
-                                <AlertTriangle size={14} style={{ display: 'inline', verticalAlign: 'middle' }} /> {inconsistentGroups.length} alumne(s) amb pàgines incorrectes
-                            </span>
-                        )}
-                    </p>
-                </div>
-                {debugLogs.length > 0 && (
-                    <button
-                        className="btn"
-                        style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
-                        onClick={() => setShowLogs(v => !v)}
-                    >
-                        🪲 Debug {showLogs ? '▲' : '▼'}
-                    </button>
-                )}
-                <button
-                    className="btn btn-primary"
-                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-                    onClick={() => onConfirm(groups.filter(g => g.pageIndexes.length > 0))}
-                >
-                    <Check size={16} /> Confirmar i continuar
-                </button>
-            </div>
-
-            {/* Debug log panel */}
-            {showLogs && (
-                <div ref={logsRef} style={{
-                    background: '#0d1117', color: '#39d353', fontFamily: 'monospace', fontSize: '0.75rem',
-                    padding: '0.75rem', maxHeight: '180px', overflowY: 'auto', flexShrink: 0,
-                    borderBottom: '1px solid var(--border)'
-                }}>
-                    {debugLogs.map((log, i) => <div key={i}>&gt; {log}</div>)}
-                    {debugLogs.length === 0 && <div style={{ color: '#555' }}>(cap log enregistrat)</div>}
-                </div>
-            )}
-
-            {/* Main grid */}
-            <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
-                {groups.map((group, gi) => {
-                    const isInconsistent = group.pageIndexes.length !== pagesPerExam;
-                    return (
-                        <div
-                            key={group.id}
-                            onDragOver={e => e.preventDefault()}
-                            onDrop={() => handleDrop(gi)}
-                            style={{
-                                marginBottom: '0.75rem',
-                                borderRadius: '0.75rem',
-                                border: isInconsistent ? '1px solid #f59e0b' : '1px solid var(--border)',
-                                background: 'var(--bg-secondary)',
-                                overflow: 'hidden',
-                                transition: 'border-color 0.2s'
-                            }}
-                        >
-                            {/* Row header */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)', background: 'var(--bg-tertiary)' }}>
-                                <GripVertical size={16} color="var(--text-secondary)" style={{ flexShrink: 0 }} />
-                                <input
-                                    value={group.name}
-                                    onChange={e => setGroups(prev => prev.map((g, i) => i === gi ? { ...g, name: e.target.value } : g))}
-                                    style={{
-                                        flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                                        color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.9rem'
-                                    }}
-                                />
-
-                                <div style={{ display: 'flex', gap: '0.3rem', marginRight: '1rem' }}>
-                                    <button
-                                        onClick={() => propagateOrder(gi)}
-                                        className="btn btn-secondary"
-                                        style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem' }}
-                                        title="Copia aquest ordre de pàgines a tots els següents"
-                                    >
-                                        Propagar ordre 📋
-                                    </button>
-                                    <button
-                                        onClick={() => shiftPages(gi, -1)}
-                                        className="btn btn-secondary"
-                                        style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem' }}
-                                        title="Resta 1 a totes les pàgines de PDF d'aquest alumne i següents"
-                                    >
-                                        Shift -1 ⬅️
-                                    </button>
-                                    <button
-                                        onClick={() => shiftPages(gi, 1)}
-                                        className="btn btn-secondary"
-                                        style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem' }}
-                                        title="Suma 1 a totes les pàgines de PDF d'aquest alumne i següents"
-                                    >
-                                        Shift +1 ➡️
-                                    </button>
-                                </div>
-
-                                {/* Editable page count with cascade */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
-                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>pàg:</span>
-                                    <NumericInput
-                                        value={group.pageIndexes.length}
-                                        onChange={val => {
-                                            if (val !== undefined && val > 0 && val !== group.pageIndexes.length) {
-                                                recascadeFromGroup(gi, val);
-                                            }
-                                        }}
-                                        style={{
-                                            width: '48px', padding: '0.15rem 0.25rem', fontSize: '0.75rem',
-                                            background: isInconsistent ? 'rgba(245,158,11,0.1)' : 'var(--bg-primary)',
-                                            border: `1px solid ${isInconsistent ? '#f59e0b' : 'var(--border)'}`,
-                                            borderRadius: '0.25rem', color: isInconsistent ? '#f59e0b' : 'var(--text-secondary)',
-                                            textAlign: 'center'
-                                        }}
-                                    />
-                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>/{pagesPerExam}</span>
-                                </div>
-                                <button className="btn-icon" style={{ padding: '0.2rem' }} onClick={() => moveGroupUp(gi)} title="Pujar"><ChevronUp size={14} /></button>
-                                <button className="btn-icon" style={{ padding: '0.2rem' }} onClick={() => moveGroupDown(gi)} title="Baixar"><ChevronDown size={14} /></button>
-                                <button className="btn-icon" style={{ padding: '0.2rem' }} onClick={() => addGroupAfter(gi)} title="Afegir alumne nou"><Plus size={14} /></button>
-                                <button className="btn-icon" style={{ padding: '0.2rem', color: 'var(--danger)' }} onClick={() => removeGroup(gi)} title="Eliminar alumne"><Trash2 size={14} /></button>
-                            </div>
-
-                            {/* Thumbnails */}
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', padding: '0.75rem', minHeight: '80px' }}>
-                                {group.pageIndexes.length === 0 && (
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', alignSelf: 'center', padding: '0.5rem' }}>
-                                        Arrossega pàgines aquí  ·  o elimina aquest alumne
-                                    </div>
-                                )}
-                                {group.pageIndexes.map((absPage, pi) => {
-                                    const isMissing = absPage === -1;
-                                    return (
-                                        <div
-                                            key={`${absPage}-${pi}`}
-                                            draggable={!isMissing}
-                                            onDragStart={() => !isMissing && handleDragStart(gi, pi)}
-                                            style={{
-                                                position: 'relative', cursor: isMissing ? 'default' : 'grab', userSelect: 'none',
-                                                border: `2px solid ${isMissing ? '#6b7280' : 'var(--border)'}`,
-                                                borderRadius: '0.375rem', overflow: 'visible',
-                                                opacity: isMissing ? 0.45 : 1,
-                                                transition: 'transform 0.1s, box-shadow 0.1s',
-                                                boxShadow: isMissing ? 'none' : '0 1px 4px rgba(0,0,0,0.3)'
-                                            }}
-                                            onMouseEnter={e => { if (!isMissing) e.currentTarget.style.transform = 'scale(1.05)'; }}
-                                            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
-                                        >
-                                            {/* Editable exam slot label (top) */}
-                                            <div style={{
-                                                background: isMissing ? '#4b5563' : 'var(--accent)',
-                                                fontSize: '0.6rem', color: 'white', textAlign: 'center',
-                                                padding: '1px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px'
-                                            }}>
-                                                <span>ex.</span>
-                                                <NumericInput
-                                                    value={pi + 1}
-                                                    onChange={val => {
-                                                        if (val !== undefined && val >= 1 && val !== pi + 1) {
-                                                            rebaseFromPage(gi, pi, val - 1);
-                                                        }
-                                                    }}
-                                                    style={{
-                                                        width: '28px', background: 'transparent',
-                                                        border: 'none', color: 'white', textAlign: 'center',
-                                                        fontSize: '0.6rem', padding: 0, outline: 'none'
-                                                    }}
-                                                />
-                                            </div>
-
-                                            {/* Page thumbnail or missing placeholder */}
-                                            {isMissing ? (
-                                                <div style={{
-                                                    width: '70px', height: '100px', background: 'var(--bg-tertiary)',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    fontSize: '0.65rem', color: 'var(--text-secondary)'
-                                                }}>
-                                                    ——<br />absent
-                                                </div>
-                                            ) : (
-                                                thumbnails[absPage]
-                                                    ? <img src={thumbnails[absPage]} alt={`P${absPage}`} style={{ display: 'block', height: '100px', width: 'auto' }} />
-                                                    : <div style={{ width: '70px', height: '100px', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>⏳</div>
-                                            )}
-
-                                            {/* Absolute PDF page label (bottom) */}
-                                            {!isMissing && (
-                                                <div style={{
-                                                    position: 'absolute', bottom: 0, left: 0, right: 0,
-                                                    background: 'rgba(0,0,0,0.6)', fontSize: '0.6rem', color: '#ccc',
-                                                    textAlign: 'center', padding: '0.1rem'
-                                                }}>pdf p.{absPage}</div>
-                                            )}
-
-                                            {/* Delete button */}
-                                            <button
-                                                onClick={() => removePage(gi, pi)}
-                                                title="Eliminar pàgina"
-                                                style={{
-                                                    position: 'absolute', top: -6, right: -6,
-                                                    background: 'rgba(239,68,68,0.9)', border: 'none', borderRadius: '50%',
-                                                    width: '18px', height: '18px', cursor: 'pointer', color: 'white',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-                                                    zIndex: 10
-                                                }}
-                                            >
-                                                <Trash2 size={10} />
-                                            </button>
-                                        </div>
-                                    );
-                                })}
-                            </div>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'var(--bg-primary)' }}>
+            <header className="header">
+                <div style={{ flex: 1 }}><button className="btn-icon" onClick={onBack} title="Enrere"><ChevronLeft size={28} /></button></div>
+                <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}><FlowGradingLogo size="2.2rem" /></div>
+                <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '1.25rem', alignItems: 'center' }}>
+                    <button className="btn-icon" onClick={onToggleTheme}>{theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}</button>
+                    
+                    {accessToken ? (
+                        <div style={{ 
+                            display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.4rem 1rem', 
+                            background: 'var(--bg-tertiary)', borderRadius: '2rem', border: '1px solid var(--border)',
+                            height: '42px'
+                        }}>
+                            {userPicture ? (
+                                <img src={userPicture} alt="User" style={{ width: '28px', height: '28px', borderRadius: '50%', border: '1px solid var(--accent)', objectFit: 'cover' }} />
+                            ) : (
+                                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800 }}>{userEmail?.[0].toUpperCase()}</div>
+                            )}
+                            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>{userEmail?.split('@')[0]}</span>
+                            <button onClick={onLogout} className="btn-icon" style={{ padding: '2px' }}><LogOut size={14} color="var(--danger)" /></button>
                         </div>
-                    );
-                })}
-            </div>
+                    ) : (
+                        <button className="btn-google" onClick={onAuthorize} style={{ height: '42px', padding: '0 1.25rem' }}>
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="G" style={{ width: '18px' }} />
+                            <span style={{ fontWeight: 700 }}>Connecta</span>
+                        </button>
+                    )}
+
+                    <button className="btn btn-primary" onClick={() => onConfirm(groups.filter(g => g.pageIndexes.length > 0))}><Check size={18} /> Confirmar</button>
+                </div>
+            </header>
+
+            <main style={{ flex: 1, overflow: 'auto', padding: '2.5rem' }}>
+                <div style={{ maxWidth: '1300px', margin: '0 auto' }}>
+                    <div style={{ marginBottom: '3rem' }}>
+                        <HandwrittenTitle size="3rem" color="purple">Organitzador de pàgines</HandwrittenTitle>
+                        <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem', fontSize: '1.1rem' }}>
+                            Ajusta l'ordre dels exàmens. Utilitza les fletxes per desplaçar pàgines en cascada.
+                            {inconsistentCount > 0 && <span style={{ color: 'var(--danger)', marginLeft: '1rem', fontWeight: 700 }}>⚠️ {inconsistentCount} alumnes amb error</span>}
+                        </p>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        {groups.map((group, gi) => {
+                            const isErr = group.pageIndexes.length !== pagesPerExam;
+                            return (
+                                <div key={group.id} onDragOver={e => e.preventDefault()} onDrop={() => handleDrop(gi)} className="card" style={{ padding: '1.5rem', border: isErr ? '1px solid var(--danger)' : '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '1.5rem', background: isErr ? 'rgba(239, 68, 68, 0.01)' : 'var(--bg-secondary)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '220px', flexShrink: 0 }}>
+                                        <GripVertical size={16} color="var(--text-secondary)" />
+                                        <input value={group.name} onChange={e => setGroups(prev => prev.map((g, i) => i === gi ? { ...g, name: e.target.value } : g))} style={{ fontWeight: 800, fontSize: '0.9rem', border: 'none', background: 'transparent', outline: 'none', color: 'var(--text-primary)', width: '100%' }} />
+                                    </div>
+
+                                    {/* Ripple Buttons */}
+                                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                        <button className="btn btn-secondary" onClick={() => ripplePullBackward(gi)} title="Atreure primera pàgina del següent alumne cap al final d'aquest (i moure la resta en cascada)" style={{ padding: '0.4rem', borderRadius: '0.5rem' }}>
+                                            <ArrowLeft size={16} />
+                                        </button>
+                                        <button className="btn btn-secondary" onClick={() => ripplePushForward(gi)} title="Empènyer última pàgina d'aquest alumne cap al principi del següent (i moure la resta en cascada)" style={{ padding: '0.4rem', borderRadius: '0.5rem' }}>
+                                            <ArrowRight size={16} />
+                                        </button>
+                                    </div>
+
+                                    {/* Thumbnails Row - INCREASED SIZE */}
+                                    <div style={{ flex: 1, display: 'flex', gap: '0.75rem', overflowX: 'auto', padding: '0.75rem', background: 'var(--bg-tertiary)30', borderRadius: '0.75rem', minHeight: '160px' }}>
+                                        {group.pageIndexes.map((p, pi) => (
+                                            <div key={`${p}-${pi}`} draggable onDragStart={() => handleDragStart(gi, pi)} style={{ position: 'relative', cursor: 'grab', background: 'white', borderRadius: '0.4rem', border: '1px solid var(--border)', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflow: 'hidden', flexShrink: 0 }}>
+                                                {thumbnails[p] ? <img src={thumbnails[p]} alt={p.toString()} style={{ height: '140px', width: 'auto', display: 'block' }} /> : <div style={{ height: '140px', width: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem' }}>...</div>}
+                                                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: 'white', fontSize: '0.7rem', fontWeight: 700, textAlign: 'center', padding: '2px 0' }}>p.{p}</div>
+                                                <button onClick={() => removePage(gi, pi)} style={{ position: 'absolute', top: 0, right: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '0 0 0 6px', padding: '4px', cursor: 'pointer' }}><Trash2 size={12} /></button>
+                                            </div>
+                                        ))}
+                                        {group.pageIndexes.length === 0 && (
+                                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Sense pàgines</div>
+                                        )}
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '120px', justifyContent: 'flex-end' }}>
+                                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isErr ? 'var(--danger)' : 'var(--success)' }}>{group.pageIndexes.length}/{pagesPerExam}</span>
+                                        <button onClick={() => moveGroupUp(gi)} className="btn-icon" style={{ padding: '2px' }}><ChevronUp size={14} /></button>
+                                        <button onClick={() => moveGroupDown(gi)} className="btn-icon" style={{ padding: '2px' }}><ChevronDown size={14} /></button>
+                                        <button onClick={() => removeGroup(gi)} className="btn-icon" style={{ padding: '2px', color: 'var(--danger)' }}><Trash2 size={14} /></button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        <button onClick={() => setGroups([...groups, { id: `s_${Date.now()}`, name: `Alumne ${groups.length + 1}`, pageIndexes: [] }])} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', border: '2px dashed var(--border)', background: 'transparent', color: 'var(--text-secondary)', padding: '1.5rem', cursor: 'pointer', borderRadius: '1.5rem' }}>
+                            <Plus size={20} /> <span style={{ fontWeight: 700 }}>Afegir nou alumne</span>
+                        </button>
+                    </div>
+                </div>
+            </main>
         </div>
     );
 }

@@ -51,7 +51,8 @@ export async function renderPDFPageToCanvas(
     pdfDoc: PDFDocumentProxy,
     pageNumber: number,
     canvas: HTMLCanvasElement,
-    scale: number = 1.5
+    scale: number = 1.5,
+    invert: boolean = false
 ) {
     const page = await pdfDoc.getPage(pageNumber);
     const viewport = page.getViewport({ scale });
@@ -68,6 +69,15 @@ export async function renderPDFPageToCanvas(
     };
 
     await page.render(renderContext).promise;
+
+    // Apply dark mode inversion if requested
+    if (invert) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'difference';
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+    }
 
     // Return dimensions for layout purposes
     return { width: viewport.width, height: viewport.height };

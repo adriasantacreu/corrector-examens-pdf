@@ -492,13 +492,15 @@ export default function CorrectionView({
                     if (actualPageIndex !== undefined && actualPageIndex >= 1 && actualPageIndex <= pdfDoc.numPages && !isNaN(actualPageIndex)) {
                         console.log(`[DEBUG] Attempting to render crop on page ${actualPageIndex}`);
                         const canvas = document.createElement('canvas');
-                        const dimensions = await renderPDFPageToCanvas(pdfDoc, actualPageIndex, canvas, 2.5);
+                        const dimensions = await renderPDFPageToCanvas(pdfDoc, actualPageIndex, canvas, 2.5, isDarkMode);
                         if (dimensions) {
                             const cropCanvas = document.createElement('canvas');
                             cropCanvas.width = currentExercise.width;
                             cropCanvas.height = currentExercise.height;
                             const ctx = cropCanvas.getContext('2d');
                             if (ctx) {
+                                // Important: We must also apply the same filter logic if we're cropping from a source
+                                // But renderPDFPageToCanvas already applied it to the 'canvas'.
                                 ctx.drawImage(canvas,
                                     currentExercise.x, currentExercise.y, currentExercise.width, currentExercise.height,
                                     0, 0, currentExercise.width, currentExercise.height);
