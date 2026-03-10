@@ -9,7 +9,8 @@ import ResultsView from './components/ResultsView';
 
 type AppMode = 'upload' | 'setup' | 'organize_pages' | 'configure_crops' | 'correction' | 'results';
 
-const STORAGE_KEY = 'correccio_app_state';
+const STORAGE_PREFIX = 'correccio_app_state_';
+const GLOBAL_STORAGE_KEY = 'correccio_app_global';
 
 // Helper for fuzzy matching
 function getLevenshteinDistance(a: string, b: string): number {
@@ -42,19 +43,25 @@ interface PersistedState {
   lastExerciseIdx?: number;
   accessToken?: string | null;
   userEmail?: string | null;
+  fileName: string;
+}
+
+interface GlobalState {
+  accessToken: string | null;
+  userEmail: string | null;
 }
 
 function saveState(state: PersistedState) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(STORAGE_PREFIX + state.fileName, JSON.stringify(state));
   } catch (e) {
     console.warn('Could not save state to localStorage', e);
   }
 }
 
-function loadState(): PersistedState | null {
+function loadState(fileName: string): PersistedState | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_PREFIX + fileName);
     if (!raw) return null;
     return JSON.parse(raw) as PersistedState;
   } catch {
@@ -62,33 +69,43 @@ function loadState(): PersistedState | null {
   }
 }
 
-function App() {
-  const savedState = loadState();
-  const hasSavedSession = !!(savedState && savedState.exercises.length > 0);
+function saveGlobalState(state: GlobalState) {
+  localStorage.setItem(GLOBAL_STORAGE_KEY, JSON.stringify(state));
+}
 
-  const [mode, setMode] = useState<AppMode>(
-    hasSavedSession ? 'upload' : 'upload'
-  );
-  const [showRestorePrompt, setShowRestorePrompt] = useState(hasSavedSession);
+function loadGlobalState(): GlobalState | null {
+  try {
+    const raw = localStorage.getItem(GLOBAL_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as GlobalState;
+  } catch {
+    return null;
+  }
+}
+
+function App() {
+  const globalSaved = loadGlobalState();
+
+  const [mode, setMode] = useState<AppMode>('upload');
+  const [showRestorePrompt, setShowRestorePrompt] = useState(false);
 
   // State
-  const [, setPdfFile] = useState<File | null>(null);
+  const [currentFileName, setCurrentFileName] = useState<string | null>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
-  const [pagesPerExam, setPagesPerExam] = useState<number | ''>(
-    savedState?.pagesPerExam ?? 1
-  );
-  const [students, setStudents] = useState<Student[]>(savedState?.students ?? []);
-  const [exercises, setExercises] = useState<ExerciseDef[]>(savedState?.exercises ?? []);
-  const [annotations, setAnnotations] = useState<AnnotationStore>(savedState?.annotations ?? {});
-  const [rubricCounts, setRubricCounts] = useState<RubricCountStore>(savedState?.rubricCounts ?? {});
-  const [targetMaxScore, setTargetMaxScore] = useState<number>(savedState?.targetMaxScore ?? 10);
-  const [studentList, setStudentList] = useState<string>(savedState?.studentList ?? '');
-  const [accessToken, setAccessToken] = useState<string | null>(savedState?.accessToken ?? null);
-  const [userEmail, setUserEmail] = useState<string | null>(savedState?.userEmail ?? null);
+  const [pagesPerExam, setPagesPerExam] = useState<number | ''>(1);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [exercises, setExercises] = useState<ExerciseDef[]>([]);
+  const [annotations, setAnnotations] = useState<AnnotationStore>({});
+  const [rubricCounts, setRubricCounts] = useState<RubricCountStore>({});
+  const [targetMaxScore, setTargetMaxScore] = useState<number>(10);
+  const [studentList, setStudentList] = useState<string>('');
+  const [accessToken, setAccessToken] = useState<string | null>(globalSaved?.accessToken ?? null);
+  const [userEmail, setUserEmail] = useState<string | null>(globalSaved?.userEmail ?? null);
   const [courses, setCourses] = useState<any[]>([]);
   const [isAuthorizing, setIsAuthorizing] = useState(false);
-  const [commentBank, setCommentBank] = useState<import('./types').AnnotationComment[]>(savedState?.commentBank ?? [
+  const [commentBank, setCommentBank] = useState<import('./types').AnnotationComment[]>([
     { text: 'Excel·lent!', score: 1, colorMode: 'score' },
     { text: 'Molt bé', score: 0.5, colorMode: 'score' },
     { text: 'Revisa aquest concepte', score: -0.5, colorMode: 'neutral' },
@@ -99,6 +116,8 @@ function App() {
   const [processingMessage, setProcessingMessage] = useState('Processant...');
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [pendingModeAfterPDF, setPendingModeAfterPDF] = useState<AppMode | null>(null);
+
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'idle'>('idle');
 
   const addLog = (msg: string) => { console.log('[App]', msg); setDebugLogs(prev => [...prev.slice(-200), msg]); };
 
@@ -135,7 +154,7 @@ function App() {
     ? "89755629853-3i114l0ocgkpv5cla6d86n8ufuammvii.apps.googleusercontent.com" // Localhost ID (Client desenvolupament local)
     : "89755629853-lplrdbb6oh5vb2j169minkt8nh5nreog.apps.googleusercontent.com"; // Production (GitHub Pages) ID
 
-  const SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.rosters.readonly https://www.googleapis.com/auth/classroom.profile.emails https://www.googleapis.com/auth/userinfo.email';
+  const SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.rosters.readonly https://www.googleapis.com/auth/classroom.profile.emails https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.appdata';
 
   const handleAuthorize = () => {
     setIsAuthorizing(true);
@@ -230,29 +249,157 @@ function App() {
     }
   };
 
-  const [studentIdx, setStudentIdx] = useState<number>(savedState?.lastStudentIdx ?? 0);
-  const [exerciseIdx, setExerciseIdx] = useState<number>(savedState?.lastExerciseIdx ?? 0);
+  const saveToDrive = async (fileName: string, data: any) => {
+    if (!accessToken) return;
+    setCloudSyncStatus('syncing');
+    try {
+      // 1. Check if file already exists in appDataFolder
+      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${fileName}.json' and parents in 'appDataFolder'&spaces=appDataFolder`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      const searchData = await searchRes.json();
+      const existingFile = searchData.files && searchData.files[0];
+
+      const boundary = '-------314159265358979323846';
+      const delimiter = "\r\n--" + boundary + "\r\n";
+      const close_delim = "\r\n--" + boundary + "--";
+
+      const metadata = {
+        name: `${fileName}.json`,
+        parents: ['appDataFolder']
+      };
+
+      const multipartRequestBody =
+        delimiter +
+        'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+        JSON.stringify(metadata) +
+        delimiter +
+        'Content-Type: application/json\r\n\r\n' +
+        JSON.stringify(data) +
+        close_delim;
+
+      if (existingFile) {
+        // Update existing file
+        await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': `multipart/related; boundary=${boundary}`
+          },
+          body: multipartRequestBody
+        });
+      } else {
+        // Create new file
+        await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': `multipart/related; boundary=${boundary}`
+          },
+          body: multipartRequestBody
+        });
+      }
+      setCloudSyncStatus('synced');
+    } catch (err) {
+      console.error("[App] Drive save error", err);
+      setCloudSyncStatus('error');
+    }
+  };
+
+  const loadFromDrive = async (fileName: string) => {
+    if (!accessToken) return null;
+    try {
+      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${fileName}.json' and parents in 'appDataFolder'&spaces=appDataFolder&fields=files(id,name)`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      const searchData = await searchRes.json();
+      const file = searchData.files && searchData.files[0];
+      if (!file) return null;
+
+      const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      return await fileRes.json();
+    } catch (err) {
+      console.error("[App] Drive load error", err);
+      return null;
+    }
+  };
+
+  const savePDFToDrive = async (file: File) => {
+    if (!accessToken) return;
+    setCloudSyncStatus('syncing');
+    setProcessingMessage('Pujant PDF al núvol...');
+    setIsProcessing(true);
+    try {
+      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${file.name}' and parents in 'appDataFolder'&spaces=appDataFolder`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      const searchData = await searchRes.json();
+      const existingFile = searchData.files && searchData.files[0];
+
+      const metadata = {
+        name: file.name,
+        parents: ['appDataFolder']
+      };
+
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', file);
+
+      const url = existingFile
+        ? `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`
+        : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+
+      await fetch(url, {
+        method: existingFile ? 'PATCH' : 'POST',
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+        body: form
+      });
+
+      setCloudSyncStatus('synced');
+      alert('PDF pujat al núvol correctament!');
+    } catch (err) {
+      console.error("[App] PDF Drive save error", err);
+      setCloudSyncStatus('error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const loadPDFFromDrive = async (fileName: string) => {
+    if (!accessToken) return null;
+    setIsProcessing(true);
+    setProcessingMessage('Descarregant PDF del núvol...');
+    try {
+      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and parents in 'appDataFolder'&spaces=appDataFolder&fields=files(id,name,mimeType)`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      const searchData = await searchRes.json();
+      const fileMeta = searchData.files && searchData.files[0];
+      if (!fileMeta) return null;
+
+      const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileMeta.id}?alt=media`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      const blob = await fileRes.blob();
+      return new File([blob], fileName, { type: fileMeta.mimeType });
+    } catch (err) {
+      console.error("[App] PDF Drive load error", err);
+      return null;
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const [studentIdx, setStudentIdx] = useState<number>(0);
+  const [exerciseIdx, setExerciseIdx] = useState<number>(0);
 
   // Persist state whenever key values change
   useEffect(() => {
-    if (exercises.length > 0 || students.length > 0 || Object.keys(annotations).length > 0) {
-      agentDebugLog(
-        'H2_state_persist',
-        'src/App.tsx:103',
-        'Persisting app state',
-        {
-          mode,
-          pagesPerExam: Number(pagesPerExam) || 1,
-          exercises: exercises.length,
-          students: students.length,
-          annotationsStudents: Object.keys(annotations).length,
-          rubricStudents: Object.keys(rubricCounts).length,
-          targetMaxScore,
-          studentIdx,
-          exerciseIdx
-        }
-      );
-      saveState({
+    if (currentFileName && (exercises.length > 0 || students.length > 0 || Object.keys(annotations).length > 0)) {
+      const stateToSave = {
+        fileName: currentFileName,
         mode,
         pagesPerExam: Number(pagesPerExam) || 1,
         exercises,
@@ -266,9 +413,18 @@ function App() {
         lastExerciseIdx: exerciseIdx,
         accessToken,
         userEmail
-      });
+      };
+      saveState(stateToSave);
+
+      // Cloud save with a small delay to debounce
+      const timeout = setTimeout(() => {
+        saveToDrive(currentFileName, stateToSave);
+      }, 2000);
+      return () => clearTimeout(timeout);
     }
-  }, [mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, studentIdx, exerciseIdx, accessToken, userEmail]);
+    // Always save global state
+    saveGlobalState({ accessToken, userEmail });
+  }, [currentFileName, mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, studentIdx, exerciseIdx, accessToken, userEmail]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -277,7 +433,47 @@ function App() {
         alert("El fitxer seleccionat no és un PDF.");
         return;
       }
+
+      const fileName = file.name;
+      setCurrentFileName(fileName);
       setPdfFile(file);
+
+      let session = loadState(fileName);
+
+      // If no local session, try to load from Drive (async)
+      if (!session && accessToken) {
+        setProcessingMessage('Buscant sessió al núvol...');
+        session = await loadFromDrive(fileName);
+      }
+
+      if (session) {
+        setPagesPerExam(session.pagesPerExam);
+        setExercises(session.exercises);
+        setStudents(session.students);
+        setAnnotations(session.annotations);
+        setRubricCounts(session.rubricCounts);
+        setTargetMaxScore(session.targetMaxScore);
+        setStudentList(session.studentList);
+        setCommentBank(session.commentBank);
+        setStudentIdx(session.lastStudentIdx ?? 0);
+        setExerciseIdx(session.lastExerciseIdx ?? 0);
+        setPendingModeAfterPDF(session.mode);
+        setShowRestorePrompt(true);
+      } else {
+        // Reset to clean state for new filename
+        setPagesPerExam(1);
+        setExercises([]);
+        setStudents([]);
+        setAnnotations({});
+        setRubricCounts({});
+        setTargetMaxScore(10);
+        setStudentList('');
+        setStudentIdx(0);
+        setExerciseIdx(0);
+        setPendingModeAfterPDF(null);
+        setShowRestorePrompt(false);
+      }
+
       setIsProcessing(true);
       setProcessingMessage('Carregant PDF...');
 
@@ -338,14 +534,28 @@ function App() {
     else if (mode === 'correction') setMode('configure_crops');
   };
 
-  const handleRestoreSession = () => {
-    // User wants to restore — they need to re-upload the PDF, then go straight to correction
+  const handleRestoreSession = async () => {
+    // User wants to restore — if we don't have the PDF file but it's on the cloud, we can download it
+    if (!pdfFile && currentFileName) {
+      const cloudFile = await loadPDFFromDrive(currentFileName);
+      if (cloudFile) {
+        const doc = await loadPDF(cloudFile);
+        setPdfDoc(doc);
+        setNumPages(doc.numPages);
+        setPdfFile(cloudFile);
+      } else {
+        alert("Pujar el fitxer PDF localment per continuar.");
+        return;
+      }
+    }
     setPendingModeAfterPDF('correction');
     setShowRestorePrompt(false);
   };
 
   const handleNewSession = () => {
-    localStorage.removeItem(STORAGE_KEY);
+    if (currentFileName) {
+      localStorage.removeItem(STORAGE_PREFIX + currentFileName);
+    }
     setExercises([]);
     setStudents([]);
     setAnnotations({});
@@ -399,9 +609,37 @@ function App() {
 
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             {accessToken ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></div>
-                <span>{userEmail}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'var(--bg-tertiary)', padding: '0.4rem 0.8rem', borderRadius: '2rem', border: '1px solid var(--border)', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700 }}>
+                  {userEmail?.charAt(0).toUpperCase() || 'U'}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>Usuari connectat</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{userEmail}</span>
+                    {cloudSyncStatus !== 'idle' && (
+                      <div
+                        title={cloudSyncStatus === 'syncing' ? 'Sincronitzant amb Drive...' : cloudSyncStatus === 'synced' ? 'Sincronitzat amb Drive' : 'Error de sincronització'}
+                        style={{ display: 'flex', alignItems: 'center' }}
+                      >
+                        {cloudSyncStatus === 'syncing' ? (
+                          <div className="loader" style={{ width: '10px', height: '10px', borderWidth: '1.5px', borderTopColor: 'var(--accent)' }}></div>
+                        ) : cloudSyncStatus === 'synced' ? (
+                          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--success)' }}></div>
+                        ) : (
+                          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--danger)' }}></div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setAccessToken(null); setUserEmail(null); }}
+                  style={{ background: 'none', border: 'none', color: 'var(--danger)', padding: '0.2rem', cursor: 'pointer', display: 'flex' }}
+                  title="Desconnectar"
+                >
+                  <RefreshCw size={14} />
+                </button>
               </div>
             ) : (
               <button
@@ -436,9 +674,7 @@ function App() {
                 <RefreshCw size={24} color="var(--accent)" />
                 <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Sessió guardada trobada</h2>
               </div>
-              <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
-                Hi ha una sessió de correcció guardada amb <strong style={{ color: 'var(--text-primary)' }}>{savedState?.exercises.length} exercicis</strong> i <strong style={{ color: 'var(--text-primary)' }}>{savedState?.students.length} alumnes</strong>. Vols continuar on ho vas deixar?
-              </p>
+              Hi ha una sessió de correcció guardada amb <strong style={{ color: 'var(--text-primary)' }}>{exercises.length} exercicis</strong> i <strong style={{ color: 'var(--text-primary)' }}>{students.length} alumnes</strong>. Vols continuar on ho vas deixar?
               <div style={{ display: 'flex', gap: '0.75rem' }}>
                 <button
                   className="btn btn-primary"
@@ -587,6 +823,17 @@ function App() {
                 >
                   Next: Define Exercises (Retalls)
                 </button>
+                {accessToken && pdfFile && (
+                  <button
+                    className="btn-google"
+                    onClick={() => savePDFToDrive(pdfFile)}
+                    title="Pujar aquest PDF al núvol per continuar des de qualsevol lloc"
+                    style={{ padding: '0 12px' }}
+                  >
+                    <Upload size={16} />
+                    Núvol
+                  </button>
+                )}
               </div>
             </div>
           </div>
