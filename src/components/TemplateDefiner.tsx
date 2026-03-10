@@ -331,7 +331,7 @@ export default function TemplateDefiner({
                 </div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '1.25rem', alignItems: 'center' }}>
                     <button onClick={onToggleTheme} className="btn-icon" title="Tema">
-                        <Sun size={20} />
+                        {isDarkMode ? <Sun size={20} /> : <Sun size={20} />}
                     </button>
                     {accessToken ? (
                         <div style={{ 

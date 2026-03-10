@@ -323,9 +323,14 @@ function App() {
 
   const handleAuthorize = () => {
     setIsAuthorizing(true);
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const clientId = isLocal 
+      ? "89755629853-3i114l0ocgkpv5cla6d86n8ufuammvii.apps.googleusercontent.com" 
+      : "89755629853-lplrdbb6oh5vb2j169minkt8nh5nreog.apps.googleusercontent.com";
+
     try {
       const client = (window as any).google.accounts.oauth2.initTokenClient({
-        client_id: "89755629853-3i114l0ocgkpv5cla6d86n8ufuammvii.apps.googleusercontent.com",
+        client_id: clientId,
         scope: 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.rosters.readonly https://www.googleapis.com/auth/classroom.profile.emails https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.appdata',
         callback: (r: any) => { if (r.access_token) setAccessToken(r.access_token); setIsAuthorizing(false); }
       });
