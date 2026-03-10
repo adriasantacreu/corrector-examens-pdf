@@ -43,7 +43,8 @@ export default function PageOrganizer({
                 try {
                     const canvas = document.createElement('canvas');
                     // Apply inversion in dark mode for thumbnails too
-                    await renderPDFPageToCanvas(pdfDoc, i, canvas, 0.35, theme === 'dark');
+                    // Increased scale for better resolution in larger thumbnails
+                    await renderPDFPageToCanvas(pdfDoc, i, canvas, 0.5, theme === 'dark');
                     const url = canvas.toDataURL('image/jpeg', 0.7);
                     if (!cancelled) {
                         setThumbnails(prev => ({ ...prev, [i]: url }));
@@ -53,7 +54,7 @@ export default function PageOrganizer({
         };
         loadAll();
         return () => { cancelled = true; };
-    }, [pdfDoc, theme]); // Added theme to dependency to re-render thumbnails on toggle
+    }, [pdfDoc, theme]); 
 
     const ripplePushForward = (groupIdx: number) => {
         setGroups(prev => {
@@ -157,7 +158,7 @@ export default function PageOrganizer({
             </header>
 
             <main style={{ flex: 1, overflow: 'auto', padding: '2.5rem' }}>
-                <div style={{ maxWidth: '1300px', margin: '0 auto' }}>
+                <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
                     <div style={{ marginBottom: '3rem' }}>
                         <HandwrittenTitle size="3rem" color="purple">Organitzador de pàgines</HandwrittenTitle>
                         <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem', fontSize: '1.1rem' }}>
@@ -166,7 +167,7 @@ export default function PageOrganizer({
                         </p>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                         {groups.map((group, gi) => {
                             const isErr = group.pageIndexes.length !== pagesPerExam;
                             return (
@@ -177,40 +178,42 @@ export default function PageOrganizer({
                                     </div>
 
                                     {/* Ripple Buttons */}
-                                    <div style={{ display: 'flex', gap: '0.25rem' }}>
-                                        <button className="btn btn-secondary" onClick={() => ripplePullBackward(gi)} title="Atreure primera pàgina del següent alumne cap al final d'aquest (i moure la resta en cascada)" style={{ padding: '0.4rem', borderRadius: '0.5rem' }}>
-                                            <ArrowLeft size={16} />
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        <button className="btn btn-secondary" onClick={() => ripplePullBackward(gi)} title="Atreure primera pàgina del següent alumne" style={{ padding: '0.4rem', borderRadius: '0.5rem', height: '36px' }}>
+                                            <ArrowLeft size={18} />
                                         </button>
-                                        <button className="btn btn-secondary" onClick={() => ripplePushForward(gi)} title="Empènyer última pàgina d'aquest alumne cap al principi del següent (i moure la resta en cascada)" style={{ padding: '0.4rem', borderRadius: '0.5rem' }}>
-                                            <ArrowRight size={16} />
+                                        <button className="btn btn-secondary" onClick={() => ripplePushForward(gi)} title="Empènyer última pàgina d'aquest alumne" style={{ padding: '0.4rem', borderRadius: '0.5rem', height: '36px' }}>
+                                            <ArrowRight size={18} />
                                         </button>
                                     </div>
 
-                                    {/* Thumbnails Row - INCREASED SIZE */}
-                                    <div style={{ flex: 1, display: 'flex', gap: '0.75rem', overflowX: 'auto', padding: '0.75rem', background: 'var(--bg-tertiary)30', borderRadius: '0.75rem', minHeight: '160px' }}>
+                                    {/* Thumbnails Row - SIGNIFICANTLY INCREASED SIZE */}
+                                    <div style={{ flex: 1, display: 'flex', gap: '1rem', overflowX: 'auto', padding: '1rem', background: 'var(--bg-tertiary)20', borderRadius: '1rem', minHeight: '240px' }}>
                                         {group.pageIndexes.map((p, pi) => (
-                                            <div key={`${p}-${pi}`} draggable onDragStart={() => handleDragStart(gi, pi)} style={{ position: 'relative', cursor: 'grab', background: 'white', borderRadius: '0.4rem', border: '1px solid var(--border)', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflow: 'hidden', flexShrink: 0 }}>
-                                                {thumbnails[p] ? <img src={thumbnails[p]} alt={p.toString()} style={{ height: '140px', width: 'auto', display: 'block' }} /> : <div style={{ height: '140px', width: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem' }}>...</div>}
-                                                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.6)', color: 'white', fontSize: '0.7rem', fontWeight: 700, textAlign: 'center', padding: '2px 0' }}>p.{p}</div>
-                                                <button onClick={() => removePage(gi, pi)} style={{ position: 'absolute', top: 0, right: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '0 0 0 6px', padding: '4px', cursor: 'pointer' }}><Trash2 size={12} /></button>
+                                            <div key={`${p}-${pi}`} draggable onDragStart={() => handleDragStart(gi, pi)} style={{ position: 'relative', cursor: 'grab', background: 'white', borderRadius: '0.6rem', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', overflow: 'hidden', flexShrink: 0 }}>
+                                                {thumbnails[p] ? <img src={thumbnails[p]} alt={p.toString()} style={{ height: '220px', width: 'auto', display: 'block' }} /> : <div style={{ height: '220px', width: '150px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>Carregant...</div>}
+                                                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(2px)', color: 'white', fontSize: '0.8rem', fontWeight: 800, textAlign: 'center', padding: '4px 0' }}>p.{p}</div>
+                                                <button onClick={() => removePage(gi, pi)} style={{ position: 'absolute', top: 0, right: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '0 0 0 8px', padding: '6px', cursor: 'pointer' }}><Trash2 size={14} /></button>
                                             </div>
                                         ))}
                                         {group.pageIndexes.length === 0 && (
-                                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Sense pàgines</div>
+                                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Sense pàgines</div>
                                         )}
                                     </div>
 
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '120px', justifyContent: 'flex-end' }}>
-                                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isErr ? 'var(--danger)' : 'var(--success)' }}>{group.pageIndexes.length}/{pagesPerExam}</span>
-                                        <button onClick={() => moveGroupUp(gi)} className="btn-icon" style={{ padding: '2px' }}><ChevronUp size={14} /></button>
-                                        <button onClick={() => moveGroupDown(gi)} className="btn-icon" style={{ padding: '2px' }}><ChevronDown size={14} /></button>
-                                        <button onClick={() => removeGroup(gi)} className="btn-icon" style={{ padding: '2px', color: 'var(--danger)' }}><Trash2 size={14} /></button>
+                                        <span style={{ fontSize: '0.85rem', fontWeight: 800, color: isErr ? 'var(--danger)' : 'var(--success)' }}>{group.pageIndexes.length}/{pagesPerExam}</span>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                            <button onClick={() => moveGroupUp(gi)} className="btn-icon" style={{ padding: '2px', height: '24px' }}><ChevronUp size={16} /></button>
+                                            <button onClick={() => moveGroupDown(gi)} className="btn-icon" style={{ padding: '2px', height: '24px' }}><ChevronDown size={16} /></button>
+                                        </div>
+                                        <button onClick={() => removeGroup(gi)} className="btn-icon" style={{ padding: '4px', color: 'var(--danger)' }}><Trash2 size={18} /></button>
                                     </div>
                                 </div>
                             );
                         })}
-                        <button onClick={() => setGroups([...groups, { id: `s_${Date.now()}`, name: `Alumne ${groups.length + 1}`, pageIndexes: [] }])} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', border: '2px dashed var(--border)', background: 'transparent', color: 'var(--text-secondary)', padding: '1.5rem', cursor: 'pointer', borderRadius: '1.5rem' }}>
-                            <Plus size={20} /> <span style={{ fontWeight: 700 }}>Afegir nou alumne</span>
+                        <button onClick={() => setGroups([...groups, { id: `s_${Date.now()}`, name: `Alumne ${groups.length + 1}`, pageIndexes: [] }])} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', border: '2px dashed var(--border)', background: 'transparent', color: 'var(--text-secondary)', padding: '2rem', cursor: 'pointer', borderRadius: '1.5rem' }}>
+                            <Plus size={24} /> <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>Afegir nou alumne</span>
                         </button>
                     </div>
                 </div>

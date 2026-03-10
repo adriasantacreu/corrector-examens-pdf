@@ -27,7 +27,11 @@ export default function HandwrittenTitle({
     const chars = children.split('');
     
     return (
-        <div style={{ marginLeft: noMargin ? '0' : '-3.5rem', ...style }}>
+        <div style={{ 
+            marginLeft: noMargin ? '0' : '-3.5rem', 
+            paddingLeft: noMargin ? '0' : '0.5rem',
+            ...style 
+        }}>
             <Highlighter thick={thick} color={selectedColor} rotation={rotation} textStyle={{ fontSize: size }}>
                 <span style={{ display: 'inline-flex', alignItems: 'baseline', transform: `rotate(${rotation * 0.2}deg)` }}>
                     {chars.map((char, i) => {

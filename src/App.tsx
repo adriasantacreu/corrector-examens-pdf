@@ -83,6 +83,7 @@ function App() {
   const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [studentEmailMap, setStudentEmailMap] = useState<Record<string, string>>({});
   const [showPasteArea, setShowPasteArea] = useState(false);
+  const [ocrCompleted, setOcrCompleted] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -188,13 +189,13 @@ function App() {
     if (currentFileName && mode !== 'upload') {
       const state = { 
         fileName: currentFileName, mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, lastStudentIdx: studentIdx, lastExerciseIdx: exerciseIdx, lastModified: new Date().toISOString(), studentEmailMap, progress: calculateProgress(students, exercises, annotations),
-        classroomStudents 
+        classroomStudents, ocrCompleted 
       };
       localStorage.setItem(SESSION_PREFIX + currentFileName, JSON.stringify(state));
       const timeout = setTimeout(() => saveToDrive(currentFileName, state), 3000);
       return () => clearTimeout(timeout);
     }
-  }, [mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, studentIdx, exerciseIdx, classroomStudents]);
+  }, [mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, studentIdx, exerciseIdx, classroomStudents, ocrCompleted]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -208,6 +209,7 @@ function App() {
     if (saved) {
       setPagesPerExam(saved.pagesPerExam); setExercises(saved.exercises); setStudents(saved.students); setAnnotations(saved.annotations); setRubricCounts(saved.rubricCounts); setTargetMaxScore(saved.targetMaxScore); setStudentList(saved.studentList); setCommentBank(saved.commentBank); setStudentIdx(saved.lastStudentIdx || 0); setExerciseIdx(saved.lastExerciseIdx || 0); setStudentEmailMap(saved.studentEmailMap || {});
       setClassroomStudents(saved.classroomStudents || []);
+      setOcrCompleted(saved.ocrCompleted || false);
       setTempPagesPerExam(String(saved.pagesPerExam));
     }
     try {
@@ -267,6 +269,43 @@ function App() {
       console.error(err);
       alert("Error sincronitzant amb Classroom. Revisa els permisos."); 
     } finally { setIsProcessing(false); }
+  };
+
+  const runOCR = async (customExercises?: ExerciseDef[]) => {
+    const targetEx = customExercises || exercises;
+    const ocr = targetEx.find(e => e.type === 'ocr_name');
+    if (!ocr || !pdfDoc) return;
+
+    setIsProcessing(true);
+    setProcessingMessage('Llegint noms amb OCR...');
+    const { extractTextFromRegion, extractImageFromRegion } = await import('./utils/ocrUtils');
+    const updated = [...students];
+    const known = studentList.split('\n').map(n => n.trim()).filter(n => n.length > 0);
+    
+    for (let i = 0; i < updated.length; i++) {
+      setProcessingMessage(`OCR alumne ${i + 1} de ${updated.length}...`);
+      try {
+        const pIdx = updated[i].pageIndexes[Math.min(ocr.pageIndex, updated[i].pageIndexes.length - 1)] || updated[i].pageIndexes[0];
+        const text = await extractTextFromRegion(pdfDoc, pIdx, ocr);
+        const crop = await extractImageFromRegion(pdfDoc, pIdx, ocr);
+        let name = text.trim();
+        if (known.length > 0 && name.length > 2) {
+          let best = '', min = 999;
+          known.forEach(kn => {
+            const d = getLevenshteinDistance(name.toLowerCase(), kn.toLowerCase());
+            if (d < min) { min = d; best = kn; }
+          });
+          if (min < best.length * 0.4) {
+            name = best;
+            if (studentEmailMap[best]) updated[i].email = studentEmailMap[best];
+          }
+        }
+        updated[i] = { ...updated[i], name: name || updated[i].name, nameCropUrl: crop };
+      } catch { }
+    }
+    setStudents(updated);
+    setOcrCompleted(true);
+    setIsProcessing(false);
   };
 
   const handleAuthorize = () => {
@@ -329,7 +368,7 @@ function App() {
             height: '42px'
           }}>
             {userPicture ? (
-              <img src={userPicture} alt="User" style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid var(--accent)', objectFit: 'cover' }} />
+              <img src={userPicture} alt="User" style={{ width: '28px', height: '28px', borderRadius: '50%', border: '1px solid var(--accent)', objectFit: 'cover' }} />
             ) : (
               <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800 }}>{userEmail?.[0].toUpperCase()}</div>
             )}
@@ -612,24 +651,18 @@ function App() {
 
         {mode === 'organize_pages' && pdfDoc && <PageOrganizer pdfDoc={pdfDoc} initialGroups={students} pagesPerExam={Number(pagesPerExam) || 1} onBack={handleBack} onConfirm={(g) => { setStudents(g); setMode('configure_crops'); }} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout} />}
         {mode === 'configure_crops' && pdfDoc && (
-          <TemplateDefiner pdfDoc={pdfDoc} pagesPerExam={Number(pagesPerExam) || 1} initialExercises={exercises} onBack={handleBack} onComplete={async (ex) => {
-            setExercises(ex); const ocr = ex.find(e => e.type === 'ocr_name'); if (!ocr) { setMode('correction'); return; }
-            setIsProcessing(true); setProcessingMessage('Llegint noms amb OCR...'); const { extractTextFromRegion, extractImageFromRegion } = await import('./utils/ocrUtils');
-            const updated = [...students]; const known = studentList.split('\n').map(n => n.trim()).filter(n => n.length > 0);
-            for (let i = 0; i < updated.length; i++) {
-              setProcessingMessage(`OCR alumne ${i + 1} de ${updated.length}...`);
-              try {
-                const pIdx = updated[i].pageIndexes[Math.min(ocr.pageIndex, updated[i].pageIndexes.length - 1)] || updated[i].pageIndexes[0];
-                const text = await extractTextFromRegion(pdfDoc, pIdx, ocr); const crop = await extractImageFromRegion(pdfDoc, pIdx, ocr);
-                let name = text.trim(); if (known.length > 0 && name.length > 2) {
-                  let best = '', min = 999; known.forEach(kn => { const d = getLevenshteinDistance(name.toLowerCase(), kn.toLowerCase()); if (d < min) { min = d; best = kn; } });
-                  if (min < best.length * 0.4) { name = best; if (studentEmailMap[best]) updated[i].email = studentEmailMap[best]; }
-                }
-                updated[i] = { ...updated[i], name: name || updated[i].name, nameCropUrl: crop };
-              } catch { }
-            }
-            setStudents(updated); setMode('correction'); setIsProcessing(false);
-          }} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout} />
+          <TemplateDefiner 
+            pdfDoc={pdfDoc} pagesPerExam={Number(pagesPerExam) || 1} initialExercises={exercises} onBack={handleBack} 
+            onComplete={async (ex) => {
+                setExercises(ex); 
+                if (ocrCompleted) { setMode('correction'); return; }
+                await runOCR(ex);
+                setMode('correction');
+            }} 
+            theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} 
+            accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout} 
+            onRunOCR={() => runOCR()} ocrCompleted={ocrCompleted}
+          />
         )}
         
         {mode === 'correction' && pdfDoc && (

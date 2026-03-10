@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Group, Text, Transformer } from 'react-konva';
-import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, File, Award, TextSelect, Settings, FileText, Moon, Sun, LogOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, File, Award, TextSelect, Settings, FileText, Moon, Sun, LogOut, RefreshCw } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import type { ExerciseDef, CropExercise, PagesExercise } from '../types';
@@ -21,6 +21,8 @@ interface Props {
     userPicture: string | null;
     onAuthorize: () => void;
     onLogout: () => void;
+    onRunOCR: () => void;
+    ocrCompleted: boolean;
 }
 
 // Helper for natural number input (handles commas, dots, negative signs, etc)
@@ -86,7 +88,7 @@ function NumericInput({ value, onChange, style, placeholder = "" }: {
 
 export default function TemplateDefiner({ 
     pdfDoc, pagesPerExam, initialExercises, onComplete, onBack, theme, onToggleTheme,
-    accessToken, userEmail, userPicture, onAuthorize, onLogout
+    accessToken, userEmail, userPicture, onAuthorize, onLogout, onRunOCR, ocrCompleted
 }: Props) {
     const [currentPageIndex, setCurrentPageIndex] = useState(0);
     const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
@@ -119,6 +121,7 @@ export default function TemplateDefiner({
         const loadPage = async () => {
             setBgImage(null);
             const canvas = document.createElement('canvas');
+            // USE TARGETED INVERSION
             const dimensions = await renderPDFPageToCanvas(pdfDoc, currentPageIndex + 1, canvas, 2.5, isDarkMode);
 
             if (dimensions) {
@@ -146,7 +149,7 @@ export default function TemplateDefiner({
             }
         };
         setTimeout(loadPage, 100);
-    }, [currentPageIndex, pdfDoc]);
+    }, [currentPageIndex, pdfDoc, isDarkMode]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -312,7 +315,7 @@ export default function TemplateDefiner({
                 </div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '1.25rem', alignItems: 'center' }}>
                     <button onClick={onToggleTheme} className="btn-icon" title="Tema">
-                        {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+                        {isDarkMode ? <Sun size={20} /> : <Sun size={20} />}
                     </button>
                     {accessToken ? (
                         <div style={{ 
@@ -341,16 +344,15 @@ export default function TemplateDefiner({
             </header>
 
             <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                {/* Sidebar Configuration - Added paddingLeft to accommodate shifted titles */}
-                <div className="sidebar" style={{ width: '360px', flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)', borderRight: '1px solid var(--border)', paddingLeft: '4rem' }}>
-                    <div style={{ padding: '1.25rem 1.25rem 1.25rem 0', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                        <HandwrittenTitle size="1.5rem" color="purple">Definir plantilla</HandwrittenTitle>
+                <div className="sidebar" style={{ width: '360px', flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)', borderRight: '1px solid var(--border)', padding: '1.25rem' }}>
+                    <div style={{ paddingBottom: '1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                        <HandwrittenTitle size="1.5rem" color="purple" noMargin={true}>Definir plantilla</HandwrittenTitle>
                         <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, fontWeight: 600 }}>
                             Pàgina {currentPageIndex + 1} de {pagesPerExam}
                         </p>
                     </div>
 
-                    <div style={{ padding: '0.75rem 0.75rem 0.75rem 0', display: 'flex', gap: '0.4rem', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', justifyContent: 'flex-start' }}>
+                    <div style={{ padding: '0.75rem 0', display: 'flex', gap: '0.4rem', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', justifyContent: 'flex-start' }}>
                         <button className={`btn-icon ${mode === 'select' ? 'active' : ''}`} onClick={() => setMode('select')} title="Seleccionar/moure"><MousePointer2 size={18} /></button>
                         <button className={`btn-icon ${mode === 'draw' ? 'active' : ''}`} onClick={() => setMode('draw')} title="Dibuixar exercici"><Square size={18} /></button>
                         <button className={`btn-icon ${mode === 'draw_ocr' ? 'active' : ''}`} onClick={() => setMode('draw_ocr')} title="Definir nom (OCR)" style={{ color: mode === 'draw_ocr' ? '#eab308' : undefined }}><TextSelect size={18} /></button>
@@ -358,10 +360,10 @@ export default function TemplateDefiner({
                         <button className="btn btn-secondary" style={{ padding: '0.2rem 0.8rem', fontSize: '0.75rem', height: '32px' }} onClick={addFullPageExercise} title="Afegir pàgina sencera"><File size={14} /> + Pàgina</button>
                     </div>
 
-                    <div style={{ padding: '1rem 1rem 1rem 0', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div style={{ padding: '1rem 0', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                         <section>
-                            <HandwrittenTitle size="1.3rem" color="yellow">Regions de control</HandwrittenTitle>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
+                            <HandwrittenTitle size="1.3rem" color="yellow" noMargin={true} style={{ marginBottom: '0.5rem' }}>Regions de control</HandwrittenTitle>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                                 {['ocr_name', 'total_score'].map(type => {
                                     const reg = exercises.find(ex => ex.type === type);
                                     const label = type === 'ocr_name' ? '👤 Àrea del nom' : '📊 Àrea de la nota';
@@ -372,11 +374,18 @@ export default function TemplateDefiner({
                                                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: reg ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{label}</span>
                                                 {reg && <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>Pàg. {(reg as any).pageIndex + 1}</span>}
                                             </div>
-                                            {reg ? (
-                                                <button onClick={() => removeExercise(reg.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer' }}><Trash2 size={14} /></button>
-                                            ) : (
-                                                <button onClick={() => setMode(type === 'ocr_name' ? 'draw_ocr' : 'draw_total_score')} className="btn btn-secondary" style={{ fontSize: '0.6rem', height: '24px', padding: '0 0.5rem' }}>Definir</button>
-                                            )}
+                                            <div style={{ display: 'flex', gap: '4px' }}>
+                                                {reg && type === 'ocr_name' && (
+                                                    <button onClick={onRunOCR} className="btn-icon" style={{ color: ocrCompleted ? 'var(--success)' : 'var(--accent)', padding: '4px' }} title="Tornar a executar OCR">
+                                                        <RefreshCw size={14} className={!ocrCompleted ? 'spin' : ''} />
+                                                    </button>
+                                                )}
+                                                {reg ? (
+                                                    <button onClick={() => removeExercise(reg.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '4px' }}><Trash2 size={14} /></button>
+                                                ) : (
+                                                    <button onClick={() => setMode(type === 'ocr_name' ? 'draw_ocr' : 'draw_total_score')} className="btn btn-secondary" style={{ fontSize: '0.6rem', height: '24px', padding: '0 0.5rem' }}>Definir</button>
+                                                )}
+                                            </div>
                                         </div>
                                     );
                                 })}
@@ -384,11 +393,11 @@ export default function TemplateDefiner({
                         </section>
 
                         <section>
-                            <HandwrittenTitle size="1.3rem" color="green">Exercicis corregibles</HandwrittenTitle>
+                            <HandwrittenTitle size="1.3rem" color="green" noMargin={true} style={{ marginBottom: '0.5rem' }}>Exercicis corregibles</HandwrittenTitle>
                             {exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages').length === 0 ? (
-                                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic', marginTop: '0.5rem' }}>Cap exercici definit.</p>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Cap exercici definit.</p>
                             ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                                     {exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages').map((ex, idx) => {
                                         const isCurrentPageInvolved = ex.type === 'pages' ? (ex as PagesExercise).pageIndexes.includes(currentPageIndex) : (ex as any).pageIndex === currentPageIndex;
                                         const isSelectedInList = ex.id === selectedId;
