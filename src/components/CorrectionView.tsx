@@ -7,23 +7,22 @@ declare global {
 }
 
 import {
-    ChevronLeft, ChevronRight, Check, Trash2, Pencil, Plus, Minus,
+    ChevronLeft, ChevronRight, Check, Pencil, Plus, Minus,
     Download, RotateCcw, Highlighter as HighlighterIcon,
     Type, Image as ImageIcon, Eraser, MousePointer2,
     RefreshCw, X
 } from 'lucide-react';
+
 import { Stage, Layer, Image as KonvaImage, Line, Rect, Text, Group, Transformer } from 'react-konva';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import type {
     Student, ExerciseDef, Annotation, AnnotationStore,
     PenAnnotation, HighlighterAnnotation, TextAnnotation,
-    ImageAnnotation, RubricCountStore,
+    RubricCountStore,
     PagesExercise
 } from '../types';
 import { exportAnnotatedPDF, exportOriginalLayoutPDF } from '../utils/pdfExport';
-import FlowGradingLogo from './FlowGradingLogo';
-import HandwrittenTitle from './HandwrittenTitle';
 import NumericInput from './NumericInput';
 
 interface Props {
@@ -68,11 +67,10 @@ const HIGHLIGHTER_PRESETS = [
 ];
 
 export default function CorrectionView({
-    pdfDoc, students, exercises, annotations, rubricCounts, commentBank, targetMaxScore,
+    pdfDoc, students, exercises, annotations, rubricCounts, commentBank,
     onBack, onFinish,
     onUpdateAnnotations, onUpdateRubricCounts, onUpdateExercise,
-    studentIdx, exerciseIdx, onUpdateStudentIdx, onUpdateExerciseIdx,
-    showDialog, showConfirm
+    studentIdx, exerciseIdx, onUpdateStudentIdx, onUpdateExerciseIdx
 }: Props) {
     const [tool, setTool] = useState<Tool>('pen');
     const [color, _setColor] = useState('#ef4444');
@@ -449,7 +447,7 @@ export default function CorrectionView({
 
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '1rem' }}>
                     {computedScore !== null && (
-                        <div style={{ display: 'flex', flexDir: 'column', alignItems: 'flex-end', marginRight: '1rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginRight: '1rem' }}>
                             <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Puntuació</div>
                             <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.2rem' }}>
                                 <span style={{ fontSize: '1.8rem', fontWeight: 950, color: 'var(--accent)' }}>{computedScore.toFixed(2)}</span>
@@ -907,7 +905,7 @@ export default function CorrectionView({
                                         }}
                                         title="Exportar examen complet de l'alumne actual"
                                     >
-                                        {isExporting && exportProgress ? <RefreshCw size={14} className="spin" style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={14} />}
+                                        {isExporting && exportProgress ? <RefreshCw size={14} className="spin" style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={14} />}
                                         {isExporting && exportProgress ? `${exportProgress.done}/${exportProgress.total}` : 'PDF'}
                                     </button>
                                 </div>

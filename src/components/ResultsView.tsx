@@ -99,7 +99,6 @@ export default function ResultsView({
 
         setIsSendingTest(true);
         try {
-            // Generate PDF for the first student as a test
             const testStudent = students[0];
             const pdfBlob = await generateStudentPDF(pdfDoc, testStudent, exercises, annotations, rubricCounts, 1);
             const base64Pdf = await blobToBase64(pdfBlob);
