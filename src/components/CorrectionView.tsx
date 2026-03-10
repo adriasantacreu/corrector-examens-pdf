@@ -34,6 +34,8 @@ interface Props {
     exerciseIdx: number;
     onUpdateStudentIdx: (idx: number) => void;
     onUpdateExerciseIdx: (idx: number) => void;
+    showDialog: (title: string, message: string) => void;
+    showConfirm: (title: string, message: string, onConfirm: () => void) => void;
 }
 
 

@@ -42,8 +42,8 @@ export default function PageOrganizer({
                 if (cancelled) return;
                 try {
                     const canvas = document.createElement('canvas');
-                    // Apply inversion in dark mode for thumbnails too
-                    await renderPDFPageToCanvas(pdfDoc, i, canvas, 0.5, theme === 'dark');
+                    // THUMBNAILS STAY LIGHT (false for invert)
+                    await renderPDFPageToCanvas(pdfDoc, i, canvas, 0.5, false);
                     const url = canvas.toDataURL('image/jpeg', 0.7);
                     if (!cancelled) {
                         setThumbnails(prev => ({ ...prev, [i]: url }));
@@ -53,7 +53,7 @@ export default function PageOrganizer({
         };
         loadAll();
         return () => { cancelled = true; };
-    }, [pdfDoc, theme]); 
+    }, [pdfDoc]); // Removed theme from dependency as we don't want them to change
 
     const ripplePushForward = (groupIdx: number) => {
         setGroups(prev => {

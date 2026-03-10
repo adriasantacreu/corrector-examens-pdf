@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users } from 'lucide-react';
+import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, AlertCircle, HelpCircle, CheckCircle2 } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from './types';
 import { loadPDF, type PDFDocumentProxy } from './utils/pdfUtils';
 import TemplateDefiner from './components/TemplateDefiner';
@@ -16,6 +16,15 @@ type AppMode = 'upload' | 'setup' | 'organize_pages' | 'configure_crops' | 'corr
 
 const SESSION_PREFIX = 'flowgrading_session_';
 const GLOBAL_KEY = 'flowgrading_global';
+
+interface DialogState {
+    show: boolean;
+    title: string;
+    message: string;
+    type: 'alert' | 'confirm';
+    onConfirm?: () => void;
+    onCancel?: () => void;
+}
 
 function getLevenshteinDistance(a: string, b: string): number {
   const tmp = [];
@@ -84,6 +93,14 @@ function App() {
   const [studentEmailMap, setStudentEmailMap] = useState<Record<string, string>>({});
   const [showPasteArea, setShowPasteArea] = useState(false);
   const [ocrCompleted, setOcrCompleted] = useState(false);
+
+  // PRETTY DIALOG STATE
+  const [dialog, setDialog] = useState<DialogState>({ show: false, title: '', message: '', type: 'alert' });
+
+  const showAlert = (title: string, message: string) => setDialog({ show: true, title, message, type: 'alert' });
+  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setDialog({ show: true, title, message, type: 'confirm', onConfirm, onCancel: () => setDialog(d => ({ ...d, show: false })) });
+  };
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -221,7 +238,7 @@ function App() {
       
       setMode(saved?.mode || 'setup'); setCurrentFileName(file.name);
       storePDFLocal(file.name, file).catch(console.error);
-    } catch { alert("Error carregant PDF"); } finally { setIsProcessing(false); }
+    } catch { showAlert("Error", "Error carregant el fitxer PDF."); } finally { setIsProcessing(false); }
   };
 
   const handleSelectSession = async (s: any) => {
@@ -230,14 +247,14 @@ function App() {
       loadSessionFromFile(f);
     } else {
       setCurrentFileName(s.fileName); 
-      alert("Si us plau, selecciona el fitxer '" + s.fileName + "' de nou per carregar-lo.");
+      showAlert("Fitxer no trobat", "Si us plau, selecciona el fitxer '" + s.fileName + "' de nou per carregar-lo.");
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'application/pdf';
       input.onchange = (e: any) => {
         const file = e.target.files?.[0];
         if (file && file.name === s.fileName) loadSessionFromFile(file);
-        else if (file) alert("El fitxer seleccionat no coincideix amb el nom de la sessió.");
+        else if (file) showAlert("Fitxer incorrecte", "El fitxer seleccionat no coincideix amb el nom de la sessió.");
       };
       input.click();
     }
@@ -267,7 +284,7 @@ function App() {
       }
     } catch(err) { 
       console.error(err);
-      alert("Error sincronitzant amb Classroom. Revisa els permisos."); 
+      showAlert("Error Classroom", "Error sincronitzant amb Classroom. Revisa els permisos."); 
     } finally { setIsProcessing(false); }
   };
 
@@ -394,6 +411,27 @@ function App() {
     <div className={`app-container ${mode === 'upload' ? 'home-page' : ''}`} style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {isProcessing && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}><div className="card" style={{ textAlign: 'center', minWidth: '300px' }}><div className="loader" style={{ margin: '0 auto 1.5rem', width: '40px', height: '40px' }}></div><h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{processingMessage}</h2></div></div>}
       
+      {/* GLOBAL DIALOG SYSTEM */}
+      {dialog.show && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+            <div className="card" style={{ maxWidth: '400px', width: '90%', padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '1.5rem', border: '1px solid var(--border)', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
+                <div style={{ color: dialog.type === 'alert' ? 'var(--accent)' : 'var(--accent)', display: 'flex', justifyContent: 'center' }}>
+                    {dialog.type === 'alert' ? <AlertCircle size={48} /> : <HelpCircle size={48} />}
+                </div>
+                <div>
+                    <h3 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '0.5rem' }}>{dialog.title}</h3>
+                    <p style={{ color: 'var(--text-secondary)', lineHeight: '1.5' }}>{dialog.message}</p>
+                </div>
+                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                    {dialog.type === 'confirm' && (
+                        <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { dialog.onCancel?.(); setDialog(d => ({ ...d, show: false })); }}>Cancel·lar</button>
+                    )}
+                    <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { dialog.onConfirm?.(); setDialog(d => ({ ...d, show: false })); }}>D'acord</button>
+                </div>
+            </div>
+        </div>
+      )}
+
       {mode === 'upload' && (
         <div style={{ position: 'absolute', top: '1.5rem', right: '1.5rem', display: 'flex', gap: '1.25rem', alignItems: 'center', zIndex: 10 }}>
           <button className="btn-icon" onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}>
@@ -405,7 +443,7 @@ function App() {
               background: 'var(--bg-tertiary)', borderRadius: '2rem', border: '1px solid var(--border)',
               height: '42px'
             }}>
-              {userPicture ? <img src={userPicture} alt="User" style={{ width: '28px', height: '28px', borderRadius: '50%' }} /> : <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 800 }}>{userEmail?.[0].toUpperCase()}</div>}
+              {userPicture ? <img src={userPicture} alt="User" style={{ width: '28px', height: '28px', borderRadius: '50%' }} /> : <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800 }}>{userEmail?.[0].toUpperCase()}</div>}
               <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>{userEmail?.split('@')[0]}</span>
               <button onClick={handleLogout} className="btn-icon" style={{ padding: '2px' }}><LogOut size={14} color="var(--danger)" /></button>
             </div>
@@ -576,10 +614,10 @@ function App() {
                 <HandwrittenTitle size="2.2rem" color="red">Llistat d'alumnes importats</HandwrittenTitle>
                 {(classroomStudents.length > 0 || studentList.trim()) && (
                   <button className="btn btn-secondary" style={{ color: 'var(--danger)', fontSize: '0.8rem', padding: '0.4rem 1rem' }} onClick={() => {
-                    if (window.confirm("Vols eliminar TOTS els alumnes del llistat?")) {
+                    showConfirm("Eliminar-ho tot", "Vols eliminar TOTS els alumnes del llistat?", () => {
                       setClassroomStudents([]);
                       setStudentList('');
-                    }
+                    });
                   }}>
                     <UserMinus size={14} /> Eliminar-ho tot
                   </button>
@@ -676,10 +714,11 @@ function App() {
             })} 
             onUpdateExercise={ux => setExercises(prev => prev.map(ex => ex.id === ux.id ? ux : ex))} 
             studentIdx={studentIdx} exerciseIdx={exerciseIdx} onUpdateStudentIdx={setStudentIdx} onUpdateExerciseIdx={setExerciseIdx} 
+            showDialog={showAlert} showConfirm={showConfirm}
           />
         )}
         
-        {mode === 'results' && pdfDoc && <ResultsView pdfDoc={pdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} targetMaxScore={targetMaxScore} onUpdateStudents={setStudents} onBack={() => setMode('correction')} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} onAuthorize={handleAuthorize} courses={courses} isAuthorizing={isAuthorizing} classroomStudents={classroomStudents} />}
+        {mode === 'results' && pdfDoc && <ResultsView pdfDoc={pdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} targetMaxScore={targetMaxScore} onUpdateStudents={setStudents} onBack={() => setMode('correction')} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} onAuthorize={handleAuthorize} courses={courses} isAuthorizing={isAuthorizing} classroomStudents={classroomStudents} showDialog={showAlert} showConfirm={showConfirm} />}
       </main>
     </div>
   );
