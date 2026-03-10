@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { ChevronLeft, Send, Download, Sun, Moon, UserCheck, RefreshCw, FileDown, XCircle, MailCheck } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from '../types';
-import { exportCombinedPDF, exportStudentPDF } from '../utils/pdfExport';
+import { exportCombinedPDF, exportStudentPDF, generateStudentPDF } from '../utils/pdfExport';
 import { calculateStudentScore } from '../utils/scoreUtils';
 import HandwrittenTitle from './HandwrittenTitle';
 import FlowGradingLogo from './FlowGradingLogo';
@@ -74,26 +74,63 @@ export default function ResultsView({
         onUpdateStudents(updated);
     };
 
+    const blobToBase64 = (blob: Blob): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64String = (reader.result as string).split(',')[1];
+                resolve(base64String);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    };
+
     const handleSendTestEmail = async () => {
         if (!accessToken || !userEmail) {
             showDialog("Error", "Has d'estar connectat per enviar un correu de prova.");
             return;
         }
 
+        if (students.length === 0) {
+            showDialog("Error", "No hi ha alumnes per generar un examen de prova.");
+            return;
+        }
+
         setIsSendingTest(true);
         try {
-            const subject = "Prova d'enviament - FlowGrading";
-            const body = `Hola!\n\nAixò és un correu de prova de FlowGrading per verificar que la integració amb Gmail funciona correctament.\n\nSi reps aquest correu, ja pots enviar les correccions als teus alumnes.`;
+            // Generate PDF for the first student as a test
+            const testStudent = students[0];
+            const pdfBlob = await generateStudentPDF(pdfDoc, testStudent, exercises, annotations, rubricCounts, 1);
+            const base64Pdf = await blobToBase64(pdfBlob);
+            const fileName = `test_correccio_${testStudent.name.replace(/\s+/g, '_')}.pdf`;
+
+            const boundary = "foo_bar_baz";
+            const subject = "Prova d'enviament amb adjunt - FlowGrading";
             
-            const message = [
+            const messageParts = [
                 `To: ${userEmail}`,
                 `Subject: ${subject}`,
-                'Content-Type: text/plain; charset="UTF-8"',
+                'MIME-Version: 1.0',
+                `Content-Type: multipart/mixed; boundary="${boundary}"`,
                 '',
-                body
-            ].join('\r\n');
+                `--${boundary}`,
+                'Content-Type: text/plain; charset="UTF-8"',
+                'Content-Transfer-Encoding: 7bit',
+                '',
+                `Hola!\n\nAixò és un correu de prova de FlowGrading que inclou la correcció de l'alumne ${testStudent.name} com a fitxer adjunt.\n\nSi reps aquest correu amb el PDF correcte, ja pots enviar les correccions als teus alumnes.`,
+                '',
+                `--${boundary}`,
+                `Content-Type: application/pdf; name="${fileName}"`,
+                'Content-Transfer-Encoding: base64',
+                `Content-Disposition: attachment; filename="${fileName}"`,
+                '',
+                base64Pdf,
+                `--${boundary}--`
+            ];
 
-            const encodedMessage = btoa(unescape(encodeURIComponent(message)))
+            const rawMessage = messageParts.join('\r\n');
+            const encodedMessage = btoa(unescape(encodeURIComponent(rawMessage)))
                 .replace(/\+/g, '-')
                 .replace(/\//g, '_')
                 .replace(/=+$/, '');
@@ -108,12 +145,13 @@ export default function ResultsView({
             });
 
             if (response.ok) {
-                showDialog("Test enviat", `S'ha enviat un correu de prova a ${userEmail}. Revisa la teva bústia.`);
+                showDialog("Test enviat", `S'ha enviat un correu de prova a ${userEmail} amb l'examen de ${testStudent.name} adjunt.`);
             } else {
                 const err = await response.json();
                 throw new Error(err.error?.message || "Error desconegut");
             }
         } catch (err: any) {
+            console.error("Error sending test email:", err);
             showDialog("Error d'enviament", `No s'ha pogut enviar el correu: ${err.message}`);
         } finally {
             setIsSendingTest(false);
@@ -135,7 +173,7 @@ export default function ResultsView({
                         style={{ height: '42px', fontSize: '0.85rem' }}
                     >
                         {isSendingTest ? <RefreshCw size={16} className="spin" /> : <MailCheck size={16} />}
-                        Enviar-me test
+                        Enviar-me test (amb PDF)
                     </button>
 
                     <button className="btn btn-primary" onClick={handleDownloadAll} disabled={isExporting} style={{ height: '42px' }}>
