@@ -64,7 +64,6 @@ function App() {
   const [tempNumStudents, setTempNumStudents] = useState<string>('0');
   
   const [pagesPerExam, setPagesPerExam] = useState<number | ''>(1);
-  const [numStudents, setNumStudents] = useState<number>(0);
   const [students, setStudents] = useState<Student[]>([]);
   const [exercises, setExercises] = useState<ExerciseDef[]>([]);
   const [annotations, setAnnotations] = useState<AnnotationStore>({});
@@ -229,9 +228,8 @@ function App() {
     }
     try {
       const doc = await loadPDF(file); setPdfDoc(doc); setNumPages(doc.numPages);
-      const calcStudents = saved ? (saved.students.length || Math.floor(doc.numPages / (saved.pagesPerExam || 1))) : doc.numPages;
-      setNumStudents(calcStudents);
-      setTempNumStudents(String(calcStudents));
+      const calcStudentsCount = saved ? (saved.students.length || Math.floor(doc.numPages / (saved.pagesPerExam || 1))) : doc.numPages;
+      setTempNumStudents(String(calcStudentsCount));
       if (!saved) setTempPagesPerExam('1');
       
       setMode(saved?.mode || 'setup'); setCurrentFileName(file.name);
@@ -520,13 +518,13 @@ function App() {
                           onKeyDown={e => {
                             if (e.key === 'Enter') {
                               const val = parseInt(tempPagesPerExam) || 1;
-                              setPagesPerExam(val); setNumStudents(Math.floor(numPages / val));
+                              setPagesPerExam(val);
                               setTempNumStudents(String(Math.floor(numPages / val)));
                             }
                           }}
                           onBlur={() => {
                             const val = parseInt(tempPagesPerExam) || 1;
-                            setPagesPerExam(val); setNumStudents(Math.floor(numPages / val));
+                            setPagesPerExam(val);
                             setTempNumStudents(String(Math.floor(numPages / val)));
                           }}
                           style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid var(--border)', fontSize: '1.25rem', fontWeight: 800, textAlign: 'center' }} 
@@ -542,13 +540,13 @@ function App() {
                           onKeyDown={e => {
                             if (e.key === 'Enter') {
                               const val = parseInt(tempNumStudents) || 1;
-                              setNumStudents(val); setPagesPerExam(Math.floor(numPages / val));
+                              setPagesPerExam(Math.floor(numPages / val));
                               setTempPagesPerExam(String(Math.floor(numPages / val)));
                             }
                           }}
                           onBlur={() => {
                             const val = parseInt(tempNumStudents) || 1;
-                            setNumStudents(val); setPagesPerExam(Math.floor(numPages / val));
+                            setPagesPerExam(Math.floor(numPages / val));
                             setTempPagesPerExam(String(Math.floor(numPages / val)));
                           }}
                           style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid var(--border)', fontSize: '1.25rem', fontWeight: 800, textAlign: 'center' }} 

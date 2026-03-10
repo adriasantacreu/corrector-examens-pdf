@@ -1599,7 +1599,7 @@ export default function CorrectionView({
                                         currentStudentIdx: studentIdx,
                                         scaleFactor: currentFactor,
                                         onProgress: (d, t) => setExportProgress({ done: d, total: t })
-                                    });
+                                    } as any);
                                 } finally {
                                     setIsExporting(false);
                                     setExportProgress(null);

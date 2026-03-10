@@ -4,8 +4,7 @@ import { renderPDFPageToCanvas } from './pdfUtils';
 import type {
     Student, ExerciseDef, AnnotationStore, Annotation,
     PenAnnotation, HighlighterAnnotation, TextAnnotation, ImageAnnotation,
-    RubricCountStore,
-    PagesExercise
+    RubricCountStore
 } from '../types';
 
 const RENDER_SCALE = 2.5;
@@ -243,7 +242,7 @@ export async function generateStudentPDF(
         const exAnns = annotations[student.id]?.[exercise.id] || [];
         allStudentAnns.push(...exAnns);
         const exRubricCounts = rubricCounts?.[student.id]?.[exercise.id] ?? {};
-        const hAdj = exAnns.reduce((s, a) => (a.type === 'highlighter' && typeof a.points === 'number' ? s + a.points : (a.type === 'text' && typeof a.score === 'number' ? s + a.score : s)), 0);
+        const hAdj = exAnns.reduce((s, a) => (a.type === 'highlighter' && typeof (a as any).points === 'number' ? s + (a as any).points : (a.type === 'text' && typeof (a as any).score === 'number' ? s + (a as any).score : s)), 0);
         const rBase = (exercise.scoringMode === 'from_zero' && exercise.rubric) ? exercise.rubric.reduce((s, item) => s + item.points * (exRubricCounts[item.id] ?? 0), 0) : (exercise.maxScore ?? 0);
         const finalScore = (rBase + hAdj) * scaleFactor;
         const formatP = (p: number) => { const s = Math.round(p * scaleFactor * 100) / 100; return (s > 0 ? '+' : '') + s; };
@@ -324,7 +323,7 @@ export async function generateStudentPDF(
         for (const ex of exercises) {
             if (ex.type === 'crop' || ex.type === 'pages') {
                 const exAnns = annotations[student.id]?.[ex.id] || [], exRubric = rubricCounts?.[student.id]?.[ex.id] ?? {};
-                const hAdj = exAnns.reduce((s, a) => (a.type === 'highlighter' && typeof a.points === 'number' ? s + a.points : (a.type === 'text' && typeof a.score === 'number' ? s + a.score : s)), 0);
+                const hAdj = exAnns.reduce((s, a) => (a.type === 'highlighter' && typeof (a as any).points === 'number' ? s + (a as any).points : (a.type === 'text' && typeof (a as any).score === 'number' ? s + (a as any).score : s)), 0);
                 gTotal += (ex.scoringMode === 'from_zero' && ex.rubric ? ex.rubric.reduce((s, item) => s + item.points * (exRubric[item.id] ?? 0), 0) : (ex.maxScore ?? 0)) + hAdj;
                 mTotal += (ex.maxScore ?? 10);
             }
@@ -353,7 +352,7 @@ export async function generateStudentPDF(
     const bytes = await pdf.save(); return new Blob([bytes as any], { type: 'application/pdf' });
 }
 
-export async function exportStudentPDF(pdfDoc: PDFDocumentProxy, student: Student, exercises: ExerciseDef[], annotations: AnnotationStore, rubricCounts: RubricCountStore, targetMaxScore: number) {
+export async function exportStudentPDF(pdfDoc: PDFDocumentProxy, student: Student, exercises: ExerciseDef[], annotations: AnnotationStore, rubricCounts: RubricCountStore, _targetMaxScore: number) {
     const blob = await generateStudentPDF(pdfDoc, student, exercises, annotations, rubricCounts, 1);
     const url = URL.createObjectURL(blob), a = document.createElement('a');
     a.href = url; a.download = `correccio_${student.name.replace(/\s+/g, '_')}.pdf`;
@@ -361,7 +360,7 @@ export async function exportStudentPDF(pdfDoc: PDFDocumentProxy, student: Studen
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
 }
 
-export async function exportCombinedPDF(pdfDoc: PDFDocumentProxy, students: Student[], exercises: ExerciseDef[], annotations: AnnotationStore, rubricCounts: RubricCountStore, targetMaxScore: number, onProgress?: (p: number) => void) {
+export async function exportCombinedPDF(pdfDoc: PDFDocumentProxy, students: Student[], exercises: ExerciseDef[], annotations: AnnotationStore, rubricCounts: RubricCountStore, _targetMaxScore: number, onProgress?: (p: number) => void) {
     const mergedPdf = await PDFDocument.create();
     for (let i = 0; i < students.length; i++) {
         const student = students[i];
@@ -393,7 +392,7 @@ export async function exportOriginalLayoutPDF(opts: { pdfDoc: PDFDocumentProxy; 
     }
 }
 
-export async function exportAnnotatedPDF(opts: { pdfDoc: PDFDocumentProxy; students: Student[]; exercises: ExerciseDef[]; annotations: AnnotationStore; rubricCounts: RubricCountStore; scope: 'current' | 'all'; currentStudentIdx: number; onProgress?: (done: number, total: number) => void; }): Promise<void> {
+export async function exportAnnotatedPDF(opts: { pdfDoc: PDFDocumentProxy; students: Student[]; exercises: ExerciseDef[]; annotations: AnnotationStore; rubricCounts: RubricCountStore; scope: 'current' | 'all'; currentStudentIdx: number; scaleFactor?: number; onProgress?: (done: number, total: number) => void; }): Promise<void> {
     const targets = opts.scope === 'current' ? [opts.students[opts.currentStudentIdx]] : opts.students;
     const pdf = await PDFDocument.create(), font = await pdf.embedFont(StandardFonts.HelveticaBold);
     let done = 0; const total = targets.length * opts.exercises.length;

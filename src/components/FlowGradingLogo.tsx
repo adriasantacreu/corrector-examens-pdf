@@ -1,5 +1,3 @@
-import { Highlighter } from 'lucide-react';
-
 export default function FlowGradingLogo({ 
     size = '3rem', 
     rotation = -4.5, 

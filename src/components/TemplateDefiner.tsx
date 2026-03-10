@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Group, Text, Transformer } from 'react-konva';
-import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, File, Award, TextSelect, Settings, FileText, Moon, Sun, LogOut, RefreshCw, ListChecks, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, Award, TextSelect, Sun, LogOut, RefreshCw, X, Pencil } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import type { ExerciseDef, CropExercise, PagesExercise, RubricItem } from '../types';
@@ -331,7 +331,7 @@ export default function TemplateDefiner({
                 </div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '1.25rem', alignItems: 'center' }}>
                     <button onClick={onToggleTheme} className="btn-icon" title="Tema">
-                        {isDarkMode ? <Sun size={20} /> : <Sun size={20} />}
+                        <Sun size={20} />
                     </button>
                     {accessToken ? (
                         <div style={{ 

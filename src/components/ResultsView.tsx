@@ -29,8 +29,8 @@ interface Props {
 export default function ResultsView({
     pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore,
     onUpdateStudents, onBack, theme, onToggleTheme,
-    accessToken, userEmail, onAuthorize, courses, isAuthorizing, classroomStudents,
-    showDialog, showConfirm
+    accessToken, classroomStudents,
+    showDialog
 }: Props) {
     const [isExporting, setIsProcessing] = useState(false);
     const [exportProgress, setExportProgress] = useState(0);
@@ -43,7 +43,7 @@ export default function ResultsView({
                     const anns = annotations[s.id]?.[ex.id] || [];
                     const rubrics = rubricCounts[s.id]?.[ex.id] || {};
                     let score = (ex.scoringMode ?? 'from_max') === 'from_max' ? (ex.maxScore || 0) : 0;
-                    anns.forEach(a => { if (a.score) score += a.score; });
+                    anns.forEach((a: any) => { if (a.score) score += a.score; });
                     Object.entries(rubrics).forEach(([_, count]) => { if (count) score += count * -0.5; });
                     total += Math.max(0, score);
                 }
@@ -74,7 +74,8 @@ export default function ResultsView({
     const handleDownloadStudent = async (student: Student) => {
         setIsProcessing(true);
         try {
-            await exportStudentPDF(pdfDoc, student, exercises, annotations[student.id] || {}, rubricCounts[student.id] || {}, targetMaxScore);
+            // Cast to any to avoid complex AnnotationStore sub-indexing TS issues here
+            await exportStudentPDF(pdfDoc, student, exercises, annotations as any, rubricCounts, targetMaxScore);
         } catch (err) {
             showDialog("Error", "Error generant el PDF individual.");
         } finally {
@@ -142,7 +143,7 @@ export default function ResultsView({
                                             const anns = annotations[s.id]?.[ex.id] || [];
                                             const rubrics = rubricCounts[s.id]?.[ex.id] || {};
                                             let score = (ex.scoringMode ?? 'from_max') === 'from_max' ? (ex.maxScore || 0) : 0;
-                                            anns.forEach(a => { if (a.score) score += a.score; });
+                                            anns.forEach((a: any) => { if (a.score) score += a.score; });
                                             Object.entries(rubrics).forEach(([_, count]) => { if (count) score += count * -0.5; });
                                             total += Math.max(0, score);
                                         }
