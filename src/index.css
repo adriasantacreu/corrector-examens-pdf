@@ -223,7 +223,7 @@ body {
   padding: 0 !important;
 }
 
-/* NO GLOBAL INVERSION - Targeted inversion handled in pdfUtils */
+/* REMOVED GLOBAL INVERSION - PDF ONLY INVERSION HANDLED IN pdfUtils */
 
 .glass-dark {
   background: rgba(15, 23, 42, 0.8);

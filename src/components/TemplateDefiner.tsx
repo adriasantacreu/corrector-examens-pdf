@@ -121,7 +121,6 @@ export default function TemplateDefiner({
         const loadPage = async () => {
             setBgImage(null);
             const canvas = document.createElement('canvas');
-            // USE TARGETED INVERSION
             const dimensions = await renderPDFPageToCanvas(pdfDoc, currentPageIndex + 1, canvas, 2.5, isDarkMode);
 
             if (dimensions) {
@@ -266,24 +265,6 @@ export default function TemplateDefiner({
         if (selectedId === id) setSelectedId(null);
     };
 
-    const addFullPageExercise = () => {
-        const newId = `ex_${Date.now()}`;
-        const newEx: PagesExercise = { id: newId, type: 'pages', pageIndexes: [currentPageIndex] };
-        setExercises(prev => [...prev, newEx]);
-        setLastAddedId(newId);
-    };
-
-    const addPageToExistingExercise = (id: string) => {
-        setExercises(prev => prev.map(ex => {
-            if (ex.id === id && ex.type === 'pages') {
-                if (!ex.pageIndexes.includes(currentPageIndex)) {
-                    return { ...ex, pageIndexes: [...ex.pageIndexes, currentPageIndex].sort((a, b) => a - b) };
-                }
-            }
-            return ex;
-        }));
-    };
-
     const updateExerciseMeta = (id: string, updates: Partial<ExerciseDef>) => {
         setExercises(prev => prev.map(ex => ex.id === id ? { ...ex, ...updates } as ExerciseDef : ex));
     };
@@ -295,7 +276,8 @@ export default function TemplateDefiner({
             case 'qr_code': return { fill: 'rgba(16, 185, 129, 0.2)', stroke: '#10b981', label: 'Àrea QR' };
             case 'ocr_name': return { fill: 'rgba(234, 179, 8, 0.2)', stroke: '#eab308', label: 'Nom OCR' };
             case 'total_score': return { fill: 'rgba(239, 68, 68, 0.2)', stroke: '#ef4444', label: 'Nota final' };
-            default: return { fill: 'rgba(59, 130, 246, 0.2)', stroke: 'var(--accent)', label: 'Retall ex' };
+            // LIGHT BLUE FOR EXERCISES (Works better in dark mode)
+            default: return { fill: 'rgba(96, 165, 250, 0.2)', stroke: '#60a5fa', label: 'Retall ex' };
         }
     };
 
@@ -315,7 +297,7 @@ export default function TemplateDefiner({
                 </div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '1.25rem', alignItems: 'center' }}>
                     <button onClick={onToggleTheme} className="btn-icon" title="Tema">
-                        {isDarkMode ? <Sun size={20} /> : <Sun size={20} />}
+                        {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
                     </button>
                     {accessToken ? (
                         <div style={{ 
@@ -357,7 +339,6 @@ export default function TemplateDefiner({
                         <button className={`btn-icon ${mode === 'draw' ? 'active' : ''}`} onClick={() => setMode('draw')} title="Dibuixar exercici"><Square size={18} /></button>
                         <button className={`btn-icon ${mode === 'draw_ocr' ? 'active' : ''}`} onClick={() => setMode('draw_ocr')} title="Definir nom (OCR)" style={{ color: mode === 'draw_ocr' ? '#eab308' : undefined }}><TextSelect size={18} /></button>
                         <button className={`btn-icon ${mode === 'draw_total_score' ? 'active' : ''}`} onClick={() => setMode('draw_total_score')} title="Definir nota final" style={{ color: mode === 'draw_total_score' ? '#ef4444' : undefined }}><Award size={18} /></button>
-                        <button className="btn btn-secondary" style={{ padding: '0.2rem 0.8rem', fontSize: '0.75rem', height: '32px' }} onClick={addFullPageExercise} title="Afegir pàgina sencera"><File size={14} /> + Pàgina</button>
                     </div>
 
                     <div style={{ padding: '1rem 0', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>

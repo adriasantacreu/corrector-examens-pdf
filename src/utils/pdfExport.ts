@@ -378,3 +378,49 @@ export async function exportCombinedPDF(pdfDoc: PDFDocumentProxy, students: Stud
     document.body.appendChild(a); a.click();
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
 }
+
+// RESTORED MISSING EXPORTS
+export async function exportOriginalLayoutPDF(opts: { pdfDoc: PDFDocumentProxy; students: Student[]; exercises: ExerciseDef[]; annotations: AnnotationStore; rubricCounts: RubricCountStore; scope: 'current' | 'all'; currentStudentIdx: number; scaleFactor?: number; onProgress?: (done: number, total: number) => void; }): Promise<void> {
+    const targets = opts.scope === 'current' ? [opts.students[opts.currentStudentIdx]] : opts.students;
+    let done = 0;
+    for (const student of targets) {
+        const blob = await generateStudentPDF(opts.pdfDoc, student, opts.exercises, opts.annotations, opts.rubricCounts, opts.scaleFactor || 1);
+        const url = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = url; a.download = `layout_${student.name.replace(/\s+/g, '_')}.pdf`;
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+        done++; opts.onProgress?.(done, targets.length);
+    }
+}
+
+export async function exportAnnotatedPDF(opts: { pdfDoc: PDFDocumentProxy; students: Student[]; exercises: ExerciseDef[]; annotations: AnnotationStore; scope: 'current' | 'all'; currentStudentIdx: number; onProgress?: (done: number, total: number) => void; }): Promise<void> {
+    const targets = opts.scope === 'current' ? [opts.students[opts.currentStudentIdx]] : opts.students;
+    const pdf = await PDFDocument.create(), font = await pdf.embedFont(StandardFonts.HelveticaBold);
+    let done = 0; const total = targets.length * opts.exercises.length;
+    for (const student of targets) {
+        for (const exercise of opts.exercises) {
+            if (exercise.type !== 'crop') { done++; continue; }
+            const res = await renderExerciseToDataURL(opts.pdfDoc, student, exercise, opts.annotations[student.id]?.[exercise.id] || []);
+            if (res) {
+                const jpg = await pdf.embedJpg(await dataUrlToBytes(res.dataUrl));
+                const page = pdf.addPage([res.width, res.height + 32]);
+                page.drawRectangle({ x: 0, y: res.height, width: res.width, height: 32, color: rgb(0.09, 0.09, 0.15) });
+                page.drawText(`${student.name} · ${exercise.name || 'Ex'}`, { x: 10, y: res.height + 10, font, size: 11, color: rgb(1, 1, 1) });
+                page.drawImage(jpg, { x: 0, y: 0, width: res.width, height: res.height });
+            }
+            done++; opts.onProgress?.(done, total);
+        }
+    }
+    const bytes = await pdf.save(), blob = new Blob([bytes as any], { type: 'application/pdf' }), url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = 'correccio_retalls.pdf'; document.body.appendChild(a); a.click();
+}
+
+async function renderExerciseToDataURL(pdfDoc: PDFDocumentProxy, student: Student, exercise: ExerciseDef, annotations: Annotation[]): Promise<{ dataUrl: string; width: number; height: number } | null> {
+    if (exercise.type !== 'crop') return null;
+    const absPage = student.pageIndexes[exercise.pageIndex]; if (absPage === undefined || absPage === -1) return null;
+    const fullCanvas = document.createElement('canvas'); await renderPDFPageToCanvas(pdfDoc, absPage, fullCanvas, RENDER_SCALE);
+    const crop = document.createElement('canvas'); crop.width = exercise.width; crop.height = exercise.height;
+    const ctx = crop.getContext('2d')!; ctx.drawImage(fullCanvas, exercise.x, exercise.y, exercise.width, exercise.height, 0, 0, exercise.width, exercise.height);
+    drawAnnotationsOnCanvas(ctx, annotations.filter(a => a.id !== 'system_score_stamp'));
+    return { dataUrl: crop.toDataURL('image/jpeg', 0.92), width: exercise.width, height: exercise.height };
+}
