@@ -6,7 +6,10 @@ import './index.css';
 // Ensure the PDF worker is set up correctly
 import * as pdfjsLib from 'pdfjs-dist';
 // Set up worker using CDN for maximum reliability in both dev and prod
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+console.log('[main] PDF.js version:', pdfjsLib.version);
+const workerUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+console.log('[main] PDF.js workerSrc set to:', workerUrl);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

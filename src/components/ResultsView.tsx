@@ -13,17 +13,15 @@ interface Props {
     targetMaxScore: number;
     onUpdateStudents: (students: Student[]) => void;
     onBack: () => void;
+    accessToken: string | null;
+    userEmail: string | null;
+    onAuthorize: () => void;
+    courses: any[];
+    isAuthorizing: boolean;
 }
 
-const CLIENT_ID = "89755629853-lplrdbb6oh5vb2j169minkt8nh5nreog.apps.googleusercontent.com";
-const SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.rosters.readonly https://www.googleapis.com/auth/classroom.profile.emails https://www.googleapis.com/auth/userinfo.email';
-
-export default function ResultsView({ pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore, onUpdateStudents, onBack }: Props) {
-    const [accessToken, setAccessToken] = useState<string | null>(null);
-    const [userEmail, setUserEmail] = useState<string | null>(null);
-    const [isAuthorizing, setIsAuthorizing] = useState(false);
+export default function ResultsView({ pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore, onUpdateStudents, onBack, accessToken, userEmail, onAuthorize, courses, isAuthorizing }: Props) {
     const [isSendingAll, setIsSendingAll] = useState(false);
-    const [courses, setCourses] = useState<any[]>([]);
     const [sendStatuses, setSendStatuses] = useState<Record<string, 'pending' | 'sending' | 'success' | 'error'>>({});
 
     const agentDebugLog = (
@@ -51,53 +49,6 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
             })
         }).catch(() => { });
         // #endregion
-    };
-
-    const handleAuthorize = () => {
-        setIsAuthorizing(true);
-        try {
-            const client = (window as any).google.accounts.oauth2.initTokenClient({
-                client_id: CLIENT_ID,
-                scope: SCOPES,
-                callback: (response: any) => {
-                    if (response.access_token) {
-                        setAccessToken(response.access_token);
-                        fetchCourses(response.access_token);
-                        fetchUserInfo(response.access_token);
-                    }
-                    setIsAuthorizing(false);
-                },
-            });
-            client.requestAccessToken();
-        } catch (err) {
-            console.error("Error initializing Google Auth", err);
-            alert("Error inicialitzant Google Auth. Revisa la consola.");
-            setIsAuthorizing(false);
-        }
-    };
-
-    const fetchUserInfo = async (token: string) => {
-        try {
-            const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-            setUserEmail(data.email);
-        } catch (err) {
-            console.error("Error fetching user info", err);
-        }
-    };
-
-    const fetchCourses = async (token: string) => {
-        try {
-            const res = await fetch('https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-            setCourses(data.courses || []);
-        } catch (err) {
-            console.error("Error fetching courses", err);
-        }
     };
 
     const importClassroomEmails = async (courseId: string) => {
@@ -361,8 +312,9 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
                         <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>
                             Necessitem permís per enviar correus i llegir el Classroom.
                         </p>
-                        <button className="btn btn-primary" onClick={handleAuthorize} disabled={isAuthorizing} style={{ padding: '0.75rem 2rem' }}>
-                            {isAuthorizing ? 'Autoritzant...' : 'Autoritzar Google'}
+                        <button className="btn-google" onClick={onAuthorize} disabled={isAuthorizing} style={{ padding: '0 12px' }}>
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" />
+                            {isAuthorizing ? 'Autoritzant...' : 'Connectar amb Google'}
                         </button>
                     </div>
                 </div>
@@ -384,7 +336,7 @@ export default function ResultsView({ pdfDoc, students, exercises, annotations, 
                                     defaultValue=""
                                 >
                                     <option value="" disabled>Importar de Classroom...</option>
-                                    {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    {courses.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                                 </select>
                             )}
                             <button className="btn btn-secondary" onClick={() => sendAll(true)} disabled={isSendingAll}>

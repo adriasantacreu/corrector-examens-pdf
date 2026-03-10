@@ -215,6 +215,39 @@ button {
   color: white;
 }
 
+.btn-google {
+  background-color: #ffffff;
+  color: #3c4043;
+  border: 1px solid #dadce0;
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: 0.25px;
+  padding: 8px 16px;
+  border-radius: 4px;
+  transition: background-color .218s, border-color .218s, box-shadow .218s;
+  box-shadow: 0 1px 2px 0 rgba(60, 64, 67, .3), 0 1px 3px 1px rgba(60, 64, 67, .15);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-google:hover {
+  background-color: #f8f9fa;
+  border-color: #d2e3fc;
+  box-shadow: 0 1px 2px 0 rgba(60, 64, 67, .3), 0 1px 3px 1px rgba(60, 64, 67, .15);
+}
+
+.btn-google:active {
+  background-color: #f1f3f4;
+}
+
+.btn-google img {
+  width: 18px;
+  height: 18px;
+}
+
 /* Layout */
 .app-container {
   display: flex;

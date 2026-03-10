@@ -40,6 +40,8 @@ interface PersistedState {
   mode: AppMode;
   lastStudentIdx?: number;
   lastExerciseIdx?: number;
+  accessToken?: string | null;
+  userEmail?: string | null;
 }
 
 function saveState(state: PersistedState) {
@@ -82,6 +84,10 @@ function App() {
   const [rubricCounts, setRubricCounts] = useState<RubricCountStore>(savedState?.rubricCounts ?? {});
   const [targetMaxScore, setTargetMaxScore] = useState<number>(savedState?.targetMaxScore ?? 10);
   const [studentList, setStudentList] = useState<string>(savedState?.studentList ?? '');
+  const [accessToken, setAccessToken] = useState<string | null>(savedState?.accessToken ?? null);
+  const [userEmail, setUserEmail] = useState<string | null>(savedState?.userEmail ?? null);
+  const [courses, setCourses] = useState<any[]>([]);
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [commentBank, setCommentBank] = useState<import('./types').AnnotationComment[]>(savedState?.commentBank ?? [
     { text: 'Excel·lent!', score: 1, colorMode: 'score' },
     { text: 'Molt bé', score: 0.5, colorMode: 'score' },
@@ -123,6 +129,107 @@ function App() {
     // #endregion
   };
 
+  // Detect if we are in localhost or production to use the correct Client ID
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const CLIENT_ID = isLocalhost
+    ? "89755629853-3i114l0ocgkpv5cla6d86n8ufuammvii.apps.googleusercontent.com" // Localhost ID (Client desenvolupament local)
+    : "89755629853-lplrdbb6oh5vb2j169minkt8nh5nreog.apps.googleusercontent.com"; // Production (GitHub Pages) ID
+
+  const SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.rosters.readonly https://www.googleapis.com/auth/classroom.profile.emails https://www.googleapis.com/auth/userinfo.email';
+
+  const handleAuthorize = () => {
+    setIsAuthorizing(true);
+    try {
+      const client = (window as any).google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: (response: any) => {
+          if (response.access_token) {
+            setAccessToken(response.access_token);
+            fetchCourses(response.access_token);
+            fetchUserInfo(response.access_token);
+          }
+          setIsAuthorizing(false);
+        },
+      });
+      client.requestAccessToken();
+    } catch (err) {
+      console.error("Error initializing Google Auth", err);
+      alert("Error inicialitzant Google Auth. Revisa la consola.");
+      setIsAuthorizing(false);
+    }
+  };
+
+  const fetchUserInfo = async (token: string) => {
+    try {
+      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setUserEmail(data.email);
+    } catch (err) {
+      console.error("Error fetching user info", err);
+    }
+  };
+
+  const fetchCourses = async (token: string) => {
+    try {
+      const res = await fetch('https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setCourses(data.courses || []);
+    } catch (err) {
+      console.error("Error fetching courses", err);
+    }
+  };
+
+  useEffect(() => {
+    if (accessToken) {
+      fetchCourses(accessToken);
+      fetchUserInfo(accessToken);
+    }
+  }, []);
+
+  const importClassroomEmails = async (courseId: string) => {
+    if (!accessToken) return;
+    try {
+      const res = await fetch(`https://classroom.googleapis.com/v1/courses/${courseId}/students`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      const data = await res.json();
+      const classroomStudents = data.students || [];
+
+      const classroomNames = classroomStudents.map((cs: any) => cs.profile.name.fullName);
+      const currentListLines = studentList.split('\n').filter(l => l.trim().length > 0);
+      const combinedList = Array.from(new Set([...currentListLines, ...classroomNames])).join('\n');
+      setStudentList(combinedList);
+
+      if (students.length > 0) {
+        const updatedStudents = students.map(s => ({ ...s }));
+        let matchesFound = 0;
+        classroomStudents.forEach((cs: any) => {
+          const fullName = cs.profile.name.fullName.toLowerCase();
+          const email = cs.profile.emailAddress;
+          const match = updatedStudents.find(s => {
+            const localName = s.name.toLowerCase();
+            return fullName.includes(localName) || localName.includes(fullName);
+          });
+          if (match) {
+            match.email = email;
+            matchesFound++;
+          }
+        });
+        setStudents(updatedStudents);
+        alert(`S'han trobat i assignat ${matchesFound} emails d'alumnes de Classroom.`);
+      } else {
+        alert(`S'han importat ${classroomNames.length} noms de Classroom a la llista d'alumnes.`);
+      }
+    } catch (err) {
+      console.error("[App] Error fetching students", err);
+    }
+  };
+
   const [studentIdx, setStudentIdx] = useState<number>(savedState?.lastStudentIdx ?? 0);
   const [exerciseIdx, setExerciseIdx] = useState<number>(savedState?.lastExerciseIdx ?? 0);
 
@@ -156,10 +263,12 @@ function App() {
         studentList,
         commentBank,
         lastStudentIdx: studentIdx,
-        lastExerciseIdx: exerciseIdx
+        lastExerciseIdx: exerciseIdx,
+        accessToken,
+        userEmail
       });
     }
-  }, [mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, studentIdx, exerciseIdx]);
+  }, [mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, studentIdx, exerciseIdx, accessToken, userEmail]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -173,7 +282,12 @@ function App() {
       setProcessingMessage('Carregant PDF...');
 
       try {
-        console.log('[App] Starting PDF load...');
+        console.log('[App] Starting PDF load...', {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          lastModified: file.lastModified
+        });
         const doc = await loadPDF(file);
         console.log('[App] PDF loaded, pages:', doc.numPages);
         setPdfDoc(doc);
@@ -283,7 +397,23 @@ function App() {
             <h1 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Correcció App</h1>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            {accessToken ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></div>
+                <span>{userEmail}</span>
+              </div>
+            ) : (
+              <button
+                className="btn-google"
+                onClick={handleAuthorize}
+                disabled={isAuthorizing}
+                style={{ padding: '4px 12px', fontSize: '0.75rem' }}
+              >
+                <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" style={{ width: '14px', height: '14px' }} />
+                {isAuthorizing ? '...' : 'Connectar'}
+              </button>
+            )}
           </div>
         </header>
       )}
@@ -340,16 +470,31 @@ function App() {
                   ? 'Torna a carregar el PDF per restaurar la sessió guardada.'
                   : 'Drag and drop your combined PDF file containing all student exams, or click to browse.'}
               </p>
-              <label className={`btn btn-primary ${isProcessing ? 'disabled' : ''}`} style={{ cursor: 'pointer', padding: '0.75rem 1.5rem', fontSize: '1.1rem' }}>
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  onChange={handleFileUpload}
-                  style={{ display: 'none' }}
-                  disabled={isProcessing}
-                />
-                {isProcessing ? 'Loading PDF...' : 'Select PDF File'}
-              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+                <label className={`btn btn-primary ${isProcessing ? 'disabled' : ''}`} style={{ cursor: 'pointer', padding: '0.75rem 1.5rem', fontSize: '1.1rem', width: '280px' }}>
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    onChange={handleFileUpload}
+                    style={{ display: 'none' }}
+                    disabled={isProcessing}
+                  />
+                  {isProcessing ? 'Loading PDF...' : 'Select PDF File'}
+                </label>
+
+                {!accessToken && (
+                  <button
+                    className="btn-google"
+                    onClick={handleAuthorize}
+                    disabled={isAuthorizing}
+                    style={{ width: '280px' }}
+                  >
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" />
+                    {isAuthorizing ? 'Autoritzant...' : 'Connectar amb Google'}
+                  </button>
+                )}
+              </div>
+
               {pendingModeAfterPDF === 'correction' && (
                 <div style={{ marginTop: '1.5rem', width: '100%', display: 'flex', justifyContent: 'center' }}>
                   <button
@@ -368,9 +513,21 @@ function App() {
         {mode === 'setup' && (
           <div className="workspace" style={{ flex: 1, overflow: 'auto' }}>
             <div className="upload-box" style={{ textAlign: 'left' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                <Settings size={28} color="var(--accent)" />
-                <h2 style={{ fontSize: '1.5rem' }}>Document Configuration</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <Settings size={28} color="var(--accent)" />
+                  <h2 style={{ fontSize: '1.5rem' }}>Document Configuration</h2>
+                </div>
+                {accessToken && courses.length > 0 && (
+                  <select
+                    onChange={(e) => importClassroomEmails(e.target.value)}
+                    style={{ padding: '0.4rem', borderRadius: '0.4rem', border: '1px solid var(--accent)', fontSize: '0.8rem', background: 'white' }}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>Importar de Classroom...</option>
+                    {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                )}
               </div>
 
               <div style={{ marginBottom: '1.5rem' }}>
@@ -639,6 +796,11 @@ function App() {
             targetMaxScore={targetMaxScore}
             onUpdateStudents={setStudents}
             onBack={() => setMode('correction')}
+            accessToken={accessToken}
+            userEmail={userEmail}
+            onAuthorize={handleAuthorize}
+            courses={courses}
+            isAuthorizing={isAuthorizing}
           />
         )}
 
