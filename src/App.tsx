@@ -522,11 +522,11 @@ function App() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '3rem', alignItems: 'center', marginBottom: '6rem', flexShrink: 0, width: '100%', maxWidth: '900px' }}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', justifyContent: 'center', width: '100%' }}>
                   {/* Main CTA: Upload New */}
-                  <div style={{ flex: '1', minWidth: '300px', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    <label className="btn btn-primary" style={{ padding: '1.2rem 2rem', fontSize: '1.2rem', height: '80px', borderRadius: '1.5rem', boxShadow: '0 10px 25px var(--accent-light)', width: '100%', cursor: 'pointer' }}>
+                  <div style={{ flex: '1', minWidth: '20rem', maxWidth: '26rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <label className="btn btn-primary" style={{ padding: '1.2rem 2rem', fontSize: '1.2rem', height: '5.2rem', borderRadius: '1.5rem', boxShadow: '0 10px 25px var(--accent-light)', width: '100%', cursor: 'pointer' }}>
                       <input type="file" accept="application/pdf" onChange={handleFileUpload} style={{ display: 'none' }} />
                       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <div style={{ width: '42px', height: '42px', background: 'rgba(255,255,255,0.2)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ width: '2.8rem', height: '2.8rem', background: 'rgba(255,255,255,0.2)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <Upload size={24} />
                         </div>
                         <div style={{ textAlign: 'left' }}>
@@ -542,20 +542,19 @@ function App() {
 
                   {/* Session Recovery CTA (Only if pendingSession exists) */}
                   {pendingSession && (
-                    <div style={{ flex: '1', minWidth: '300px', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ flex: '1', minWidth: '20rem', maxWidth: '26rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                       <button 
                         className="btn btn-secondary" 
                         onClick={() => {
                           loadSessionFromFile(pendingSession.file);
                           setPendingSession(null);
                         }}
-                        style={{ padding: '1.2rem 2rem', fontSize: '1.2rem', height: '80px', borderRadius: '1.5rem', width: '100%', border: '2px solid var(--accent)', background: 'var(--bg-secondary)', cursor: 'pointer' }}
+                        style={{ padding: '1.2rem 2rem', fontSize: '1.2rem', height: '5.2rem', borderRadius: '1.5rem', width: '100%', border: '2px solid var(--accent)', background: 'var(--bg-secondary)', cursor: 'pointer' }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%' }}>
-                          <div style={{ width: '42px', height: '42px', background: 'var(--accent-light)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <div style={{ width: '2.8rem', height: '2.8rem', background: 'var(--accent-light)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <RefreshCw size={24} color="var(--accent)" />
-                          </div>
-                          <div style={{ textAlign: 'left', flex: 1, overflow: 'hidden' }}>
+                          </div>                          <div style={{ textAlign: 'left', flex: 1, overflow: 'hidden' }}>
                             <div style={{ fontWeight: 800, color: 'var(--accent)' }}>Continuar PDF</div>
                             <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {pendingSession.fileName}

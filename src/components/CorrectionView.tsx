@@ -1741,7 +1741,7 @@ export default function CorrectionView({
 
             <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 {/* Tool Left Sidebar */}
-                <div className="tool-sidebar" style={{ width: '92px', background: 'var(--bg-secondary)', borderRight: 'none', display: 'grid', gridTemplateColumns: '1fr 1fr', alignContent: 'start', justifyItems: 'center', padding: '1rem 0.5rem', gap: '0.5rem', flexShrink: 0, overflowY: 'auto', minHeight: 0 }}>
+                <div className="tool-sidebar" style={{ width: '6rem', background: 'var(--bg-secondary)', borderRight: 'none', display: 'grid', gridTemplateColumns: '1fr 1fr', alignContent: 'start', justifyItems: 'center', padding: '1rem 0.5rem', gap: '0.5rem', flexShrink: 0, overflowY: 'auto', minHeight: 0 }}>
                     {/* Top Select Tool spans 2 cols for emphasis */}
                     <div style={{ gridColumn: 'span 2', display: 'flex', justifyContent: 'center', width: '100%' }}>
                         {[
@@ -2868,7 +2868,7 @@ export default function CorrectionView({
                 </div>
 
                 {/* Grading Right Sidebar */}
-                <div className="grading-sidebar" style={{ width: '300px', background: 'var(--bg-secondary)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: 0 }}>
+                <div className="grading-sidebar" style={{ width: '18rem', background: 'var(--bg-secondary)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: 0 }}>
 
                     {/* Properties for Selected Annotation */}
                     {selectedId && (
