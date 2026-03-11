@@ -34,8 +34,6 @@ interface Props {
     exerciseIdx: number;
     onUpdateStudentIdx: (idx: number) => void;
     onUpdateExerciseIdx: (idx: number) => void;
-    showDialog: (title: string, message: string) => void;
-    showConfirm: (title: string, message: string, onConfirm: () => void) => void;
     theme: 'light' | 'dark';
     onToggleTheme: () => void;
 }
@@ -126,7 +124,7 @@ export default function CorrectionView({
     commentBank, targetMaxScore, onUpdateCommentBank, onUpdateTargetMaxScore,
     onUpdateAnnotations, onUpdateRubricCounts, onUpdateExercise, onBack, onFinish,
     studentIdx, exerciseIdx, onUpdateStudentIdx, onUpdateExerciseIdx,
-    showDialog, showConfirm, theme, onToggleTheme
+    theme, onToggleTheme
 }: Props) {
     const [renderedPages, setRenderedPages] = useState<RenderedPage[]>([]);
     const [isPageLoading, setIsPageLoading] = useState(false);

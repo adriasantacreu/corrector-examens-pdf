@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, AlertCircle, HelpCircle, ChevronDown, ArrowDown } from 'lucide-react';
+import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, AlertCircle, HelpCircle, ArrowDown } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from './types';
 import { loadPDF, type PDFDocumentProxy } from './utils/pdfUtils';
 import TemplateDefiner from './components/TemplateDefiner';
@@ -827,12 +827,10 @@ function App() {
             onUpdateRubricCounts={(s, e, i, d) => setRubricCounts(prev => {
               const cur = prev?.[s]?.[e]?.[i] ?? 0; return { ...prev, [s]: { ...prev[s], [e]: { ...prev[s]?.[e], [i]: Math.max(0, cur + d) } } };
             })} 
-            onUpdateExercise={ux => setExercises(prev => prev.map(ex => ex.id === ux.id ? ux : ex))} 
-            studentIdx={studentIdx} exerciseIdx={exerciseIdx} onUpdateStudentIdx={setStudentIdx} onUpdateExerciseIdx={setExerciseIdx} 
-            showDialog={showAlert} showConfirm={showConfirm}
+            onUpdateExercise={ux => setExercises(prev => prev.map(ex => ex.id === ux.id ? ux : ex))}
+            studentIdx={studentIdx} exerciseIdx={exerciseIdx} onUpdateStudentIdx={setStudentIdx} onUpdateExerciseIdx={setExerciseIdx}
             theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
-          />
-        )}
+            />        )}
         
         {mode === 'results' && pdfDoc && <ResultsView pdfDoc={pdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} targetMaxScore={targetMaxScore} onUpdateStudents={setStudents} onBack={() => setMode('correction')} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} onAuthorize={handleAuthorize} courses={courses} isAuthorizing={isAuthorizing} classroomStudents={classroomStudents} showDialog={showAlert} showConfirm={showConfirm} />}
       </main>
