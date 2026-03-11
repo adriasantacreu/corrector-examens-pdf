@@ -1,7 +1,7 @@
 import React from 'react';
 import Highlighter from './Highlighter';
 
-type HighlighterColor = 'green' | 'red' | 'yellow' | 'purple';
+type HighlighterColor = 'blue' | 'green' | 'red' | 'yellow' | 'purple';
 
 export default function HandwrittenTitle({ 
     children, 

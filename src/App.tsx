@@ -61,6 +61,7 @@ function App() {
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const recentSessionsRef = useRef<HTMLDivElement>(null);
   const [isAtTop, setIsAtTop] = useState(true);
+  const [isDragging, setIsDragging] = useState(false);
   const [numPages, setNumPages] = useState<number>(0);
   
   const [tempPagesPerExam, setTempPagesPerExam] = useState<string>('1');
@@ -127,6 +128,9 @@ function App() {
         const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=mimeType='application/json' and parents in 'appDataFolder' and name contains '.json'&spaces=appDataFolder&fields=files(id,name,modifiedTime)`, {
           headers: { 'Authorization': `Bearer ${accessToken}` }
         });
+        
+        if (res.status === 401) { handleLogout(); return; }
+        
         const data = await res.json();
         const files = data.files || [];
         const cloudSessions = [];
@@ -192,14 +196,27 @@ function App() {
   useEffect(() => {
     if (accessToken) {
       fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { 'Authorization': `Bearer ${accessToken}` } })
-        .then(r => r.json())
+        .then(r => {
+          if (r.status === 401) { handleLogout(); throw new Error("Token expired"); }
+          return r.json();
+        })
         .then(data => {
-          setUserEmail(data.email);
-          setUserPicture(data.picture);
-        });
+          if (data.email) {
+            setUserEmail(data.email);
+            setUserPicture(data.picture);
+          }
+        })
+        .catch(() => {});
+
       fetch('https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE', { headers: { 'Authorization': `Bearer ${accessToken}` } })
-        .then(r => r.json())
-        .then(data => setCourses(data.courses || []));
+        .then(r => {
+          if (r.status === 401) { handleLogout(); return; }
+          return r.json();
+        })
+        .then(data => {
+          if (data && data.courses) setCourses(data.courses);
+        })
+        .catch(() => {});
     }
   }, [accessToken]);
 
@@ -240,6 +257,26 @@ function App() {
     const file = e.target.files?.[0];
     if (!file || file.type !== 'application/pdf') return;
     loadSessionFromFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type === 'application/pdf') {
+      loadSessionFromFile(file);
+    } else if (file) {
+      showAlert("Fitxer no vàlid", "Només es permeten fitxers PDF.");
+    }
   };
 
   const loadSessionFromFile = async (file: File) => {
@@ -490,8 +527,37 @@ function App() {
         {mode === 'upload' && (
           <div 
             onScroll={(e: any) => setIsAtTop(e.target.scrollTop < 10)}
-            style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', overflowY: 'auto' }}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            style={{ 
+              height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', 
+              justifyContent: 'flex-start', overflowY: 'auto', position: 'relative',
+              background: isDragging ? 'var(--accent-light)' : 'transparent',
+              transition: 'background 0.3s ease'
+            }}
           >
+            {/* Drag Overlay */}
+            {isDragging && (
+              <div style={{
+                position: 'fixed', inset: 0, zIndex: 100,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'rgba(59, 130, 246, 0.1)', backdropFilter: 'blur(4px)',
+                pointerEvents: 'none'
+              }}>
+                <div style={{ 
+                  padding: '3rem 5rem', border: '4px dashed var(--accent)', borderRadius: '3rem',
+                  background: 'var(--bg-secondary)', boxShadow: '0 20px 50px rgba(0,0,0,0.1)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem',
+                  transform: 'scale(1.1)', transition: 'transform 0.2s'
+                }}>
+                  <div style={{ width: '80px', height: '80px', background: 'var(--accent-light)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Upload size={40} color="var(--accent)" />
+                  </div>
+                  <HandwrittenTitle size="3rem" color="blue">Deixa anar el PDF</HandwrittenTitle>
+                </div>
+              </div>
+            )}
             
             {/* Subtle Scroll Button - Bottom Left Horizontal */}
             {recentSessions.filter(s => s.fileName !== pendingSession?.fileName).length > 0 && (

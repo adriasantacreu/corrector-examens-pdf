@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, Check, ChevronLeft, Sun, Moon, ArrowDown, ArrowUp, LogOut, ChevronsUp, ChevronsDown, RotateCcw } from 'lucide-react';
+import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, Check, ChevronLeft, ChevronRight, Sun, Moon, ArrowDown, ArrowUp, LogOut, ChevronsUp, ChevronsDown, RotateCcw, X } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import HandwrittenTitle from './HandwrittenTitle';
@@ -33,6 +33,7 @@ export default function PageOrganizer({
     const [groups, setGroups] = useState<StudentGroup[]>(initialGroups);
     const [thumbnails, setThumbnails] = useState<Record<number, string>>({});
     const [dragState, setDragState] = useState<{ fromGroup: number; fromPage: number } | null>(null);
+    const [hoveredThumb, setHoveredThumb] = useState<string | null>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -183,6 +184,18 @@ export default function PageOrganizer({
         setDragState(null);
     };
 
+    const swapPages = (groupIdx: number, idxA: number, idxB: number) => {
+        setGroups(prev => {
+            const next = prev.map((g, i) => {
+                if (i !== groupIdx) return g;
+                const newPages = [...g.pageIndexes];
+                [newPages[idxA], newPages[idxB]] = [newPages[idxB], newPages[idxA]];
+                return { ...g, pageIndexes: newPages };
+            });
+            return next;
+        });
+    };
+
     const inconsistentCount = groups.filter(g => g.pageIndexes.length !== pagesPerExam).length;
 
     return (
@@ -267,13 +280,57 @@ export default function PageOrganizer({
                                     </div>
 
                                     <div style={{ flex: 1, display: 'flex', gap: '1rem', overflowX: 'auto', padding: '1rem', background: 'var(--bg-tertiary)20', borderRadius: '1rem', minHeight: '240px' }}>
-                                        {group.pageIndexes.map((p, pi) => (
-                                            <div key={`${p}-${pi}`} draggable onDragStart={() => handleDragStart(gi, pi)} style={{ position: 'relative', cursor: 'grab', background: 'white', borderRadius: '0.6rem', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', overflow: 'hidden', flexShrink: 0 }}>
-                                                {thumbnails[p] ? <img src={thumbnails[p]} alt={p.toString()} style={{ height: '220px', width: 'auto', display: 'block' }} /> : <div style={{ height: '220px', width: '150px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>Carregant...</div>}
-                                                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(2px)', color: 'white', fontSize: '0.8rem', fontWeight: 800, textAlign: 'center', padding: '4px 0' }}>p.{p}</div>
-                                                <button onClick={() => removePage(gi, pi)} style={{ position: 'absolute', top: 0, right: 0, background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '0 0 0 8px', padding: '6px', cursor: 'pointer' }}><Trash2 size={14} /></button>
-                                            </div>
-                                        ))}
+                                        {group.pageIndexes.map((p, pi) => {
+                                            const isHovered = hoveredThumb === `${gi}-${pi}`;
+                                            return (
+                                                <div 
+                                                    key={`${p}-${pi}`} 
+                                                    draggable 
+                                                    onDragStart={() => handleDragStart(gi, pi)} 
+                                                    onMouseEnter={() => setHoveredThumb(`${gi}-${pi}`)}
+                                                    onMouseLeave={() => setHoveredThumb(null)}
+                                                    style={{ position: 'relative', cursor: 'grab', background: 'white', borderRadius: '0.6rem', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', overflow: 'hidden', flexShrink: 0 }}
+                                                >
+                                                    {thumbnails[p] ? <img src={thumbnails[p]} alt={p.toString()} style={{ height: '220px', width: 'auto', display: 'block' }} /> : <div style={{ height: '220px', width: '150px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>Carregant...</div>}
+                                                    
+                                                    {/* Swap controls overlay */}
+                                                    <div style={{ 
+                                                        position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                                                        padding: '0 8px', zIndex: 10, background: 'rgba(0,0,0,0.1)', 
+                                                        opacity: isHovered ? 1 : 0, transition: 'opacity 0.2s', pointerEvents: isHovered ? 'auto' : 'none' 
+                                                    }}>
+                                                        {pi > 0 ? (
+                                                            <button onClick={(e) => { e.stopPropagation(); swapPages(gi, pi, pi - 1); }} className="btn-icon" style={{ background: 'white', opacity: 0.9, width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+                                                                <ChevronLeft size={20} />
+                                                            </button>
+                                                        ) : <div />}
+                                                        {pi < group.pageIndexes.length - 1 ? (
+                                                            <button onClick={(e) => { e.stopPropagation(); swapPages(gi, pi, pi + 1); }} className="btn-icon" style={{ background: 'white', opacity: 0.9, width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+                                                                <ChevronRight size={20} />
+                                                            </button>
+                                                        ) : <div />}
+                                                    </div>
+
+                                                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(2px)', color: 'white', fontSize: '0.8rem', fontWeight: 800, textAlign: 'center', padding: '4px 0', zIndex: 5 }}>p.{p}</div>
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); removePage(gi, pi); }} 
+                                                        className="btn-icon" 
+                                                        style={{ 
+                                                            position: 'absolute', top: '6px', right: '6px', 
+                                                            background: 'rgba(255,255,255,0.8)', color: 'var(--text-secondary)', 
+                                                            width: '24px', height: '24px', borderRadius: '50%', 
+                                                            padding: 0, cursor: 'pointer', zIndex: 12,
+                                                            border: '1px solid var(--border)',
+                                                            transition: 'all 0.2s'
+                                                        }}
+                                                        onMouseEnter={e => { e.currentTarget.style.background = 'var(--danger)'; e.currentTarget.style.color = 'white'; }}
+                                                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.8)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
                                         {group.pageIndexes.length === 0 && (
                                             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Sense pàgines</div>
                                         )}
