@@ -109,27 +109,29 @@ input, textarea, select {
   top: 48%;
   left: -2%;
   width: 104%;
-  height: 0.6em;
+  height: 0.85em;
   background: var(--hl-blue);
-  border-radius: 45% 55% 35% 65% / 65% 35% 75% 25%;
-  transform: translateY(-50%) rotate(-2deg) skewX(-12deg);
-  opacity: 0.8;
+  mix-blend-mode: multiply;
+  border-radius: 1rem;
+  clip-path: polygon(1% 15%, 99% 8%, 98% 85%, 2% 92%);
+  transform: translateY(-50%) rotate(-1deg) scale(1.02);
+  opacity: 0.75;
   z-index: 1;
-  filter: blur(0.8px);
+  filter: blur(1px);
   pointer-events: none;
   transition: all 0.4s ease-in-out;
 }
 
-/* THICK Brand Highlighter (Used in Header) */
+/* THICK Brand Highlighter (Used in Header and Titles) */
 .highlighter-thick .highlighter-stroke {
-  height: 1.25em; 
+  height: 1.6em; 
   width: 112%;
   left: -6%;
   top: 45%; 
-  opacity: 0.85;
+  opacity: 0.8;
   filter: blur(1.5px);
-  border-radius: 15% 85% 10% 90% / 80% 20% 90% 10%;
-  transform: translateY(-50%) rotate(-1.5deg);
+  clip-path: polygon(2% 10%, 98% 5%, 97% 90%, 3% 95%);
+  transform: translateY(-50%) rotate(-1deg) scale(1.05);
 }
 
 /* EXTRA THICK for home page logo - Static Wavy Shape */
@@ -137,21 +139,36 @@ input, textarea, select {
   height: 5.5em;
   width: 125%;
   left: -12.5%;
-  filter: blur(6px);
-  opacity: 0.95;
+  filter: blur(4px);
+  opacity: 0.7;
   top: 47%; 
-  border-radius: 20% 80% 20% 80% / 50% 20% 80% 50%;
-  transform: translateY(-50%) rotate(-2.5deg);
+  clip-path: polygon(2% 12%, 98% 8%, 95% 88%, 5% 92%);
+  transform: translateY(-50%) rotate(-2deg) scale(1.05);
 }
 
 [data-theme='dark'] .highlighter-stroke {
-  filter: blur(3px) brightness(1.4);
-  box-shadow: 0 0 25px rgba(255, 255, 255, 0.05);
+  filter: blur(2px) brightness(1.2);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.05);
+  mix-blend-mode: screen;
 }
 
 [data-theme='dark'] .highlighter-extra-thick .highlighter-stroke {
-  filter: blur(8px) brightness(1.6);
-  box-shadow: 0 0 40px var(--hl-blue);
+  filter: blur(6px) brightness(1.4);
+  box-shadow: 0 0 30px var(--hl-blue);
+}
+
+@keyframes draw-highlight {
+    0% { clip-path: inset(0 100% 0 0); } 
+    100% { clip-path: inset(0 0 0 0); }  
+}
+
+.animate-draw {
+    animation: draw-highlight 1.5s cubic-bezier(0.05, 1, 0.2, 1) both;
+}
+
+.animate-draw-delayed {
+    animation: draw-highlight 1.5s cubic-bezier(0.05, 1, 0.2, 1) both;
+    animation-delay: 0.6s;
 }
 
 html, body, #root {

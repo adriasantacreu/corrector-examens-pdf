@@ -398,8 +398,9 @@ function App() {
         </button>
       </div>
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-        <FlowGradingLogo size="2.2rem" />
+       <FlowGradingLogo size="2.2rem" animate={false} />
       </div>
+
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '1.25rem', justifyContent: 'flex-end' }}>
         <button className="btn-icon" onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}>
           {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}

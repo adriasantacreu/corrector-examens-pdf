@@ -327,7 +327,7 @@ export default function TemplateDefiner({
                     )}
                 </div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-                    <FlowGradingLogo size="2.2rem" />
+                    <FlowGradingLogo size="2.2rem" animate={false} />
                 </div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '1.25rem', alignItems: 'center' }}>
                     <button onClick={onToggleTheme} className="btn-icon" title="Tema">

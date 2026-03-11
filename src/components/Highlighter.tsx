@@ -27,17 +27,19 @@ export default function Highlighter({
 
     return (
         <span className={`highlighter-container ${thick ? 'highlighter-thick' : ''} ${className}`} style={style}>
+            <span className="animate-draw" style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
+                <span 
+                    className="highlighter-stroke" 
+                    style={{ 
+                        background: colorVar,
+                        height: strokeHeight,
+                        transform: `translateY(-50%) rotate(${rotation}deg) scale(1.02)`
+                    }} 
+                />
+            </span>
             <span className="highlighter-text" style={textStyle}>
                 {children}
             </span>
-            <span 
-                className="highlighter-stroke" 
-                style={{ 
-                    background: colorVar,
-                    height: strokeHeight,
-                    transform: `rotate(${rotation}deg) skewX(-5deg)`
-                }} 
-            />
         </span>
     );
 }
