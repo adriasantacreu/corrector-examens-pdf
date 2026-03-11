@@ -11,12 +11,13 @@ import {
     Undo, Trash2, Type, Plus, Pencil, Check, X, Download, Loader2, Moon, Sun, AlertTriangle, RefreshCw, Send
 } from 'lucide-react';
 // import type { PDFDocumentProxy } from '../utils/pdfUtils';
-import { renderPDFPageToCanvas } from '../utils/pdfUtils';
+import { renderPDFPageToCanvas, type PDFDocumentProxy } from '../utils/pdfUtils';
 import { exportAnnotatedPDF, exportOriginalLayoutPDF } from '../utils/pdfExport';
 import type { Student, ExerciseDef, AnnotationStore, Annotation, PenAnnotation, HighlighterAnnotation, ImageAnnotation, TextAnnotation, ToolType, PresetHighlighter, PenColor, RubricCountStore, AnnotationComment, HighlighterLegendAnnotation } from '../types';
 
 interface Props {
-    pdfDoc: any; // PDFDocumentProxy
+    pdfDoc: PDFDocumentProxy;
+    solutionPdfDoc?: PDFDocumentProxy | null;
     students: Student[];
     exercises: ExerciseDef[];
     annotations: AnnotationStore;
@@ -120,7 +121,7 @@ function NumericInput({ value, onChange, style, placeholder = "" }: {
 }
 
 export default function CorrectionView({
-    pdfDoc, students, exercises, annotations, rubricCounts,
+    pdfDoc, solutionPdfDoc, students, exercises, annotations, rubricCounts,
     commentBank, targetMaxScore, onUpdateCommentBank, onUpdateTargetMaxScore,
     onUpdateAnnotations, onUpdateRubricCounts, onUpdateExercise, onBack, onFinish,
     studentIdx, exerciseIdx, onUpdateStudentIdx, onUpdateExerciseIdx,
@@ -178,6 +179,13 @@ export default function CorrectionView({
     const [history, setHistory] = useState<Annotation[][]>([]);
     const [highlighterLabelMode, setHighlighterLabelMode] = useState<'individual' | 'legend'>('individual');
     const isDarkMode = theme === 'dark';
+
+    useEffect(() => {
+        if (solutionPdfDoc) {
+            console.log("[CorrectionView] Solucionari carregat:", solutionPdfDoc.numPages, "pàgines");
+        }
+    }, [solutionPdfDoc]);
+
     const [pendingStampChange, setPendingStampChange] = useState<{ x: number, y: number, scale: number } | null>(null);
     const transformerRef = useRef<any>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);

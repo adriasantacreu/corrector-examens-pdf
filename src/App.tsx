@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, AlertCircle, HelpCircle, ArrowDown } from 'lucide-react';
+import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, AlertCircle, HelpCircle, ArrowDown, FileCheck } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from './types';
 import { loadPDF, type PDFDocumentProxy } from './utils/pdfUtils';
 import TemplateDefiner from './components/TemplateDefiner';
@@ -59,10 +59,14 @@ function App() {
   const [currentFileName, setCurrentFileName] = useState<string | null>(globalSaved.lastActiveFileName || null);
   const [pendingSession, setPendingSession] = useState<any | null>(null);
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
+  const [solutionPdfDoc, setSolutionPdfDoc] = useState<PDFDocumentProxy | null>(null);
+  const [solutionFileName, setSolutionFileName] = useState<string | null>(null);
   const recentSessionsRef = useRef<HTMLDivElement>(null);
   const [isAtTop, setIsAtTop] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingSolution, setIsDraggingSolution] = useState(false);
   const [numPages, setNumPages] = useState<number>(0);
+  const [solutionPageIndexes, setSolutionPageIndexes] = useState<number[]>([]);
   
   const [tempPagesPerExam, setTempPagesPerExam] = useState<string>('1');
   const [tempNumStudents, setTempNumStudents] = useState<string>('0');
@@ -243,15 +247,14 @@ function App() {
 
   useEffect(() => {
     if (currentFileName && mode !== 'upload') {
-      const state = { 
+      const state = {
         fileName: currentFileName, mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, lastStudentIdx: studentIdx, lastExerciseIdx: exerciseIdx, lastModified: new Date().toISOString(), studentEmailMap, progress: calculateProgress(students, exercises, annotations),
-        classroomStudents, ocrCompleted 
-      };
-      localStorage.setItem(SESSION_PREFIX + currentFileName, JSON.stringify(state));
+        classroomStudents, ocrCompleted, solutionFileName, solutionPageIndexes
+      };      localStorage.setItem(SESSION_PREFIX + currentFileName, JSON.stringify(state));
       const timeout = setTimeout(() => saveToDrive(currentFileName, state), 3000);
       return () => clearTimeout(timeout);
     }
-  }, [mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, studentIdx, exerciseIdx, classroomStudents, ocrCompleted]);
+  }, [mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, studentIdx, exerciseIdx, classroomStudents, ocrCompleted, solutionFileName, solutionPageIndexes]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -279,6 +282,39 @@ function App() {
     }
   };
 
+  const handleSolutionUpload = async (e: React.ChangeEvent<HTMLInputElement> | File) => {
+    const file = (e instanceof File) ? e : e.target.files?.[0];
+    if (!file || file.type !== 'application/pdf') return;
+    try {
+      const doc = await loadPDF(file);
+      setSolutionPdfDoc(doc);
+      setSolutionFileName(file.name);
+      await storePDFLocal(`solution_${currentFileName}_${file.name}`, file);
+    } catch {
+      showAlert("Error", "Error carregant el solucionari.");
+    }
+  };
+
+  const handleSolutionDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingSolution(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type === 'application/pdf') {
+      handleSolutionUpload(file);
+    } else if (file) {
+      showAlert("Fitxer no vàlid", "Només es permeten fitxers PDF per al solucionari.");
+    }
+  };
+
+  const handleSolutionDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingSolution(true);
+  };
+
+  const handleSolutionDragLeave = () => {
+    setIsDraggingSolution(false);
+  };
+
   const loadSessionFromFile = async (file: File) => {
     setIsProcessing(true); setProcessingMessage('Carregant PDF...');
     const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + file.name) || 'null');
@@ -287,6 +323,15 @@ function App() {
       setClassroomStudents(saved.classroomStudents || []);
       setOcrCompleted(saved.ocrCompleted || false);
       setTempPagesPerExam(String(saved.pagesPerExam));
+      setSolutionFileName(saved.solutionFileName || null);
+      setSolutionPageIndexes(saved.solutionPageIndexes || []);
+      if (saved.solutionFileName) {
+        getPDFLocal(`solution_${file.name}_${saved.solutionFileName}`).then(f => {
+          if (f) loadPDF(f).then(setSolutionPdfDoc);
+        });
+      } else {
+        setSolutionPdfDoc(null);
+      }
     }
     try {
       const doc = await loadPDF(file); setPdfDoc(doc); setNumPages(doc.numPages);
@@ -690,7 +735,7 @@ function App() {
                 <HandwrittenTitle size="3rem" color="green">Configuració de l'examen</HandwrittenTitle>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.5rem', marginBottom: '3.5rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '2.5rem', marginBottom: '3.5rem' }}>
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   <div className="card" style={{ flex: 1, background: 'var(--bg-tertiary)', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                     <label style={{ display: 'block', fontWeight: 800, fontSize: '0.85rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Pàgines i alumnes</label>
@@ -741,6 +786,47 @@ function App() {
                     </div>
                     <div style={{ padding: '0.5rem', background: 'var(--bg-secondary)', borderRadius: '0.4rem', border: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
                       Total PDF: <strong>{numPages}</strong> pàgines
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div 
+                    className="card" 
+                    onDragOver={handleSolutionDragOver}
+                    onDragLeave={handleSolutionDragLeave}
+                    onDrop={handleSolutionDrop}
+                    style={{ 
+                      flex: 1, background: isDraggingSolution ? 'var(--accent-light)' : 'var(--bg-tertiary)', 
+                      padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem',
+                      border: isDraggingSolution ? '2px dashed var(--accent)' : '1px solid transparent',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <label style={{ display: 'block', fontWeight: 800, fontSize: '0.85rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Solucionari</label>
+                    <div 
+                      style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '1rem' }}
+                    >
+                      {!solutionFileName ? (
+                        <label className="btn btn-secondary" style={{ width: '100%', cursor: 'pointer', border: '2px dashed var(--border)', background: 'transparent' }}>
+                          <Upload size={18} /> Pujar Solucionari
+                          <input type="file" accept="application/pdf" onChange={handleSolutionUpload} style={{ display: 'none' }} />
+                        </label>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
+                          <div style={{ width: '32px', height: '32px', background: 'var(--accent-light)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <FileCheck size={18} color="var(--accent)" />
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '0.8rem', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{solutionFileName}</div>
+                            <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 600 }}>PDF Solucionari</div>
+                          </div>
+                          <button className="btn-icon" onClick={() => { setSolutionPdfDoc(null); setSolutionFileName(null); }} style={{ color: 'var(--danger)' }}><Trash2 size={16} /></button>
+                        </div>
+                      )}
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', fontWeight: 500 }}>
+                        {isDraggingSolution ? "Deixa'l anar aquí!" : "Opcional: Arrossega o puja el PDF de referència."}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -868,7 +954,7 @@ function App() {
           </div>
         )}
 
-        {mode === 'organize_pages' && pdfDoc && <PageOrganizer pdfDoc={pdfDoc} initialGroups={students} pagesPerExam={Number(pagesPerExam) || 1} onBack={handleBack} onConfirm={(g) => { setStudents(g); setMode('configure_crops'); }} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout} />}
+        {mode === 'organize_pages' && pdfDoc && <PageOrganizer pdfDoc={pdfDoc} solutionPdfDoc={solutionPdfDoc} initialGroups={students} initialSolutionPages={solutionPageIndexes} pagesPerExam={Number(pagesPerExam) || 1} onBack={handleBack} onConfirm={(g, sp) => { setStudents(g); setSolutionPageIndexes(sp); setMode('configure_crops'); }} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout} />}
         {mode === 'configure_crops' && pdfDoc && (
           <TemplateDefiner 
             pdfDoc={pdfDoc} pagesPerExam={Number(pagesPerExam) || 1} initialExercises={exercises} onBack={handleBack} 
@@ -886,7 +972,7 @@ function App() {
         
         {mode === 'correction' && pdfDoc && (
           <CorrectionView 
-            pdfDoc={pdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} 
+            pdfDoc={pdfDoc} solutionPdfDoc={solutionPdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} 
             commentBank={commentBank} targetMaxScore={targetMaxScore} onUpdateCommentBank={setCommentBank} onUpdateTargetMaxScore={setTargetMaxScore} 
             onBack={handleBack} onFinish={() => setMode('results')} 
             onUpdateAnnotations={(s, e, a) => setAnnotations(prev => ({ ...prev, [s]: { ...prev[s], [e]: a } }))} 
@@ -896,7 +982,8 @@ function App() {
             onUpdateExercise={ux => setExercises(prev => prev.map(ex => ex.id === ux.id ? ux : ex))}
             studentIdx={studentIdx} exerciseIdx={exerciseIdx} onUpdateStudentIdx={setStudentIdx} onUpdateExerciseIdx={setExerciseIdx}
             theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
-            />        )}
+          />
+        )}
         
         {mode === 'results' && pdfDoc && <ResultsView pdfDoc={pdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} targetMaxScore={targetMaxScore} onUpdateStudents={setStudents} onBack={() => setMode('correction')} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} onAuthorize={handleAuthorize} courses={courses} isAuthorizing={isAuthorizing} classroomStudents={classroomStudents} showDialog={showAlert} showConfirm={showConfirm} />}
       </main>

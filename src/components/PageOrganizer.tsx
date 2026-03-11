@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, Check, ChevronLeft, ChevronRight, Sun, Moon, ArrowDown, ArrowUp, LogOut, ChevronsUp, ChevronsDown, RotateCcw, X } from 'lucide-react';
+import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, Check, ChevronLeft, ChevronRight, Sun, Moon, ArrowDown, ArrowUp, LogOut, ChevronsUp, ChevronsDown, RotateCcw, X, FileCheck } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import HandwrittenTitle from './HandwrittenTitle';
@@ -13,9 +13,11 @@ interface StudentGroup {
 
 interface Props {
     pdfDoc: PDFDocumentProxy;
+    solutionPdfDoc?: PDFDocumentProxy | null;
     initialGroups: StudentGroup[];
+    initialSolutionPages?: number[];
     pagesPerExam: number;
-    onConfirm: (groups: StudentGroup[]) => void;
+    onConfirm: (groups: StudentGroup[], solutionPages: number[]) => void;
     onBack: () => void;
     theme?: 'light' | 'dark';
     onToggleTheme?: () => void;
@@ -27,13 +29,41 @@ interface Props {
 }
 
 export default function PageOrganizer({ 
-    pdfDoc, initialGroups, pagesPerExam, onConfirm, onBack, theme, onToggleTheme,
+    pdfDoc, solutionPdfDoc, initialGroups, initialSolutionPages = [], pagesPerExam, onConfirm, onBack, theme, onToggleTheme,
     accessToken, userEmail, userPicture, onAuthorize, onLogout
 }: Props) {
     const [groups, setGroups] = useState<StudentGroup[]>(initialGroups);
+    const [solutionPageIndexes, setSolutionPageIndexes] = useState<number[]>(initialSolutionPages);
     const [thumbnails, setThumbnails] = useState<Record<number, string>>({});
-    const [dragState, setDragState] = useState<{ fromGroup: number; fromPage: number } | null>(null);
+    const [solutionThumbnails, setSolutionThumbnails] = useState<Record<number, string>>({});
+    const [dragState, setDragState] = useState<{ fromGroup: number | 'solution'; fromPage: number } | null>(null);
     const [hoveredThumb, setHoveredThumb] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (solutionPdfDoc && solutionPageIndexes.length === 0) {
+            setSolutionPageIndexes(Array.from({ length: solutionPdfDoc.numPages }, (_, i) => i + 1));
+        }
+    }, [solutionPdfDoc]);
+
+    useEffect(() => {
+        let cancelled = false;
+        
+        const loadSolutionThumbs = async () => {
+            if (!solutionPdfDoc) return;
+            for (let i = 1; i <= solutionPdfDoc.numPages; i++) {
+                if (cancelled) return;
+                try {
+                    const canvas = document.createElement('canvas');
+                    await renderPDFPageToCanvas(solutionPdfDoc, i, canvas, 0.5, false);
+                    const url = canvas.toDataURL('image/jpeg', 0.7);
+                    if (!cancelled) setSolutionThumbnails(prev => ({ ...prev, [i]: url }));
+                } catch {}
+            }
+        };
+
+        loadSolutionThumbs();
+        return () => { cancelled = true; };
+    }, [solutionPdfDoc]);
 
     useEffect(() => {
         let cancelled = false;
@@ -172,15 +202,40 @@ export default function PageOrganizer({
 
     const handleDragStart = (groupIdx: number, pageIdx: number) => setDragState({ fromGroup: groupIdx, fromPage: pageIdx });
     
-    const handleDrop = (toGroupIdx: number) => {
+    const handleDrop = (toGroupIdx: number | 'solution') => {
         if (!dragState) return;
         if (dragState.fromGroup === toGroupIdx) { setDragState(null); return; }
-        setGroups(prev => {
-            const copy = prev.map(g => ({ ...g, pageIndexes: [...g.pageIndexes] }));
-            const [page] = copy[dragState.fromGroup].pageIndexes.splice(dragState.fromPage, 1);
-            copy[toGroupIdx].pageIndexes.push(page);
-            return copy;
-        });
+        
+        let movedPage: number | null = null;
+
+        if (dragState.fromGroup === 'solution') {
+            setSolutionPageIndexes(prev => {
+                const next = [...prev];
+                [movedPage] = next.splice(dragState.fromPage, 1);
+                return next;
+            });
+        } else {
+            setGroups(prev => {
+                const next = prev.map(g => ({ ...g, pageIndexes: [...g.pageIndexes] }));
+                [movedPage] = next[dragState.fromGroup as number].pageIndexes.splice(dragState.fromPage, 1);
+                return next;
+            });
+        }
+
+        // We use a small timeout to let the first state update finish before adding the page to the new home
+        // This is a safe way to handle cross-state drag and drop
+        setTimeout(() => {
+            if (movedPage === null) return;
+            if (toGroupIdx === 'solution') {
+                setSolutionPageIndexes(prev => [...prev, movedPage!]);
+            } else {
+                setGroups(prev => {
+                    const next = prev.map((g, i) => i === toGroupIdx ? { ...g, pageIndexes: [...g.pageIndexes, movedPage!] } : g);
+                    return next;
+                });
+            }
+        }, 0);
+
         setDragState(null);
     };
 
@@ -227,7 +282,7 @@ export default function PageOrganizer({
                         </button>
                     )}
 
-                    <button className="btn btn-primary" onClick={() => onConfirm(groups.filter(g => g.pageIndexes.length > 0))}><Check size={18} /> Confirmar</button>
+                    <button className="btn btn-primary" onClick={() => onConfirm(groups.filter(g => g.pageIndexes.length > 0), solutionPageIndexes)}><Check size={18} /> Confirmar</button>
                 </div>
             </header>
 
@@ -247,6 +302,56 @@ export default function PageOrganizer({
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        {solutionPdfDoc && (
+                            <div className="card" style={{ padding: '1.5rem', border: '1px solid var(--accent)', display: 'flex', alignItems: 'center', gap: '1.5rem', background: 'var(--accent-light)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '220px', flexShrink: 0 }}>
+                                    <FileCheck size={16} color="var(--accent)" />
+                                    <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--accent)' }}>SOLUCIONARI</span>
+                                </div>
+
+                                <div style={{ width: '40px' }} />
+
+                                <div style={{ flex: 1, display: 'flex', gap: '1rem', overflowX: 'auto', padding: '1rem', background: 'var(--bg-tertiary)20', borderRadius: '1rem', minHeight: '240px' }}>
+                                    {solutionPageIndexes.map((p, pi) => {
+                                        const isHovered = hoveredThumb === `solution-${pi}`;
+                                        return (
+                                            <div 
+                                                key={`sol-${p}-${pi}`} 
+                                                onMouseEnter={() => setHoveredThumb(`solution-${pi}`)}
+                                                onMouseLeave={() => setHoveredThumb(null)}
+                                                style={{ position: 'relative', background: 'white', borderRadius: '0.6rem', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', overflow: 'hidden', flexShrink: 0 }}
+                                            >
+                                                {solutionThumbnails[p] ? <img src={solutionThumbnails[p]} alt={p.toString()} style={{ height: '220px', width: 'auto', display: 'block' }} /> : <div style={{ height: '220px', width: '150px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>Carregant...</div>}
+                                                
+                                                {/* Swap controls overlay */}
+                                                <div style={{ 
+                                                    position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                                                    padding: '0 8px', zIndex: 10, background: 'rgba(0,0,0,0.1)', 
+                                                    opacity: isHovered ? 1 : 0, transition: 'opacity 0.2s', pointerEvents: isHovered ? 'auto' : 'none' 
+                                                }}>
+                                                    {pi > 0 ? (
+                                                        <button onClick={(e) => { e.stopPropagation(); const next = [...solutionPageIndexes]; [next[pi], next[pi-1]] = [next[pi-1], next[pi]]; setSolutionPageIndexes(next); }} className="btn-icon" style={{ background: 'white', opacity: 0.9, width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+                                                            <ChevronLeft size={20} />
+                                                        </button>
+                                                    ) : <div />}
+                                                    {pi < solutionPageIndexes.length - 1 ? (
+                                                        <button onClick={(e) => { e.stopPropagation(); const next = [...solutionPageIndexes]; [next[pi], next[pi+1]] = [next[pi+1], next[pi]]; setSolutionPageIndexes(next); }} className="btn-icon" style={{ background: 'white', opacity: 0.9, width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+                                                            <ChevronRight size={20} />
+                                                        </button>
+                                                    ) : <div />}
+                                                </div>
+
+                                                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(2px)', color: 'white', fontSize: '0.8rem', fontWeight: 800, textAlign: 'center', padding: '4px 0', zIndex: 5 }}>p.{p}</div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                <div style={{ width: '120px', textAlign: 'right' }}>
+                                    <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--accent)' }}>{solutionPageIndexes.length} pàg.</span>
+                                </div>
+                            </div>
+                        )}
                         {groups.map((group, gi) => {
                             const isErr = group.pageIndexes.length !== pagesPerExam;
                             return (
