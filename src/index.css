@@ -13,12 +13,12 @@
   --slider-thumb: #3b82f6;
   --slider-track: #d1d5db;
 
-  /* Holi / Fluor Palette (Light Mode) */
-  --hl-blue: rgba(0, 150, 255, 0.35);
-  --hl-green: rgba(50, 255, 0, 0.35);
-  --hl-red: rgba(255, 0, 100, 0.35);
-  --hl-yellow: rgba(255, 230, 0, 0.5);
-  --hl-purple: rgba(200, 0, 255, 0.35);
+  /* Holi / Fluor Palette (Light Mode) - Soft Pastel Update */
+  --hl-blue: rgba(186, 230, 253, 0.6); /* Soft Pastel Blue (Sky 200) */
+  --hl-green: rgba(187, 247, 208, 0.6);
+  --hl-red: rgba(254, 202, 202, 0.6);
+  --hl-yellow: rgba(254, 240, 138, 0.7);
+  --hl-purple: rgba(233, 213, 255, 0.6);
 }
 
 [data-theme='dark'] {
@@ -28,18 +28,18 @@
   --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
   
-  --accent: #00d4ff; 
-  --accent-hover: #00b4ff;
-  --accent-light: rgba(0, 212, 255, 0.15);
+  --accent: #7dd3fc; /* Softer Sky 300 for Dark Mode */
+  --accent-hover: #38bdf8;
+  --accent-light: rgba(125, 211, 252, 0.15);
   --border: #334155;
-  --slider-thumb: #00d4ff;
+  --slider-thumb: #7dd3fc;
   --slider-track: #1e293b;
 
-  --hl-blue: rgba(0, 212, 255, 0.7);
-  --hl-green: rgba(100, 255, 0, 0.7);
-  --hl-red: rgba(255, 50, 150, 0.7);
-  --hl-yellow: rgba(255, 230, 0, 0.7);
-  --hl-purple: rgba(220, 50, 255, 0.7);
+  --hl-blue: rgba(125, 211, 252, 0.5);
+  --hl-green: rgba(134, 239, 172, 0.5);
+  --hl-red: rgba(252, 165, 165, 0.5);
+  --hl-yellow: rgba(253, 224, Yellow, 0.5);
+  --hl-purple: rgba(216, 180, 254, 0.5);
 }
 
 /* Global Styles */

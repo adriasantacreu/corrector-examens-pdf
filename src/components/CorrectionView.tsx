@@ -35,6 +35,8 @@ interface Props {
     exerciseIdx: number;
     onUpdateStudentIdx: (idx: number) => void;
     onUpdateExerciseIdx: (idx: number) => void;
+    showAlert: (title: string, message: string) => void;
+    showConfirm: (title: string, message: string, onConfirm: () => void) => void;
     theme: 'light' | 'dark';
     onToggleTheme: () => void;
 }
@@ -125,7 +127,7 @@ export default function CorrectionView({
     commentBank, targetMaxScore, onUpdateCommentBank, onUpdateTargetMaxScore,
     onUpdateAnnotations, onUpdateRubricCounts, onUpdateExercise, onBack, onFinish,
     studentIdx, exerciseIdx, onUpdateStudentIdx, onUpdateExerciseIdx,
-    theme, onToggleTheme
+    showConfirm, theme, onToggleTheme
 }: Props) {
     const [renderedPages, setRenderedPages] = useState<RenderedPage[]>([]);
     const [isPageLoading, setIsPageLoading] = useState(false);
@@ -1910,7 +1912,7 @@ export default function CorrectionView({
                             </div>
                         </div>
                         <button
-                            onClick={() => { if (window.confirm('Eliminar TOTES les anotacions de l\'exercici?')) { updateAnnotationsWithHistory([]); setSelectedId(null); } }}
+                            onClick={() => { showConfirm('Eliminar anotacions', 'Vols eliminar TOTES les anotacions d\'aquest exercici?', () => { updateAnnotationsWithHistory([]); setSelectedId(null); }); }}
                             style={{
                                 width: '100%',
                                 background: 'rgba(239, 68, 68, 0.08)',

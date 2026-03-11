@@ -6,6 +6,7 @@ Aquest document conté mandats fonamentals, preferències d'estil i lliçons apr
 - **Compilació obligatòria**: ABANS de qualsevol `git push`, s'ha d'executar `npm run build` localment. No es permet pujar codi que no passi el xec de TypeScript.
 - **Importacions de Lucide**: Cada vegada que s'afegeixi una icona nova, cal verificar explícitament que s'ha importat al fitxer corresponent. Les icones no importades són la causa nº1 de crashenys en temps de renderitzat.
 - **Separador de comandes**: En aquest entorn (Windows/PowerShell), NO s'ha d'utilitzar `&&`. S'han d'executar les comandes de Git (add, commit, push) de forma seqüencial i separada.
+- **Diàlegs Personalitzats Obligatoris**: Està estrictament PROHIBIT utilitzar `window.alert()` o `window.confirm()`. Totes les interaccions de confirmació o alerta s'han de gestionar a través del sistema global `showAlert` / `showConfirm` definit a `App.tsx`, que utilitza l'estètica de targeta amb `HandwrittenTitle`.
 
 ## 🎨 Preferències d'Estil i UX
 - **Proporcions de la Interfície**: L'usuari prefereix una densitat d'informació alta. Els marges de la Hero Section han de ser de `25vh` i el logo de `13rem`. 

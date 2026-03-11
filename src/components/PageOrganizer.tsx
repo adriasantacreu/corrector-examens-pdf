@@ -26,11 +26,14 @@ interface Props {
     userPicture: string | null;
     onAuthorize: () => void;
     onLogout: () => void;
+    showAlert: (title: string, message: string) => void;
+    showConfirm: (title: string, message: string, onConfirm: () => void) => void;
 }
 
 export default function PageOrganizer({ 
     pdfDoc, solutionPdfDoc, initialGroups, initialSolutionPages = [], pagesPerExam, onConfirm, onBack, theme, onToggleTheme,
-    accessToken, userEmail, userPicture, onAuthorize, onLogout
+    accessToken, userEmail, userPicture, onAuthorize, onLogout,
+    showConfirm
 }: Props) {
     const [groups, setGroups] = useState<StudentGroup[]>(initialGroups);
     const [solutionPageIndexes, setSolutionPageIndexes] = useState<number[]>(initialSolutionPages);
@@ -119,9 +122,9 @@ export default function PageOrganizer({
     }, [pdfDoc, initialGroups, pagesPerExam]);
 
     const handleReset = () => {
-        if (window.confirm("Vols restablir la distribució original de pàgines? Es perdran tots els canvis manuals.")) {
+        showConfirm("Restablir distribució", "Vols restablir la distribució original de pàgines? Es perdran tots els canvis manuals.", () => {
             setGroups(initialGroups);
-        }
+        });
     };
 
     const ripplePushForward = (groupIdx: number) => {
@@ -200,7 +203,7 @@ export default function PageOrganizer({
         });
     };
 
-    const handleDragStart = (groupIdx: number, pageIdx: number) => setDragState({ fromGroup: groupIdx, fromPage: pageIdx });
+    const handleDragStart = (groupIdx: number | 'solution', pageIdx: number) => setDragState({ fromGroup: groupIdx, fromPage: pageIdx });
     
     const handleDrop = (toGroupIdx: number | 'solution') => {
         if (!dragState) return;
@@ -317,9 +320,11 @@ export default function PageOrganizer({
                                         return (
                                             <div 
                                                 key={`sol-${p}-${pi}`} 
+                                                draggable
+                                                onDragStart={() => handleDragStart('solution', pi)}
                                                 onMouseEnter={() => setHoveredThumb(`solution-${pi}`)}
                                                 onMouseLeave={() => setHoveredThumb(null)}
-                                                style={{ position: 'relative', background: 'white', borderRadius: '0.6rem', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', overflow: 'hidden', flexShrink: 0 }}
+                                                style={{ position: 'relative', cursor: 'grab', background: 'white', borderRadius: '0.6rem', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', overflow: 'hidden', flexShrink: 0 }}
                                             >
                                                 {solutionThumbnails[p] ? <img src={solutionThumbnails[p]} alt={p.toString()} style={{ height: '220px', width: 'auto', display: 'block' }} /> : <div style={{ height: '220px', width: '150px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>Carregant...</div>}
                                                 

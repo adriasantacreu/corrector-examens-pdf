@@ -22,6 +22,8 @@ interface Props {
     onLogout: () => void;
     onRunOCR: () => void;
     ocrCompleted: boolean;
+    showAlert: (title: string, message: string) => void;
+    showConfirm: (title: string, message: string, onConfirm: () => void) => void;
 }
 
 // Helper for natural number input (handles commas, dots, negative signs, etc)
@@ -87,7 +89,8 @@ function NumericInput({ value, onChange, style, placeholder = "" }: {
 
 export default function TemplateDefiner({ 
     pdfDoc, pagesPerExam, initialExercises, onComplete, onBack, theme, onToggleTheme,
-    accessToken, userEmail, userPicture, onAuthorize, onLogout, onRunOCR, ocrCompleted
+    accessToken, userEmail, userPicture, onAuthorize, onLogout, onRunOCR, ocrCompleted,
+    showConfirm
 }: Props) {
     const [currentPageIndex, setCurrentPageIndex] = useState(0);
     const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
@@ -153,13 +156,15 @@ export default function TemplateDefiner({
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
             if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
-                setExercises(prev => prev.filter(ex => ex.id !== selectedId));
-                setSelectedId(null);
+                showConfirm('Eliminar exercici', 'Vols eliminar aquest exercici?', () => {
+                    setExercises(prev => prev.filter(ex => ex.id !== selectedId));
+                    setSelectedId(null);
+                });
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedId]);
+    }, [selectedId, showConfirm]);
 
     const handleMouseDown = (e: any) => {
         if (mode === 'select') return;

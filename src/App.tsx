@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, AlertCircle, HelpCircle, ArrowDown, FileCheck } from 'lucide-react';
+import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, ArrowDown, FileCheck, Check } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from './types';
 import { loadPDF, type PDFDocumentProxy } from './utils/pdfUtils';
 import TemplateDefiner from './components/TemplateDefiner';
@@ -518,23 +518,55 @@ function App() {
 
   return (
     <div className={`app-container ${mode === 'upload' ? 'home-page' : ''}`} style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {isProcessing && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}><div className="card" style={{ textAlign: 'center', minWidth: '300px' }}><div className="loader" style={{ margin: '0 auto 1.5rem', width: '40px', height: '40px' }}></div><h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>{processingMessage}</h2></div></div>}
+      {isProcessing && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)' }}>
+          <div className="card" style={{ textAlign: 'center', padding: '3.5rem', maxWidth: '400px', width: '90%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2rem', boxShadow: '0 30px 60px rgba(0,0,0,0.4)' }}>
+            <div className="loader" style={{ width: '50px', height: '50px', border: '4px solid var(--accent-light)', borderTop: '4px solid var(--accent)' }}></div>
+            <div style={{ transform: 'rotate(-1deg)' }}>
+              <HandwrittenTitle size="2.2rem" color="blue" noMargin={true}>{processingMessage}</HandwrittenTitle>
+            </div>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Això pot trigar uns segons...</p>
+          </div>
+        </div>
+      )}
       
       {dialog.show && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-            <div className="card" style={{ maxWidth: '400px', width: '90%', padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '1.5rem', border: '1px solid var(--border)', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
-                <div style={{ color: dialog.type === 'alert' ? 'var(--accent)' : 'var(--accent)', display: 'flex', justifyContent: 'center' }}>
-                    {dialog.type === 'alert' ? <AlertCircle size={48} /> : <HelpCircle size={48} />}
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)' }}>
+            <div className="card" style={{ maxWidth: '480px', width: '90%', padding: '3.5rem 3rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '2.5rem', border: '1px solid var(--border)', boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.3)', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ 
+                  position: 'absolute', top: 0, left: 0, right: 0, height: '8px', 
+                  background: dialog.type === 'alert' ? 'var(--hl-yellow)' : 'var(--hl-blue)' 
+                }} />
+                
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '-0.5rem' }}>
+                  <div style={{ transform: 'rotate(-2deg)' }}>
+                    <HandwrittenTitle size="3rem" color={dialog.type === 'alert' ? 'yellow' : 'blue'} noMargin={true}>
+                      {dialog.title}
+                    </HandwrittenTitle>
+                  </div>
                 </div>
-                <div>
-                    <h3 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '0.5rem' }}>{dialog.title}</h3>
-                    <p style={{ color: 'var(--text-secondary)', lineHeight: '1.5' }}>{dialog.message}</p>
+
+                <div style={{ color: 'var(--text-primary)', fontSize: '1.15rem', lineHeight: '1.6', fontWeight: 600 }}>
+                    {dialog.message}
                 </div>
-                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+
+                <div style={{ display: 'flex', gap: '1.25rem', justifyContent: 'center', width: '100%' }}>
                     {dialog.type === 'confirm' && (
-                        <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { dialog.onCancel?.(); setDialog(d => ({ ...d, show: false })); }}>Cancel·lar</button>
+                        <button 
+                          className="btn btn-secondary" 
+                          style={{ flex: 1, fontWeight: 800, padding: '0.8rem' }} 
+                          onClick={() => { dialog.onCancel?.(); setDialog(d => ({ ...d, show: false })); }}
+                        >
+                          <X size={18} /> Cancel·lar
+                        </button>
                     )}
-                    <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { dialog.onConfirm?.(); setDialog(d => ({ ...d, show: false })); }}>D'acord</button>
+                    <button 
+                      className="btn btn-primary" 
+                      style={{ flex: 1, fontWeight: 800, padding: '0.8rem' }} 
+                      onClick={() => { dialog.onConfirm?.(); setDialog(d => ({ ...d, show: false })); }}
+                    >
+                      <Check size={20} /> D'acord
+                    </button>
                 </div>
             </div>
         </div>
@@ -954,7 +986,7 @@ function App() {
           </div>
         )}
 
-        {mode === 'organize_pages' && pdfDoc && <PageOrganizer pdfDoc={pdfDoc} solutionPdfDoc={solutionPdfDoc} initialGroups={students} initialSolutionPages={solutionPageIndexes} pagesPerExam={Number(pagesPerExam) || 1} onBack={handleBack} onConfirm={(g, sp) => { setStudents(g); setSolutionPageIndexes(sp); setMode('configure_crops'); }} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout} />}
+        {mode === 'organize_pages' && pdfDoc && <PageOrganizer pdfDoc={pdfDoc} solutionPdfDoc={solutionPdfDoc} initialGroups={students} initialSolutionPages={solutionPageIndexes} pagesPerExam={Number(pagesPerExam) || 1} onBack={handleBack} onConfirm={(g, sp) => { setStudents(g); setSolutionPageIndexes(sp); setMode('configure_crops'); }} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout} showAlert={showAlert} showConfirm={showConfirm} />}
         {mode === 'configure_crops' && pdfDoc && (
           <TemplateDefiner 
             pdfDoc={pdfDoc} pagesPerExam={Number(pagesPerExam) || 1} initialExercises={exercises} onBack={handleBack} 
@@ -967,6 +999,7 @@ function App() {
             theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} 
             accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout} 
             onRunOCR={() => runOCR()} ocrCompleted={ocrCompleted}
+            showAlert={showAlert} showConfirm={showConfirm}
           />
         )}
         
@@ -982,10 +1015,11 @@ function App() {
             onUpdateExercise={ux => setExercises(prev => prev.map(ex => ex.id === ux.id ? ux : ex))}
             studentIdx={studentIdx} exerciseIdx={exerciseIdx} onUpdateStudentIdx={setStudentIdx} onUpdateExerciseIdx={setExerciseIdx}
             theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
+            showAlert={showAlert} showConfirm={showConfirm}
           />
         )}
         
-        {mode === 'results' && pdfDoc && <ResultsView pdfDoc={pdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} targetMaxScore={targetMaxScore} onUpdateStudents={setStudents} onBack={() => setMode('correction')} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} onAuthorize={handleAuthorize} courses={courses} isAuthorizing={isAuthorizing} classroomStudents={classroomStudents} showDialog={showAlert} showConfirm={showConfirm} />}
+        {mode === 'results' && pdfDoc && <ResultsView pdfDoc={pdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} targetMaxScore={targetMaxScore} onUpdateStudents={setStudents} onBack={() => setMode('correction')} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} onAuthorize={handleAuthorize} courses={courses} isAuthorizing={isAuthorizing} classroomStudents={classroomStudents} showAlert={showAlert} showConfirm={showConfirm} />}
       </main>
     </div>
   );

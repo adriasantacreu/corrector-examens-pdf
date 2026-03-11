@@ -23,7 +23,7 @@ interface Props {
     courses: any[];
     isAuthorizing: boolean;
     classroomStudents: any[];
-    showDialog: (title: string, message: string) => void;
+    showAlert: (title: string, message: string) => void;
     showConfirm: (title: string, message: string, onConfirm: () => void) => void;
 }
 
@@ -31,7 +31,7 @@ export default function ResultsView({
     pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore,
     onUpdateStudents, onBack, theme, onToggleTheme,
     accessToken, userEmail, classroomStudents,
-    showDialog, showConfirm
+    showAlert, showConfirm
 }: Props) {
     const [isExporting, setIsProcessing] = useState(false);
     const [exportProgress, setExportProgress] = useState(0);
@@ -49,10 +49,10 @@ export default function ResultsView({
         setExportProgress(0);
         try {
             await exportCombinedPDF(pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore, (p) => setExportProgress(p));
-            showDialog("Èxit", "PDF combinat generat correctament.");
+            showAlert("Èxit", "PDF combinat generat correctament.");
         } catch (err) {
             console.error(err);
-            showDialog("Error", "Error exportant el PDF complet.");
+            showAlert("Error", "Error exportant el PDF complet.");
         } finally {
             setIsProcessing(false);
         }
@@ -63,7 +63,7 @@ export default function ResultsView({
         try {
             await exportStudentPDF(pdfDoc, student, exercises, annotations as any, rubricCounts, targetMaxScore);
         } catch (err) {
-            showDialog("Error", "Error generant el PDF individual.");
+            showAlert("Error", "Error generant el PDF individual.");
         } finally {
             setIsProcessing(false);
         }
@@ -76,7 +76,7 @@ export default function ResultsView({
 
     const handleSendTestEmail = async () => {
         if (!accessToken || !userEmail) {
-            showDialog("Error", "Has d'estar connectat per enviar un correu de prova.");
+            showAlert("Error", "Has d'estar connectat per enviar un correu de prova.");
             return;
         }
 
@@ -108,13 +108,13 @@ export default function ResultsView({
             });
 
             if (response.ok) {
-                showDialog("Test enviat", `S'ha enviat un correu de prova a ${userEmail}. Revisa la teva bústia.`);
+                showAlert("Test enviat", `S'ha enviat un correu de prova a ${userEmail}. Revisa la teva bústia.`);
             } else {
                 const err = await response.json();
                 throw new Error(err.error?.message || "Error desconegut");
             }
         } catch (err: any) {
-            showDialog("Error d'enviament", `No s'ha pogut enviar el correu: ${err.message}`);
+            showAlert("Error d'enviament", `No s'ha pogut enviar el correu: ${err.message}`);
         } finally {
             setIsSendingTest(false);
         }
@@ -257,7 +257,7 @@ export default function ResultsView({
                                                         title="Enviar per correu" 
                                                         disabled={!s.email || !accessToken}
                                                         onClick={() => showConfirm("Enviar correu", `Vols enviar la correcció a ${s.name} (${s.email})?`, () => {
-                                                            showDialog("Properament", "Aquesta funcionalitat s'implementarà aviat.");
+                                                            showAlert("Properament", "Aquesta funcionalitat s'implementarà aviat.");
                                                         })}
                                                     >
                                                         <Send size={18} />
