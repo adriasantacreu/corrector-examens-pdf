@@ -16,10 +16,16 @@ Aquest document conté mandats fonamentals, preferències d'estil i lliçons apr
 - **Navegació**: Mantenir sempre el botó "Enrere" funcional entre totes les pantalles.
 
 ## 🛠️ Infraestructura i Deployment
-- **GitHub Pages**: El deployment es fa automàticament via GitHub Actions. Si falla amb `exit code 128`, cal revisar els permisos del `GITHUB_TOKEN` al fitxer de workflow.
-- **Sessió i Persistència**: 
-  - La clau global és `flowgrading_global`.
-  - La detecció de sessions pendents ha de ser proactiva: si no hi ha una sessió activa marcada, cercar la més recent al `localStorage`.
+- **GitHub Pages**: El deployment es fa automàticament via GitHub Actions. 
+- **Node.js**: S'ha d'utilitzar sempre **Node 24** al workflow per evitar deprecacions.
+- **Git Hygiene (CRÍTIC)**: 
+  - Prohibit deixar carpetes com `.claude`, `.cursor` o worktrees que continguin repositoris Git niats. Això causa l'**error 128** en el deployment.
+  - ABANS de pujar, verificar que no hi hagi "untracked content" en subdirectoris que pugui interferir.
+  - Si el deployment falla, revisar primer la neteja de la carpeta arrel.
+
+## 🏗️ Arquitectura i Densitat
+- **Mides Relatives**: Prioritzar l'ús de `rem` per sobre de `px` per permetre l'escalat global de la interfície.
+- **Root Size**: El `font-size` base és de `14px` per mantenir la densitat d'informació desitjada per l'usuari.
 
 ## 🧹 Neteja de Codi
 - **Codi cadàver**: Està prohibit deixar blocs de codi comentats o branques condicionals que ja no s'utilitzen. Si una funcionalitat es refactoritza, el codi antic s'ha d'eliminar completament.
