@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, AlertCircle, HelpCircle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, AlertCircle, HelpCircle, ChevronDown, ArrowDown } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from './types';
 import { loadPDF, type PDFDocumentProxy } from './utils/pdfUtils';
 import TemplateDefiner from './components/TemplateDefiner';
@@ -57,7 +57,10 @@ function App() {
   const [mode, setMode] = useState<AppMode>('upload');
   const [theme, setTheme] = useState<'light' | 'dark'>(globalSaved.theme || 'light');
   const [currentFileName, setCurrentFileName] = useState<string | null>(globalSaved.lastActiveFileName || null);
+  const [pendingSession, setPendingSession] = useState<any | null>(null);
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
+  const recentSessionsRef = useRef<HTMLDivElement>(null);
+  const [isAtTop, setIsAtTop] = useState(true);
   const [numPages, setNumPages] = useState<number>(0);
   
   const [tempPagesPerExam, setTempPagesPerExam] = useState<string>('1');
@@ -157,11 +160,33 @@ function App() {
   useEffect(() => { loadSessions(); }, [accessToken]);
 
   useEffect(() => {
-    if (globalSaved.lastActiveFileName) {
-        getPDFLocal(globalSaved.lastActiveFileName).then(file => {
-            if (file) loadSessionFromFile(file);
-        });
-    }
+    const findLastSession = async () => {
+      const globalData = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
+      let targetFile = globalData.lastActiveFileName;
+      
+      // If no last active, try to find the newest session from all localStorage
+      if (!targetFile) {
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k?.startsWith(SESSION_PREFIX)) keys.push(k);
+        }
+        if (keys.length > 0) {
+          const sessions = keys.map(k => JSON.parse(localStorage.getItem(k) || '{}'));
+          sessions.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
+          targetFile = sessions[0].fileName;
+        }
+      }
+
+      if (targetFile) {
+        const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + targetFile) || 'null');
+        if (saved) {
+          const file = await getPDFLocal(targetFile);
+          if (file) setPendingSession({ ...saved, file });
+        }
+      }
+    };
+    findLastSession();
   }, []);
 
   useEffect(() => {
@@ -462,38 +487,128 @@ function App() {
 
       <main className="main-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
         {mode === 'upload' && (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '25vh 2rem 4rem', overflowY: 'auto' }}>
-            <div style={{ marginBottom: '14rem', transform: 'rotate(-4.5deg)', flexShrink: 0 }}>
-              <FlowGradingLogo size="13rem" rotation={-7} extraThick={true} />
+          <div 
+            onScroll={(e: any) => setIsAtTop(e.target.scrollTop < 10)}
+            style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', overflowY: 'auto' }}
+          >
+            
+            {/* Subtle Scroll Button - Bottom Left Horizontal */}
+            {recentSessions.filter(s => s.fileName !== pendingSession?.fileName).length > 0 && (
+              <button 
+                onClick={() => recentSessionsRef.current?.scrollIntoView({ behavior: 'smooth' })}
+                style={{
+                  position: 'fixed', left: '2rem', bottom: '2rem',
+                  display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-secondary)', 
+                  border: '1px solid var(--border)', borderRadius: '2rem', padding: '0.6rem 1.2rem',
+                  color: 'var(--text-secondary)', opacity: isAtTop ? 0.7 : 0, cursor: 'pointer', fontSize: '0.85rem', fontWeight: 700,
+                  transition: 'all 0.3s', zIndex: 50, boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+                  pointerEvents: isAtTop ? 'auto' : 'none',
+                  transform: isAtTop ? 'none' : 'translateY(10px)'
+                }}
+                onMouseEnter={e => { if (isAtTop) { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-2px)'; } }}
+                onMouseLeave={e => { if (isAtTop) { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.transform = 'none'; } }}
+              >
+                <span>Darreres sessions</span>
+                <ArrowDown size={16} />
+              </button>
+            )}
+
+            {/* Hero Section - Forced to 100vh to keep it clean */}
+            <div style={{ minHeight: '100vh', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '25vh 2rem 4rem', flexShrink: 0 }}>
+              <div style={{ marginBottom: '14rem', transform: 'rotate(-4.5deg)', flexShrink: 0 }}>
+                <FlowGradingLogo size="13rem" rotation={-7} extraThick={true} />
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '3rem', alignItems: 'center', marginBottom: '6rem', flexShrink: 0, width: '100%', maxWidth: '900px' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', justifyContent: 'center', width: '100%' }}>
+                  {/* Main CTA: Upload New */}
+                  <div style={{ flex: '1', minWidth: '300px', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <label className="btn btn-primary" style={{ padding: '1.2rem 2rem', fontSize: '1.2rem', height: '80px', borderRadius: '1.5rem', boxShadow: '0 10px 25px var(--accent-light)', width: '100%', cursor: 'pointer' }}>
+                      <input type="file" accept="application/pdf" onChange={handleFileUpload} style={{ display: 'none' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div style={{ width: '42px', height: '42px', background: 'rgba(255,255,255,0.2)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Upload size={24} />
+                        </div>
+                        <div style={{ textAlign: 'left' }}>
+                          <div style={{ fontWeight: 800 }}>Nou PDF</div>
+                          <div style={{ fontSize: '0.75rem', opacity: 0.8, fontWeight: 600 }}>Comença de zero</div>
+                        </div>
+                      </div>
+                    </label>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600, textAlign: 'center', padding: '0 1rem' }}>
+                      Puja el fitxer combinat amb tots els exàmens per començar la configuració.
+                    </p>
+                  </div>
+
+                  {/* Session Recovery CTA (Only if pendingSession exists) */}
+                  {pendingSession && (
+                    <div style={{ flex: '1', minWidth: '300px', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      <button 
+                        className="btn btn-secondary" 
+                        onClick={() => {
+                          loadSessionFromFile(pendingSession.file);
+                          setPendingSession(null);
+                        }}
+                        style={{ padding: '1.2rem 2rem', fontSize: '1.2rem', height: '80px', borderRadius: '1.5rem', width: '100%', border: '2px solid var(--accent)', background: 'var(--bg-secondary)', cursor: 'pointer' }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%' }}>
+                          <div style={{ width: '42px', height: '42px', background: 'var(--accent-light)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <RefreshCw size={24} color="var(--accent)" />
+                          </div>
+                          <div style={{ textAlign: 'left', flex: 1, overflow: 'hidden' }}>
+                            <div style={{ fontWeight: 800, color: 'var(--accent)' }}>Continuar PDF</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {pendingSession.fileName}
+                            </div>
+                          </div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--success)' }}>{pendingSession.progress || 0}%</div>
+                        </div>
+                      </button>
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: '1.25rem', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{pendingSession.students?.length || 0} alumnes detectats</span>
+                        <button 
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            setPendingSession(null); 
+                            setCurrentFileName(null);
+                            const global = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
+                            delete global.lastActiveFileName;
+                            localStorage.setItem(GLOBAL_KEY, JSON.stringify(global));
+                          }}
+                          style={{ background: 'none', border: 'none', color: 'var(--danger)', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                        >
+                          Descarta sessió
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem', alignItems: 'center', marginBottom: '6rem', flexShrink: 0 }}>
-              <label className="btn btn-primary" style={{ padding: '1.2rem 4rem', fontSize: '1.3rem', height: '56px', borderRadius: '2rem', boxShadow: '0 10px 25px var(--accent-light)' }}>
-                <input type="file" accept="application/pdf" onChange={handleFileUpload} style={{ display: 'none' }} />
-                <Upload size={26} /> Pujar nou PDF
-              </label>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', fontWeight: 500 }}>Puja el fitxer combinat amb tots els exàmens per començar.</p>
-            </div>
-            
-            {recentSessions.length > 0 && (
-              <div style={{ width: '100%', maxWidth: '1000px', flexShrink: 0 }}>
-                <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}><HandwrittenTitle size="2.4rem" color="purple">Sessions recents</HandwrittenTitle></div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
-                  {recentSessions.map(s => (
-                    <div key={s.fileName} className="card" style={{ padding: '1.5rem', cursor: 'pointer', transition: 'transform 0.2s', position: 'relative', border: '1px solid var(--border)' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-4px)'} onMouseLeave={e => e.currentTarget.style.transform = 'none'} onClick={() => handleSelectSession(s)}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                        <div style={{ fontWeight: 800, fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden' }}>
+            {/* Scrollable Sessions Section */}
+            {recentSessions.filter(s => s.fileName !== pendingSession?.fileName).length > 0 && (
+              <div ref={recentSessionsRef} style={{ width: '100%', maxWidth: '1000px', flexShrink: 0, paddingBottom: '8rem' }}>
+                <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+                  <HandwrittenTitle size="2.4rem" color="purple">Darreres sessions</HandwrittenTitle>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
+                  {recentSessions.filter(s => s.fileName !== pendingSession?.fileName).map(s => (
+                    <div key={s.fileName} className="card" style={{ padding: '1.5rem', cursor: 'pointer', transition: 'all 0.2s ease', position: 'relative', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '1rem' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 12px 24px -10px rgba(0,0,0,0.1)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }} onClick={() => handleSelectSession(s)}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ fontWeight: 800, fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden', flex: 1 }}>
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.fileName}</span>
                           {s.isCloud && <Cloud size={14} color="var(--accent)" />}
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); localStorage.removeItem(SESSION_PREFIX + s.fileName); loadSessions(); }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '4px' }}><Trash2 size={16} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); showConfirm("Eliminar sessió", `Vols eliminar la sessió de '${s.fileName}'?`, () => { localStorage.removeItem(SESSION_PREFIX + s.fileName); loadSessions(); }); }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '4px', opacity: 0.6 }} onMouseEnter={e => e.currentTarget.style.opacity = '1'} onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}><Trash2 size={16} /></button>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}><Clock size={14} /> {new Date(s.lastModified).toLocaleDateString()}</div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>{s.progress || 0}% corregit</span>
-                        <span>{s.students?.length || 0} alumnes</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}><Clock size={14} /> {new Date(s.lastModified).toLocaleDateString()}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 800, marginBottom: '0.2rem' }}>
+                        <span style={{ color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Progrés</span>
+                        <span style={{ color: 'var(--success)' }}>{s.progress || 0}%</span>
                       </div>
-                      <div className="progress-bar-container"><div className="progress-bar-fill" style={{ width: `${s.progress || 0}%` }}></div></div>
+                      <div className="progress-bar-container" style={{ marginTop: 0 }}><div className="progress-bar-fill" style={{ width: `${s.progress || 0}%` }}></div></div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{s.students?.length || 0} alumnes detectats</div>
                     </div>
                   ))}
                 </div>
@@ -715,6 +830,7 @@ function App() {
             onUpdateExercise={ux => setExercises(prev => prev.map(ex => ex.id === ux.id ? ux : ex))} 
             studentIdx={studentIdx} exerciseIdx={exerciseIdx} onUpdateStudentIdx={setStudentIdx} onUpdateExerciseIdx={setExerciseIdx} 
             showDialog={showAlert} showConfirm={showConfirm}
+            theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
           />
         )}
         

@@ -42,12 +42,30 @@
   --hl-purple: rgba(220, 50, 255, 0.7);
 }
 
-/* Global Transition */
+/* Global Styles */
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out, color 0.3s ease-in-out, box-shadow 0.4s ease-in-out, filter 0.4s ease-in-out;
+}
+
+/* Organic, Professional Transitions - Unified Timing */
+:root {
+  --theme-transition-duration: 0.35s;
+  --theme-transition-curve: cubic-bezier(0.4, 0, 0.2, 1);
+  --natural-transition: background-color var(--theme-transition-duration) var(--theme-transition-curve), 
+                        border-color var(--theme-transition-duration) var(--theme-transition-curve), 
+                        color var(--theme-transition-duration) var(--theme-transition-curve),
+                        box-shadow var(--theme-transition-duration) var(--theme-transition-curve),
+                        fill var(--theme-transition-duration) var(--theme-transition-curve);
+}
+
+body {
+  transition: var(--natural-transition);
+}
+
+.app-container, .card, .header, .sidebar, .btn, .modern-table td, .modern-table th, input, textarea, select, .highlighter-stroke {
+  transition: var(--natural-transition) !important;
 }
 
 /* Specific input fix for dark mode */
@@ -55,7 +73,6 @@ input, textarea, select {
   background-color: var(--bg-secondary);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  transition: all 0.3s ease;
 }
 
 [data-theme='dark'] input, 
