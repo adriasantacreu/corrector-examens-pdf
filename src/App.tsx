@@ -23,6 +23,9 @@ interface DialogState {
     type: 'alert' | 'confirm';
     onConfirm?: () => void;
     onCancel?: () => void;
+    checkboxLabel?: string;
+    checkboxChecked?: boolean;
+    onCheckboxChange?: (checked: boolean) => void;
 }
 
 function getLevenshteinDistance(a: string, b: string): number {
@@ -118,7 +121,14 @@ function App() {
 
   const [dialog, setDialog] = useState<DialogState>({ show: false, title: '', message: '', type: 'alert' });
 
-  const showAlert = (title: string, message: string) => setDialog({ show: true, title, message, type: 'alert' });
+  const showAlert = (title: string, message: string, options?: { checkboxLabel?: string, initialCheckboxState?: boolean, onCheckboxChange?: (checked: boolean) => void }) => {
+    setDialog({ 
+      show: true, title, message, type: 'alert',
+      checkboxLabel: options?.checkboxLabel,
+      checkboxChecked: options?.initialCheckboxState,
+      onCheckboxChange: options?.onCheckboxChange
+    });
+  };
   const showConfirm = (title: string, message: string, onConfirm: () => void) => {
     setDialog({ show: true, title, message, type: 'confirm', onConfirm, onCancel: () => setDialog(d => ({ ...d, show: false })) });
   };
@@ -869,6 +879,21 @@ function App() {
                 <div style={{ color: 'var(--text-primary)', fontSize: '1.15rem', lineHeight: '1.6', fontWeight: 600 }}>
                     {dialog.message}
                 </div>
+
+                {dialog.checkboxLabel && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center', cursor: 'pointer', marginTop: '-1rem' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={dialog.checkboxChecked} 
+                        onChange={(e) => {
+                            const checked = e.target.checked;
+                            setDialog(prev => ({ ...prev, checkboxChecked: checked }));
+                            if (dialog.onCheckboxChange) dialog.onCheckboxChange(checked);
+                        }} 
+                      />
+                      <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{dialog.checkboxLabel}</span>
+                  </label>
+                )}
 
                 <div style={{ display: 'flex', gap: '1.25rem', justifyContent: 'center', width: '100%' }}>
                     {dialog.type === 'confirm' && (

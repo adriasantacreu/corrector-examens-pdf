@@ -25,7 +25,7 @@ interface Props {
     onLogout: () => void;
     onRunOCR: () => void;
     ocrCompleted: boolean;
-    showAlert: (title: string, message: string) => void;
+    showAlert: (title: string, message: string, options?: { checkboxLabel?: string, initialCheckboxState?: boolean, onCheckboxChange?: (checked: boolean) => void }) => void;
     showConfirm: (title: string, message: string, onConfirm: () => void) => void;
 }
 
@@ -108,6 +108,7 @@ export default function TemplateDefiner({
     const [lastAddedId, setLastAddedId] = useState<string | null>(null);
     const [autoDistributeMap, setAutoDistributeMap] = useState<Record<string, boolean>>({});
     const [warnedExceeded, setWarnedExceeded] = useState<Record<string, boolean>>({});
+    const [suppressMaxScoreWarning, setSuppressMaxScoreWarning] = useState(false);
 
     // Drawing state
     const [isDrawing, setIsDrawing] = useState(false);
@@ -352,9 +353,18 @@ export default function TemplateDefiner({
                 const items = (ex.rubric || []).map(item => item.id === itemId ? { ...item, ...updates } : item);
                 
                 const sum = items.reduce((s, i) => s + (i.points || 0), 0);
-                if (ex.maxScore !== undefined && sum > ex.maxScore && !warnedExceeded[exId]) {
+                if (ex.maxScore !== undefined && sum > ex.maxScore && !warnedExceeded[exId] && !suppressMaxScoreWarning) {
                     setWarnedExceeded(prevMap => ({ ...prevMap, [exId]: true }));
-                    showAlert("Atenció", "La suma dels criteris de la rúbrica supera la nota màxima de l'exercici.");
+                    showAlert(
+                        "Atenció", 
+                        "La suma dels criteris de la rúbrica supera la nota màxima de l'exercici.",
+                        {
+                            checkboxLabel: "No tornis a mostrar en aquesta sessió",
+                            initialCheckboxState: true,
+                            onCheckboxChange: (checked) => setSuppressMaxScoreWarning(checked)
+                        }
+                    );
+                    setSuppressMaxScoreWarning(true);
                 } else if (ex.maxScore !== undefined && sum <= ex.maxScore) {
                     setWarnedExceeded(prevMap => ({ ...prevMap, [exId]: false }));
                 }
