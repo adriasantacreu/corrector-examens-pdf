@@ -224,21 +224,40 @@ function RegionItem({
                     boundBoxFunc={(oldBox, newBox) => { 
                         if (!bgImage) return oldBox;
                         
-                        // Calculate absolute coordinates (Group pos + Local transform)
-                        const absX = region.x + newBox.x;
-                        const absY = region.y + newBox.y;
-                        const absRight = absX + newBox.width;
-                        const absBottom = absY + newBox.height;
+                        const minX = -region.x;
+                        const minY = -region.y;
+                        const maxX = bgImage.width - region.x;
+                        const maxY = bgImage.height - region.y;
 
-                        // Limit absolute boundaries (stay within PDF)
-                        if (absX < 0 || absY < 0 || absRight > bgImage.width || absBottom > bgImage.height) {
-                            return oldBox;
+                        let resultBox = { ...newBox };
+
+                        // 1. Minimum size check (must happen before clamping to avoid logic loops)
+                        if (newBox.width < 5 || newBox.height < 5) return oldBox;
+
+                        // 2. Individual Edge Clamping
+                        // Left
+                        if (resultBox.x < minX) {
+                            resultBox.width += (resultBox.x - minX);
+                            resultBox.x = minX;
+                        }
+                        // Top
+                        if (resultBox.y < minY) {
+                            resultBox.height += (resultBox.y - minY);
+                            resultBox.y = minY;
+                        }
+                        // Right
+                        if (resultBox.x + resultBox.width > maxX) {
+                            resultBox.width = maxX - resultBox.x;
+                        }
+                        // Bottom
+                        if (resultBox.y + resultBox.height > maxY) {
+                            resultBox.height = maxY - resultBox.y;
                         }
 
-                        // Limit minimum size
-                        if (newBox.width < 10 || newBox.height < 10) return oldBox;
+                        // 3. Final safety check for min size after clamping
+                        if (resultBox.width < 5 || resultBox.height < 5) return oldBox;
 
-                        return newBox; 
+                        return resultBox; 
                     }} 
                 />
             )}
