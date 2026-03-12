@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Group, Text, Transformer } from 'react-konva';
-import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, Award, TextSelect, Sun, Moon, LogOut, RefreshCw, X, Pencil } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, Award, TextSelect, Sun, Moon, LogOut, RefreshCw, X, Pencil, FileText } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import type { ExerciseDef, CropExercise, PagesExercise, RubricItem } from '../types';
@@ -95,7 +95,7 @@ export default function TemplateDefiner({
     currentFileName, sessionAlias, onUpdateSessionAlias,
     onComplete, onBack, theme, onToggleTheme,
     accessToken, userEmail, userPicture, onAuthorize, onLogout, onRunOCR, ocrCompleted,
-    showConfirm
+    showAlert, showConfirm
 }: Props) {
     const [currentPageIndex, setCurrentPageIndex] = useState(0);
     const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
@@ -107,7 +107,7 @@ export default function TemplateDefiner({
     // Drawing state
     const [isDrawing, setIsDrawing] = useState(false);
     const [newCropRef, setNewCropRef] = useState<Partial<CropExercise> | null>(null);
-    const [mode, setMode] = useState<'select' | 'draw' | 'draw_qr' | 'draw_ocr' | 'draw_total_score'>('select');
+    const [mode, setMode] = useState<'select' | 'draw' | 'draw_pages' | 'draw_ocr' | 'draw_total_score'>('select');
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [isEditingHeaderAlias, setIsEditingHeaderAlias] = useState(false);
 
@@ -161,6 +161,14 @@ export default function TemplateDefiner({
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+            
+            const key = e.key.toLowerCase();
+            if (key === 'v') setMode('select');
+            if (key === 'r') setMode('draw');
+            if (key === 'p') setMode('draw_pages');
+            if (key === 'n') setMode('draw_ocr');
+            if (key === 's') setMode('draw_total_score');
+
             if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
                 showConfirm('Eliminar exercici', 'Vols eliminar aquest exercici?', () => {
                     setExercises(prev => prev.filter(ex => ex.id !== selectedId));
@@ -259,7 +267,7 @@ export default function TemplateDefiner({
                 if (y + height > bgImage.height) height = bgImage.height - y;
             }
             if (width > 20 && height > 20) {
-                const finalType = mode === 'draw' ? 'crop' : mode === 'draw_qr' ? 'qr_code' : mode === 'draw_ocr' ? 'ocr_name' : 'total_score';
+                const finalType = mode === 'draw' ? 'crop' : mode === 'draw_ocr' ? 'ocr_name' : 'total_score';
                 const newId = `ex_${Date.now()}`;
                 const finalCrop: any = { 
                     id: newId, 
@@ -436,7 +444,15 @@ export default function TemplateDefiner({
                             <span style={{ fontWeight: 700 }}>Connecta</span>
                         </button>
                     )}
-                    <button className="btn btn-primary" onClick={() => onComplete(exercises)}>
+                    <button 
+                        className="btn btn-primary" 
+                        onClick={() => (exercises.some(e => e.type === 'crop' || e.type === 'pages')) && onComplete(exercises)}
+                        disabled={!exercises.some(e => e.type === 'crop' || e.type === 'pages')}
+                        style={{ 
+                            opacity: !exercises.some(e => e.type === 'crop' || e.type === 'pages') ? 0.5 : 1,
+                            cursor: !exercises.some(e => e.type === 'crop' || e.type === 'pages') ? 'not-allowed' : 'pointer'
+                        }}
+                    >
                         <Check size={18} /> Finalitzar
                     </button>
                 </div>
@@ -451,11 +467,73 @@ export default function TemplateDefiner({
                         </p>
                     </div>
 
-                    <div style={{ padding: '0.75rem 0', display: 'flex', gap: '0.4rem', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', justifyContent: 'flex-start' }}>
-                        <button className={`btn-icon ${mode === 'select' ? 'active' : ''}`} onClick={() => setMode('select')} title="Seleccionar/moure"><MousePointer2 size={18} /></button>
-                        <button className={`btn-icon ${mode === 'draw' ? 'active' : ''}`} onClick={() => setMode('draw')} title="Dibuixar exercici"><Square size={18} /></button>
-                        <button className={`btn-icon ${mode === 'draw_ocr' ? 'active' : ''}`} onClick={() => setMode('draw_ocr')} title="Definir nom (OCR)" style={{ color: mode === 'draw_ocr' ? '#eab308' : undefined }}><TextSelect size={18} /></button>
-                        <button className={`btn-icon ${mode === 'draw_total_score' ? 'active' : ''}`} onClick={() => setMode('draw_total_score')} title="Definir nota final" style={{ color: mode === 'draw_total_score' ? '#ef4444' : undefined }}><Award size={18} /></button>
+                    <div style={{ padding: '1rem 0', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem', borderBottom: '1px solid var(--border)' }}>
+                        <button 
+                            className={`btn-icon ${mode === 'select' ? 'active' : ''}`} 
+                            onClick={() => setMode('select')} 
+                            title="Seleccionar / Moure (V)"
+                            style={{ width: '100%', height: '40px', borderRadius: '0.5rem', position: 'relative' }}
+                        >
+                            <MousePointer2 size={20} />
+                            <span style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '0.5rem', fontWeight: 900, opacity: 0.5 }}>V</span>
+                        </button>
+                        <button 
+                            className={`btn-icon ${mode === 'draw' ? 'active' : ''}`} 
+                            onClick={() => setMode('draw')} 
+                            title="Dibuixar zona (R)"
+                            style={{ width: '100%', height: '40px', borderRadius: '0.5rem', position: 'relative' }}
+                        >
+                            <Square size={20} />
+                            <span style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '0.5rem', fontWeight: 900, opacity: 0.5 }}>R</span>
+                        </button>
+                        <button 
+                            className={`btn-icon ${mode === 'draw_pages' ? 'active' : ''}`} 
+                            onClick={() => {
+                                const newId = `ex_page_${Date.now()}`;
+                                setExercises(prev => [...prev, {
+                                    id: newId,
+                                    type: 'pages',
+                                    name: 'Pàgina completa',
+                                    pageIndexes: [currentPageIndex],
+                                    scoringMode: 'from_zero',
+                                    rubric: []
+                                } as PagesExercise]);
+                                setLastAddedId(newId);
+                            }} 
+                            title="Afegir pàgina completa (P)"
+                            style={{ width: '100%', height: '40px', borderRadius: '0.5rem', position: 'relative' }}
+                        >
+                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <FileText size={20} />
+                                <div style={{ 
+                                    position: 'absolute', top: '-2px', right: '-2px', 
+                                    background: mode === 'draw_pages' ? 'white' : 'var(--accent)', 
+                                    color: mode === 'draw_pages' ? 'var(--accent)' : 'white',
+                                    borderRadius: '50%', width: '12px', height: '12px', 
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: '10px', fontWeight: 900, border: '1px solid currentColor'
+                                }}>+</div>
+                            </div>
+                            <span style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '0.5rem', fontWeight: 900, opacity: 0.5 }}>P</span>
+                        </button>
+                        <button 
+                            className={`btn-icon ${mode === 'draw_ocr' ? 'active' : ''}`} 
+                            onClick={() => setMode('draw_ocr')} 
+                            title="Àrea de Nom OCR (N)"
+                            style={{ width: '100%', height: '40px', borderRadius: '0.5rem', color: mode === 'draw_ocr' ? '#eab308' : undefined, position: 'relative' }}
+                        >
+                            <TextSelect size={20} />
+                            <span style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '0.5rem', fontWeight: 900, opacity: 0.5 }}>N</span>
+                        </button>
+                        <button 
+                            className={`btn-icon ${mode === 'draw_total_score' ? 'active' : ''}`} 
+                            onClick={() => setMode('draw_total_score')} 
+                            title="Àrea de Nota Final (S)"
+                            style={{ width: '100%', height: '40px', borderRadius: '0.5rem', color: mode === 'draw_total_score' ? '#ef4444' : undefined, position: 'relative' }}
+                        >
+                            <Award size={20} />
+                            <span style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '0.5rem', fontWeight: 900, opacity: 0.5 }}>S</span>
+                        </button>
                     </div>
 
                     <div style={{ padding: '1rem 0', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -493,7 +571,19 @@ export default function TemplateDefiner({
                         <section>
                             <HandwrittenTitle size="1.3rem" color="green" noMargin={true} style={{ marginBottom: '0.5rem' }}>Exercicis corregibles</HandwrittenTitle>
                             {exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages').length === 0 ? (
-                                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Cap exercici definit.</p>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic', margin: 0 }}>Cap exercici definit.</p>
+                                    {exercises.length > 0 && (
+                                        <div style={{ 
+                                            fontSize: '0.75rem', color: 'var(--danger)', fontWeight: 700, 
+                                            background: 'var(--danger-light)', padding: '0.6rem 0.8rem', 
+                                            borderRadius: '0.5rem', border: '1px solid var(--danger)',
+                                            lineHeight: '1.2', animation: 'pulse 2s infinite'
+                                        }}>
+                                            Has de marcar com a mínim un exercici (retall o pàgines) per poder continuar.
+                                        </div>
+                                    )}
+                                </div>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                     {exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages').map((ex, idx) => {
@@ -539,6 +629,60 @@ export default function TemplateDefiner({
                                                         >MAX</button>
                                                     </div>
                                                 </div>
+
+                                                {/* Page Management for 'pages' type */}
+                                                {ex.type === 'pages' && (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'var(--bg-primary)', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-secondary)' }}>PÀGINES ASSIGNADES</span>
+                                                            <button 
+                                                                onClick={(e) => { 
+                                                                    e.stopPropagation(); 
+                                                                    if (!ex.pageIndexes.includes(currentPageIndex)) {
+                                                                        updateExerciseMeta(ex.id, { pageIndexes: [...ex.pageIndexes, currentPageIndex].sort((a,b) => a-b) });
+                                                                    }
+                                                                }}
+                                                                className="btn btn-secondary"
+                                                                style={{ fontSize: '0.6rem', height: '20px', padding: '0 0.4rem' }}
+                                                                disabled={ex.pageIndexes.includes(currentPageIndex)}
+                                                            >
+                                                                + Afegir pàg. {currentPageIndex + 1}
+                                                            </button>
+                                                        </div>
+                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                                            {ex.pageIndexes.map(pIdx => (
+                                                                <div key={pIdx} style={{ display: 'flex', alignItems: 'center', gap: '2px', background: 'var(--bg-tertiary)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border)' }}>
+                                                                    <span style={{ fontSize: '0.65rem', fontWeight: 700 }}>P{pIdx + 1}</span>
+                                                                    <button 
+                                                                        onClick={(e) => { 
+                                                                            e.stopPropagation();
+                                                                            if (ex.pageIndexes.length > 1) {
+                                                                                updateExerciseMeta(ex.id, { pageIndexes: ex.pageIndexes.filter(p => p !== pIdx) });
+                                                                            } else {
+                                                                                showAlert("Error", "Un exercici de pàgina ha de tenir almenys una pàgina.");
+                                                                            }
+                                                                        }}
+                                                                        style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                                                                    >
+                                                                        <X size={10} />
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <div 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                updateExerciseMeta(ex.id, { spansTwoPages: !ex.spansTwoPages });
+                                                            }}
+                                                            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginTop: '0.2rem' }}
+                                                        >
+                                                            <div style={{ width: '14px', height: '14px', border: '1px solid var(--border)', borderRadius: '3px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: ex.spansTwoPages ? 'var(--accent)' : 'transparent' }}>
+                                                                {ex.spansTwoPages && <Check size={10} color="white" />}
+                                                            </div>
+                                                            <span style={{ fontSize: '0.65rem', fontWeight: 600 }}>Dues pàgines en paral·lel</span>
+                                                        </div>
+                                                    </div>
+                                                )}
 
                                                 {/* Rubric Items Editor */}
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', borderTop: '1px solid var(--border)', paddingTop: '0.5rem' }}>

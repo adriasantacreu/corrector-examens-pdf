@@ -39,10 +39,18 @@ Aquest document detalla totes les millores, correccions i canvis de disseny apli
 - **Eliminació d'Artefactes:** Correcció de desbordaments i espais en blanc al peu de pàgina mitjançant una reestructuració amb Flexbox.
 - **Sincronització:** Verificació del guardat automàtic de tot el progrés (OCR, zones, notes, traços) tant en local com a Google Drive.
 
-## 5. Pròxims Passos Suggerits
-- Refinar la vinculació manual a la pantalla de resultats.
-- Millorar la detecció OCR en condicions de baixa qualitat.
-- Optimitzar la descàrrega de PDFs combinats per a grans volums d'alumnes.
+## 7. Millores al Definidor de Plantilla (TemplateDefiner)
+- **Seguretat de Flux:**
+    - Bloqueig del botó "Finalitzar" si no s'ha definit cap exercici real (retall o pàgina).
+    - Missatge d'avís dinàmic a la barra lateral si manquen exercicis corregibles.
+    - Prevenció de la pantalla "HAS ACABAT!" buida si s'accedeix a la correcció sense dades.
+- **Barra d'Eines Professional:**
+    - Disseny a tota l'amplada de la barra lateral (Grid de 5 columnes).
+    - **Shortcuts de Teclat (Dreçeres):** Implementació de tecles ràpides funcionals (**V**, **R**, **P**, **N**, **S**) amb indicadors visuals als botons.
+    - **Eina de Pàgina Completa:** Nova icona personalitzada (full de paper amb '+') per afegir tota la pàgina com a exercici amb un clic.
+- **Gestió Avançada de Pàgines:**
+    - Possibilitat d'afegir o treure pàgines a un exercici de tipus "pàgines".
+    - Selector per activar/desactivar la visualització de "Dues pàgines en paral·lel".
 
 ## 6. Millores de Sessió i Sincronització (Última actualització)
 - **Gestió de l'Última Sessió:**
