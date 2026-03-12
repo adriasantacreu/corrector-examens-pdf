@@ -867,7 +867,36 @@ export default function TemplateDefiner({
                                         const { fill, stroke, label } = getRegionStyle(region.type);
                                         const isSelected = region.id === selectedId;
                                         return (
-                                            <Group key={region.id} draggable={mode === 'select'} onClick={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }} onTap={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }} onDragEnd={(e) => { e.cancelBubble = true; const x = e.target.x(); const y = e.target.y(); setExercises(prev => prev.map(ex => ex.id === region.id ? { ...ex, x, y } : ex)); e.target.x(0); e.target.y(0); }} x={region.x} y={region.y}>
+                                            <Group 
+                                                key={region.id} 
+                                                draggable={mode === 'select'} 
+                                                onClick={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }} 
+                                                onTap={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }} 
+                                                onDragEnd={(e) => { e.cancelBubble = true; const x = e.target.x(); const y = e.target.y(); setExercises(prev => prev.map(ex => ex.id === region.id ? { ...ex, x, y } : ex)); e.target.x(0); e.target.y(0); }} 
+                                                x={region.x} 
+                                                y={region.y}
+                                                dragBoundFunc={(pos) => {
+                                                    if (!bgImage || !stageRef.current) return pos;
+                                                    const stage = stageRef.current;
+                                                    const scale = stage.scaleX();
+                                                    
+                                                    // Convert absolute requested position to local
+                                                    let localX = (pos.x - stage.x()) / scale;
+                                                    let localY = (pos.y - stage.y()) / scale;
+
+                                                    // Constrain local coordinates
+                                                    if (localX < 0) localX = 0;
+                                                    if (localY < 0) localY = 0;
+                                                    if (localX + region.width > bgImage.width) localX = bgImage.width - region.width;
+                                                    if (localY + region.height > bgImage.height) localY = bgImage.height - region.height;
+
+                                                    // Convert back to absolute
+                                                    return {
+                                                        x: localX * scale + stage.x(),
+                                                        y: localY * scale + stage.y()
+                                                    };
+                                                }}
+                                            >
                                                 <Rect name="regionRect" x={0} y={0} width={region.width} height={region.height} fill={fill} stroke={stroke} strokeWidth={2 / stageScale} />
                                                 <Rect x={0} y={-(24 / stageScale)} width={Math.max(80, label.length * 8 + 16) / stageScale} height={24 / stageScale} fill={stroke} />
                                                 <Text text={label} fill="white" x={8 / stageScale} y={-(18 / stageScale)} fontSize={12 / stageScale} fontStyle="bold" />

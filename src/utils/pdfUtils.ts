@@ -100,6 +100,14 @@ export async function renderPDFPageToCanvas(
             // Invert lightness
             l = 1 - l;
 
+            // Enhance visibility for colors (like blue/red pen) in dark mode
+            if (s > 0.1) {
+                s = Math.min(1, s * 1.4); // Boost saturation
+                // Adjust lightness curve for colors: make them slightly more "vibrant" 
+                // by preventing them from becoming too dark or too washed out.
+                l = 0.2 + l * 0.6; 
+            }
+
             let newR, newG, newB;
             if (s === 0) {
                 newR = newG = newB = l;
