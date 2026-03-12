@@ -29,22 +29,31 @@ Aquest document detalla el viatge tècnic i de disseny de **flowgrading**, des d
   - **TypeScript Rigor**: Neteja sistemàtica d'errors de tipus i variables no utilitzades per garantir un deployment 100% fiable.
 
 ## 🎨 Fase 4: La Identitat "Strong" (Disseny i Experiència d'elit)
-*La sessió actual: Brand, UX, Solucionari*
+*Sessions de Refinament: Brand, UX, Solucionari*
 - **L'objectiu**: Convertir FlowGrading en una marca professional amb una UX de gamma alta.
 - **Fites**:
-  - **Nova Identitat Corporativa**: Logo geomètric modern, tipografia "Handwritten" i paleta de colors pastel.
-  - **Densitat d'Informació**: Reducció de l'escala global (85%) per guanyar espai de correcció sense perdre llegibilitat.
-  - **Suport per al Solucionari**: Introducció d'un segon PDF de referència amb gestió completa de pàgines i Drag & Drop.
-  - **Unificació de la UI**: Eliminació dels diàlegs del sistema per "targetes cuquis" i transicions orgàniques amb `cubic-bezier`.
+  - **Nova Identitat Corporativa**: Logo geomètric modern amb animació de "dibuixat" i efecte de scroll dinàmic.
+  - **Suport per al Solucionari**: Introducció d'un segon PDF de referència amb control de sincronització independent al núvol.
+  - **Unificació de la UI**: Substitució de diàlegs natius per targetes estètiques i un sistema de capçalera unificat amb edició d'àlies en línia.
+
+## ⚡ Fase 5: El Flux de Treball "Total" (Velocitat i Precisió)
+*L'era de l'eficiència absoluta*
+- **L'objectiu**: Minimitzar l'ús del ratolí i maximitzar la precisió de les eines.
+- **Fites**:
+  - **Flux Ultraràpid (shortcuts 2.0)**: Enfocament i selecció de text automàtics en crear exercicis. Navegació seqüencial entre nom i nota mitjançant `Enter` i `Tab`.
+  - **Editor de Zones Avançat**: Implementació del mode de redimensionament per doble clic amb un motor de restricció granular que impedeix sortir dels marges del PDF.
+  - **Sistema de Zoom Unificat**: Introducció del concepte `baseScale` per garantir que totes les anotacions (bolígraf, fluorescent, marcadors) tinguin una mida consistent a la pantalla i escalin de forma natural.
+  - **Sincronització Intel·ligent**: Control individual de sincronització al núvol per fitxer amb acció immediata des de les targetes de la pantalla d'inici.
+  - **Dreceres Globals**: Implementació de la tecla `ESC` global per sortir de qualsevol camp de text i recuperar el control de les eines de dibuix.
 
 ---
 
 ## 📈 Resum de Metodologia de Treball
 Aquest projecte demostra un enfocament de **desenvolupament iteratiu**:
-1. **Analitzar** la necessitat de l'usuari (més espai, sessions segures).
-2. **Implementar** solucions quirúrgiques (rem scaling, IndexedDB).
-3. **Validar** mitjançant compilacions estrictes (Build checks).
-4. **Documentar** per assegurar la sostenibilitat a llarg termini.
+1. **Analitzar** la necessitat de l'usuari (més velocitat, edició precisa).
+2. **Implementar** solucions quirúrgiques (baseScale, custom Transformer, global event listeners).
+3. **Validar** mitjançant compilacions estrictes (Build checks) i proves empíriques de límits.
+4. **Documentar** per assegurar la sostenibilitat a llarg termini a la Crònica i al TODO.
 
 ---
 *FlowGrading: No és només corregir, és fer que la correcció flueixi.*
