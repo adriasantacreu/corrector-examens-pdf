@@ -113,7 +113,7 @@ export default function TemplateDefiner({
     // Drawing state
     const [isDrawing, setIsDrawing] = useState(false);
     const [newCropRef, setNewCropRef] = useState<Partial<CropExercise> | null>(null);
-    const [mode, setMode] = useState<'select' | 'draw' | 'draw_pages' | 'draw_ocr' | 'draw_total_score'>('select');
+    const [mode, setMode] = useState<'select' | 'draw' | 'draw_pages' | 'draw_ocr' | 'draw_total_score'>('draw');
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [isEditingHeaderAlias, setIsEditingHeaderAlias] = useState(false);
 
@@ -169,6 +169,19 @@ export default function TemplateDefiner({
         setTimeout(loadPage, 100);
     }, [currentPageIndex, pdfDoc, isDarkMode]);
 
+    const addFullPageExercise = () => {
+        const newId = `ex_page_${Date.now()}`;
+        setExercises(prev => [...prev, {
+            id: newId,
+            type: 'pages',
+            name: 'Pàgina completa',
+            pageIndexes: [currentPageIndex],
+            scoringMode: 'from_zero',
+            rubric: []
+        } as PagesExercise]);
+        setLastAddedId(newId);
+    };
+
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -176,7 +189,7 @@ export default function TemplateDefiner({
             const key = e.key.toLowerCase();
             if (key === 'v') setMode('select');
             if (key === 'r') setMode('draw');
-            if (key === 'p') setMode('draw_pages');
+            if (key === 'p') addFullPageExercise();
             if (key === 'n') setMode('draw_ocr');
             if (key === 's') setMode('draw_total_score');
 
