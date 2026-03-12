@@ -23,8 +23,10 @@ jobs:
       - name: Install dependencies
         run: npm install
       - name: Build
+        env:
+          VITE_GROQ_API_KEY: ${{ secrets.VITE_GROQ_API_KEY }}
         run: |
-          echo "VITE_GROQ_API_KEY=${{ secrets.VITE_GROQ_API_KEY }}" > .env
+          echo "VITE_GROQ_API_KEY=${VITE_GROQ_API_KEY}" > .env
           npm run build
       - name: Setup Pages
         uses: actions/configure-pages@v4
