@@ -114,8 +114,28 @@ function RegionItem({
     }, [isTransforming]);
 
     const handleTransform = () => {
-        if (shapeRef.current && labelGroupRef.current) {
+        if (shapeRef.current && labelGroupRef.current && bgImage) {
             const node = shapeRef.current;
+            
+            // Strict clamping during transform
+            const absX = region.x + node.x();
+            const absY = region.y + node.y();
+            const scaleX = node.scaleX();
+            const scaleY = node.scaleY();
+            const w = node.width() * scaleX;
+            const h = node.height() * scaleY;
+
+            if (absX < 0) node.x(-region.x);
+            if (absY < 0) node.y(-region.y);
+            if (absX + w > bgImage.width) {
+                const maxW = bgImage.width - absX;
+                node.scaleX(maxW / node.width());
+            }
+            if (absY + h > bgImage.height) {
+                const maxH = bgImage.height - absY;
+                node.scaleY(maxH / node.height());
+            }
+
             // Make the label follow the rectangle's local x,y during transform
             labelGroupRef.current.x(node.x());
             labelGroupRef.current.y(node.y());
@@ -182,7 +202,7 @@ function RegionItem({
                 x={0} y={0} 
                 width={region.width} height={region.height} 
                 fill={fill} stroke={stroke} 
-                strokeWidth={1 / baseScale} 
+                strokeWidth={1.5 / baseScale} 
                 strokeScaleEnabled={true} 
             />
             
@@ -203,9 +223,21 @@ function RegionItem({
                     padding={5 / baseScale}
                     boundBoxFunc={(oldBox, newBox) => { 
                         if (!bgImage) return oldBox;
+                        
+                        // Calculate absolute coordinates (Group pos + Local transform)
+                        const absX = region.x + newBox.x;
+                        const absY = region.y + newBox.y;
+                        const absRight = absX + newBox.width;
+                        const absBottom = absY + newBox.height;
+
+                        // Limit absolute boundaries (stay within PDF)
+                        if (absX < 0 || absY < 0 || absRight > bgImage.width || absBottom > bgImage.height) {
+                            return oldBox;
+                        }
+
+                        // Limit minimum size
                         if (newBox.width < 10 || newBox.height < 10) return oldBox;
-                        if (newBox.x < 0 || newBox.y < 0) return oldBox;
-                        if (newBox.x + newBox.width > bgImage.width || newBox.y + newBox.height > bgImage.height) return oldBox;
+
                         return newBox; 
                     }} 
                 />
