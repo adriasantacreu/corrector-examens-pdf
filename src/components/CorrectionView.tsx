@@ -1360,14 +1360,16 @@ export default function CorrectionView({
     };
 
     useEffect(() => {
-        if (selectedId && transformerRef.current) {
+        if (selectedId && transformerRef.current && stageRef.current) {
             const selectedNode = stageRef.current.findOne('#' + selectedId);
-            if (selectedNode) {
+            if (selectedNode && selectedNode.getLayer()) {
                 transformerRef.current.nodes([selectedNode]);
-                transformerRef.current.getLayer().batchDraw();
+                transformerRef.current.getLayer()?.batchDraw();
             } else {
                 transformerRef.current.nodes([]);
             }
+        } else if (transformerRef.current) {
+            transformerRef.current.nodes([]);
         }
     }, [selectedId, currentAnnotations]);
 
@@ -2310,7 +2312,8 @@ export default function CorrectionView({
                                                                 fill={ann.color}
                                                                 stroke={isSelected ? 'var(--accent)' : undefined}
                                                                 strokeWidth={isSelected ? 1 / baseScale : 0}
-                                                            />                                                        {highlighterLabelMode === 'individual' && (ann.label || ann.points !== undefined) && (
+                                                            />
+                                                            {highlighterLabelMode === 'individual' && (ann.label || ann.points !== undefined) && (
                                                                 <Text
                                                                     x={labelX}
                                                                     y={labelY}
