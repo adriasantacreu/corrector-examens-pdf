@@ -237,7 +237,7 @@ export default function CorrectionView({
                         <span style={{ color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: isSelected ? 700 : 400, fontSize: '0.7rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{preset.label}</span>
                     </div>
                     <span style={{ fontSize: '0.7rem', fontWeight: 800, color: preset.points > 0 ? 'var(--success)' : (preset.points < 0 ? 'var(--danger)' : 'var(--text-secondary)'), marginLeft: '4px', flexShrink: 0 }}>
-                        {preset.points > 0 ? `+${preset.points}` : preset.points}
+                        {formatScaledPoints(preset.points)}
                     </span>
                 </button>
                 <div style={{ display: 'flex', gap: '0.05rem' }}>
@@ -339,7 +339,7 @@ export default function CorrectionView({
         }
     };
 
-    const gradableExercises = exercises.filter((ex: ExerciseDef) => ex.type === 'crop' || ex.type === 'pages');
+    const gradableExercises = useMemo(() => exercises.filter((ex: ExerciseDef) => ex.type === 'crop' || ex.type === 'pages'), [exercises]);
     const currentStudent = students[studentIdx];
     const currentExercise = gradableExercises[exerciseIdx];
     const currentAnnotations = (currentStudent && currentExercise)
@@ -364,22 +364,25 @@ export default function CorrectionView({
         ? Math.max(0, (currentExercise.scoringMode === 'from_zero' ? 0 : (currentExercise.maxScore || 0)) + rubricAdjustment + highlightAdjustment)
         : null;
 
+    // Scaling calculations
+    const totalPossiblePoints = useMemo(() => gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0), [gradableExercises]);
+    const currentFactor = useMemo(() => totalPossiblePoints > 0 ? targetMaxScore / totalPossiblePoints : 1, [totalPossiblePoints, targetMaxScore]);
+
+    const formatScaledPoints = (p: number) => {
+        const s = Math.round(p * currentFactor * 100) / 100;
+        return (s > 0 ? '+' : '') + s;
+    };
+    const scaleValue = (p: number) => Math.round(p * currentFactor * 100) / 100;
+
     const scoreStampData = useMemo(() => {
         if (!renderedPages.length || computedScore === null || !currentExercise) return null;
 
-        const totalPossible = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
-        const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
-        const scaledExScore = Math.round(computedScore * currentFactor * 100) / 100;
-        const scaledExMax = (currentExercise.maxScore ?? 10) * currentFactor;
-
-        const formatP = (p: number) => {
-            const s = Math.round(p * currentFactor * 100) / 100;
-            return (s > 0 ? '+' : '') + s;
-        };
+        const scaledExScore = scaleValue(computedScore);
+        const scaledExMax = scaleValue(currentExercise.maxScore ?? 10);
 
         const rubricSumm = (currentExercise.rubric || [])
             .filter(item => (currentExRubricCounts[item.id] || 0) > 0)
-            .map(item => `${item.label}${currentExRubricCounts[item.id] > 1 ? ` (x${currentExRubricCounts[item.id]})` : ''} (${formatP(item.points * currentExRubricCounts[item.id])})`)
+            .map(item => `${item.label}${currentExRubricCounts[item.id] > 1 ? ` (x${currentExRubricCounts[item.id]})` : ''} (${formatScaledPoints(item.points * currentExRubricCounts[item.id])})`)
             .join(', ');
 
         const groupRepetitions = (items: { label: string, pts?: number }[]) => {
@@ -394,7 +397,7 @@ export default function CorrectionView({
                 }
             }
             return Array.from(map.entries()).map(([label, data]) => {
-                return `${label}${data.count > 1 ? ` (x${data.count})` : ''}${data.pts !== undefined ? ` (${formatP(data.pts)})` : ''}`;
+                return `${label}${data.count > 1 ? ` (x${data.count})` : ''}${data.pts !== undefined ? ` (${formatScaledPoints(data.pts)})` : ''}`;
             }).join(', ');
         };
 
@@ -2216,7 +2219,6 @@ export default function CorrectionView({
                                                     listening={false}
                                                 />
                                             )}
-
                                             {currentAnnotations.filter(a => a.id !== 'system_score_stamp').map((ann) => {
                                                 const isSelected = ann.id === selectedId;
 
@@ -2312,14 +2314,13 @@ export default function CorrectionView({
                                                                 fill={ann.color}
                                                                 stroke={isSelected ? 'var(--accent)' : undefined}
                                                                 strokeWidth={isSelected ? 1 / baseScale : 0}
-                                                            />
-                                                            {highlighterLabelMode === 'individual' && (ann.label || ann.points !== undefined) && (
+                                                            />{highlighterLabelMode === 'individual' && (ann.label || ann.points !== undefined) && (
                                                                 <Text
                                                                     x={labelX}
                                                                     y={labelY}
                                                                     text={[
                                                                         ann.label || '',
-                                                                        ann.points !== undefined ? (ann.points > 0 ? `+${ann.points}` : `${ann.points}`) : ''
+                                                                        ann.points !== undefined ? formatScaledPoints(ann.points) : ''
                                                                     ].filter(Boolean).join(' ')}
                                                                     fill={labelColor}
                                                                     fontSize={annFontSize}
@@ -2433,7 +2434,7 @@ export default function CorrectionView({
                                                                 <Text
                                                                     x={0}
                                                                     y={-(currentFontSize * 0.7)}
-                                                                    text={ann.score > 0 ? `+${ann.score}` : `${ann.score}`}
+                                                                    text={formatScaledPoints(ann.score)}
                                                                     fill={ann.color}
                                                                     fontSize={currentFontSize * 0.65}
                                                                     fontFamily="'Caveat', cursive"
@@ -2487,9 +2488,7 @@ export default function CorrectionView({
                                                     padding={5 / baseScale}
                                                     enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right', 'top-center', 'bottom-center']}
                                                 />
-
                                             )}
-
                                             {scoreStampData && (
                                                 <Group
                                                     id="system_score_stamp"
@@ -2578,7 +2577,6 @@ export default function CorrectionView({
                                                     strokeWidth={2}
                                                 />
                                             )}
-
                                         </Layer>
                                     </Stage>
 
@@ -2677,7 +2675,6 @@ export default function CorrectionView({
                                                     const totalWidth = ((currentExercise.type === 'pages' && (currentExercise as any).spansTwoPages && renderedPages.length > 1)
                                                         ? renderedPages[0].width + (renderedPages[1].width || 0) + 20
                                                         : Math.max(...renderedPages.map(p => p.width)));
-
                                                     const totalHeight = Math.max(...renderedPages.map(p => p.yOffset + p.height));
 
                                                     const containerWidth = containerRef.current.clientWidth;
@@ -2749,7 +2746,9 @@ export default function CorrectionView({
                                             : `L'exercici requereix pàgines d'alumne que no estan disponibles. Pàgines de l'alumne: [${currentStudent.pageIndexes.join(', ')}].`}
                                     </p>
                                     <div style={{ marginTop: '1.5rem', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '0.5rem', textAlign: 'left', fontSize: '0.8rem' }}>
+
                                         <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Detalls tècnics:</div>
+
                                         <div>Tipus exercici: <strong>{currentExercise.type}</strong></div>
                                         {currentExercise.type === 'pages' ? (
                                             <div>Pàgines requerides: <strong>{(currentExercise as any).pageIndexes.map((p: number) => p + 1).join(', ')}</strong></div>
@@ -3225,7 +3224,7 @@ export default function CorrectionView({
                             </div>
                             {computedScore !== null ? (
                                 <span style={{ fontSize: '1.25rem', fontWeight: 700, color: computedScore < 0 ? 'var(--danger)' : 'var(--accent)' }}>
-                                    {computedScore.toFixed(2)} {currentExercise.scoringMode !== 'from_zero' && currentExercise.maxScore !== undefined && `/ ${currentExercise.maxScore}`}
+                                    {scaleValue(computedScore)} {currentExercise.scoringMode !== 'from_zero' && currentExercise.maxScore !== undefined && `/ ${scaleValue(currentExercise.maxScore)}`}
                                 </span>
                             ) : (
                                 <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Sense nota</span>
@@ -3343,8 +3342,8 @@ export default function CorrectionView({
                                                     color: item.points >= 0 ? 'var(--success)' : 'var(--danger)',
                                                     minWidth: '40px', textAlign: 'right'
                                                 }}>
-                                                    {item.points > 0 ? '+' : ''}{item.points}
-                                                    {count > 0 && <span style={{ color: 'var(--text-secondary)', fontWeight: 400 }}> ={contribution > 0 ? '+' : ''}{contribution.toFixed(2)}</span>}
+                                                    {formatScaledPoints(item.points)}
+                                                    {count > 0 && <span style={{ color: 'var(--text-secondary)', fontWeight: 400 }}> ={formatScaledPoints(contribution)}</span>}
                                                 </span>
                                             </div>
                                         );
@@ -3375,7 +3374,7 @@ export default function CorrectionView({
                                         const contribution = item.points * count;
                                         return (
                                             <span key={item.id} style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                                                {count}× {item.label} → <strong style={{ color: contribution >= 0 ? 'var(--success)' : 'var(--danger)' }}>{contribution > 0 ? '+' : ''}{contribution.toFixed(2)} pt</strong>
+                                                {count}× {item.label} → <strong style={{ color: contribution >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatScaledPoints(contribution)}</strong>
                                             </span>
                                         );
                                     })}
@@ -3387,12 +3386,12 @@ export default function CorrectionView({
                                             <>
                                                 {colorPoints !== 0 && (
                                                     <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                                                        Highlights → <strong style={{ color: colorPoints >= 0 ? 'var(--success)' : 'var(--danger)' }}>{colorPoints > 0 ? '+' : ''}{colorPoints.toFixed(2)} pt</strong>
+                                                        Highlights → <strong style={{ color: colorPoints >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatScaledPoints(colorPoints)}</strong>
                                                     </span>
                                                 )}
                                                 {textPoints !== 0 && (
                                                     <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                                                        Comentaris → <strong style={{ color: textPoints >= 0 ? 'var(--success)' : 'var(--danger)' }}>{textPoints > 0 ? '+' : ''}{textPoints.toFixed(2)} pt</strong>
+                                                        Comentaris → <strong style={{ color: textPoints >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatScaledPoints(textPoints)}</strong>
                                                     </span>
                                                 )}
                                             </>
@@ -3401,10 +3400,22 @@ export default function CorrectionView({
                                 </div>
                             )}
                         </div>
-
-
-
-
+                        <div style={{ display: 'flex', gap: '0.8rem', marginTop: '1.5rem' }}>
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => exportOriginalLayoutPDF({ pdfDoc, students, exercises, annotations, rubricCounts, scope: 'current', currentStudentIdx: studentIdx, targetMaxScore })}
+                                style={{ flex: 1, padding: '0.5rem', fontSize: '0.75rem' }}
+                            >
+                                <Download size={14} /> PDF ORIGINAL
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => exportAnnotatedPDF({ pdfDoc, students, exercises, annotations, rubricCounts, scope: 'current', currentStudentIdx: studentIdx, targetMaxScore })}
+                                style={{ flex: 1, padding: '0.5rem', fontSize: '0.75rem' }}
+                            >
+                                <Download size={14} /> PDF RETALLS
+                            </button>
+                        </div>
                         <div style={{ marginTop: '2rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                                 <h4 style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.05em', margin: 0 }}>Penalty Highlights</h4>

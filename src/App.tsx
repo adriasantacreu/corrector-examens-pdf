@@ -625,46 +625,112 @@ function App() {
     } finally { setIsProcessing(false); }
   };
 
+  const [isBackgroundOcrRunning, setIsBackgroundOcrRunning] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState<{current: number, total: number} | null>(null);
+
   const runOCR = async (customExercises?: ExerciseDef[]) => {
     const targetEx = customExercises || exercises;
     const ocr = targetEx.find(e => e.type === 'ocr_name') as import('./types').OcrNameRegion;
     if (!ocr || !pdfDoc) return;
 
-    setIsProcessing(true);
-    setProcessingMessage(ocr.skipOcr ? 'Retallant noms...' : 'Llegint noms amb OCR...');
-    const { extractTextFromRegion, extractImageFromRegion } = await import('./utils/ocrUtils');
-    const updated = [...students];
     const known = studentList.split('\n').map(n => n.trim()).filter(n => n.length > 0);
+    const hasToken = !!import.meta.env.VITE_GROQ_API_KEY;
 
-    for (let i = 0; i < updated.length; i++) {
-      setProcessingMessage(ocr.skipOcr ? `Retallant nom alumne ${i + 1} de ${updated.length}...` : `OCR alumne ${i + 1} de ${updated.length}...`);
-      try {
-        const pIdx = updated[i].pageIndexes[Math.min(ocr.pageIndex, updated[i].pageIndexes.length - 1)] || updated[i].pageIndexes[0];
-        const crop = await extractImageFromRegion(pdfDoc, pIdx, ocr);
+    console.log('[OCR DEBUG] useBatchOcr check:', {
+      skipOcr: ocr.skipOcr,
+      hasToken: hasToken,
+      knownNamesCount: known.length
+    });
 
-        let name = updated[i].name;
-        if (!ocr.skipOcr) {
-          const text = await extractTextFromRegion(pdfDoc, pIdx, ocr);
-          name = text.trim();
-          if (known.length > 0 && name.length > 2) {
-            let best = '', min = 999;
-            known.forEach(kn => {
-              const d = getLevenshteinDistance(name.toLowerCase(), kn.toLowerCase());
-              if (d < min) { min = d; best = kn; }
-            });
-            if (min < best.length * 0.4) {
-              name = best;
-              if (studentEmailMap[best]) updated[i].email = studentEmailMap[best];
-            }
-          }
+    setIsBackgroundOcrRunning(true);
+    const { extractTextFromRegion, extractImageFromRegion } = await import('./utils/ocrUtils');
+
+    const useBatchOcr = !ocr.skipOcr && hasToken; // known.length > 0 removed, it's optional now!
+
+    if (useBatchOcr) {
+      console.log('[OCR DEBUG] Starting BATCH OCR mode (Groq). Context list:', known.length > 0 ? 'Provided' : 'Empty');
+      const crops: string[] = [];
+      setOcrProgress({ current: 0, total: students.length });
+      
+      const updatedWithCrops = [...students];
+      for (let i = 0; i < updatedWithCrops.length; i++) {
+        try {
+          const pIdx = updatedWithCrops[i].pageIndexes[Math.min(ocr.pageIndex, updatedWithCrops[i].pageIndexes.length - 1)] || updatedWithCrops[i].pageIndexes[0];
+          const crop = await extractImageFromRegion(pdfDoc, pIdx, ocr);
+          crops.push(crop);
+          updatedWithCrops[i] = { ...updatedWithCrops[i], nameCropUrl: crop };
+          setOcrProgress({ current: i + 1, total: updatedWithCrops.length });
+        } catch {
+          crops.push('');
         }
+      }
+      
+      setStudents(updatedWithCrops);
 
-        updated[i] = { ...updated[i], name: name || updated[i].name, nameCropUrl: crop };
-      } catch { }
+      (async () => {
+        try {
+          const { processBatchOCR } = await import('./utils/groqOcrUtils');
+          const results = await processBatchOCR(crops.filter(c => c !== ''), known);
+          console.log('[OCR DEBUG] Batch OCR results received:', results);
+          
+          setStudents(prev => {
+            const next = [...prev];
+            let cropIdx = 0;
+            for (let i = 0; i < next.length; i++) {
+              if (next[i].nameCropUrl) {
+                const identifiedName = results[(cropIdx + 1).toString()];
+                if (identifiedName && identifiedName !== 'Desconegut') {
+                  next[i] = { ...next[i], name: identifiedName };
+                  if (studentEmailMap[identifiedName]) next[i].email = studentEmailMap[identifiedName];
+                }
+                cropIdx++;
+              }
+            }
+            return next;
+          });
+          setOcrCompleted(true);
+        } catch (err) {
+          console.error('[OCR DEBUG] Batch OCR background failed:', err);
+        } finally {
+          setIsBackgroundOcrRunning(false);
+          setOcrProgress(null);
+        }
+      })();
+
+    } else {
+      console.log('[OCR DEBUG] Starting INDIVIDUAL OCR mode (Tesseract Fallback)');
+      (async () => {
+        const updated = [...students];
+        for (let i = 0; i < updated.length; i++) {
+          setOcrProgress({ current: i + 1, total: updated.length });
+          try {
+            const pIdx = updated[i].pageIndexes[Math.min(ocr.pageIndex, updated[i].pageIndexes.length - 1)] || updated[i].pageIndexes[0];
+            const crop = await extractImageFromRegion(pdfDoc, pIdx, ocr);
+            
+            let name = updated[i].name;
+            if (!ocr.skipOcr) {
+              const text = await extractTextFromRegion(pdfDoc, pIdx, ocr);
+              name = text.trim();
+              if (known.length > 0 && name.length > 2) {
+                let best = '', min = 999;
+                known.forEach(kn => {
+                  const d = getLevenshteinDistance(name.toLowerCase(), kn.toLowerCase());
+                  if (d < min) { min = d; best = kn; }
+                });
+                if (min < best.length * 0.4) {
+                  name = best;
+                }
+              }
+            }
+            
+            setStudents(prev => prev.map((s, idx) => idx === i ? { ...s, name: name || s.name, nameCropUrl: crop } : s));
+          } catch { }
+        }
+        setOcrCompleted(true);
+        setIsBackgroundOcrRunning(false);
+        setOcrProgress(null);
+      })();
     }
-    setStudents(updated);
-    setOcrCompleted(true);
-    setIsProcessing(false);
   };
 
   const handleAuthorize = () => {
@@ -785,8 +851,21 @@ function App() {
     const [isEditingHeaderAlias, setIsEditingHeaderAlias] = useState(false);
 
     return (
-      <header className="header">
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 0 }}>
+      <header className="header" style={{ position: 'relative' }}>
+        {isBackgroundOcrRunning && ocrProgress && (
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: '3px',
+            background: 'var(--bg-tertiary)', zIndex: 100, overflow: 'hidden'
+          }}>
+            <div style={{
+              height: '100%', background: 'var(--accent)',
+              width: `${(ocrProgress.current / ocrProgress.total) * 100}%`,
+              transition: 'width 0.3s ease-out',
+              boxShadow: '0 0 10px var(--accent)'
+            }} />
+          </div>
+        )}
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
           <button className="btn-icon" onClick={handleBack} title="Enrere" style={{ color: 'var(--text-primary)', padding: '0.5rem', background: 'transparent', border: 'none', flexShrink: 0 }}>
             <ChevronLeft size={28} />
           </button>
@@ -1328,8 +1407,33 @@ function App() {
                         />
                       </div>
                     </div>
-                    <div style={{ padding: '0.5rem', background: 'var(--bg-secondary)', borderRadius: '0.4rem', border: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
-                      Total PDF: <strong>{numPages}</strong> pàgines
+                    <div style={{ padding: '0.5rem', background: 'var(--bg-secondary)', borderRadius: '0.4rem', border: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
+                      <span>Total PDF: <strong>{numPages}</strong> pàgines</span>
+                      {accessToken && (
+                        <div
+                          onClick={() => {
+                            const newSync = !cloudSyncPDF;
+                            setCloudSyncPDF(newSync);
+                            if (currentFileName) performFileSync(currentFileName, newSync);
+                          }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer',
+                            padding: '0.2rem 0.5rem', background: 'var(--bg-tertiary)', borderRadius: '1rem',
+                            border: '1px solid var(--border)'
+                          }}
+                        >
+                          <div style={{
+                            width: '24px', height: '12px', background: cloudSyncPDF ? 'var(--success)' : 'var(--text-secondary)',
+                            borderRadius: '6px', position: 'relative', transition: 'all 0.3s ease'
+                          }}>
+                            <div style={{
+                              width: '8px', height: '8px', background: 'white', borderRadius: '50%',
+                              position: 'absolute', top: '2px', left: cloudSyncPDF ? '14px' : '2px', transition: 'all 0.3s ease'
+                            }} />
+                          </div>
+                          <span style={{ fontSize: '0.65rem', fontWeight: 800 }}>Núvol {cloudSyncPDF ? "actiu" : "desactivat"}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1426,9 +1530,28 @@ function App() {
                         </button>
                       </div>
                     ) : (
-                      <div style={{ textAlign: 'center', padding: '0.5rem' }}>
-                        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>Connecta amb Google per importar alumnes de Classroom.</p>
+                      <div style={{ textAlign: 'center', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0' }}>Connecta amb Google per importar alumnes de Classroom.</p>
                         <button className="btn-google" onClick={handleAuthorize} style={{ width: '100%', justifyContent: 'center' }}>Connecta amb Google</button>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ position: 'absolute', left: 0, right: 0, height: '1px', background: 'var(--border)', zIndex: 1 }}></div>
+                            <span style={{ position: 'relative', zIndex: 2, background: 'var(--bg-tertiary)', padding: '0 0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>O BÉ</span>
+                        </div>
+                        <button
+                            onClick={() => setShowPasteArea(true)}
+                            style={{
+                                background: 'none',
+                                border: 'none',
+                                color: 'var(--accent)',
+                                fontSize: '0.85rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                textDecoration: 'underline',
+                                padding: 0
+                            }}
+                        >
+                            Enganxar llista manualment
+                        </button>
                       </div>
                     )}
                   </div>

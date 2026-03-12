@@ -130,7 +130,14 @@ export default function PageOrganizer({
 
     const handleReset = () => {
         showConfirm("Restablir distribució", "Vols restablir la distribució original de pàgines? Es perdran tots els canvis manuals.", () => {
-            setGroups(initialGroups.map(g => ({ ...g, ignoredPageIndexes: [] })));
+            setGroups(prevGroups => prevGroups.map((g, i) => ({
+                ...g,
+                pageIndexes: Array.from({ length: pagesPerExam }, (_, p) => i * pagesPerExam + p + 1),
+                ignoredPageIndexes: []
+            })));
+            if (solutionPdfDoc) {
+                setSolutionPageIndexes(Array.from({ length: solutionPdfDoc.numPages }, (_, i) => i + 1));
+            }
         });
     };
 

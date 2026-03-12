@@ -20,14 +20,14 @@ function parseColor(color: string): { r: number; g: number; b: number; a: number
     return { r: 0, g: 0, b: 0, a: 1 };
 }
 
-export function drawAnnotationsOnCanvas(ctx: CanvasRenderingContext2D, annotations: Annotation[], forceSkipHlLabels: boolean = false, fullExerciseAnnotations: Annotation[] = []): void {
+export function drawAnnotationsOnCanvas(ctx: CanvasRenderingContext2D, annotations: Annotation[], forceSkipHlLabels: boolean = false, fullExerciseAnnotations: Annotation[] = [], scaleFactor: number = 1): void {
     const hasLegend = forceSkipHlLabels || annotations.some(a => a.type === 'highlighter_legend') || fullExerciseAnnotations.some(a => a.type === 'highlighter_legend');
     for (const ann of annotations) {
         if (ann.type === 'pen') drawPen(ctx, ann);
-        else if (ann.type === 'highlighter') drawHighlighter(ctx, ann, hasLegend);
-        else if (ann.type === 'text') drawText(ctx, ann);
+        else if (ann.type === 'highlighter') drawHighlighter(ctx, ann, hasLegend, scaleFactor);
+        else if (ann.type === 'text') drawText(ctx, ann, scaleFactor);
         else if (ann.type === 'image') drawImageAnn(ctx, ann);
-        else if (ann.type === 'highlighter_legend') drawHighlighterLegend(ctx, ann, fullExerciseAnnotations.length > 0 ? fullExerciseAnnotations : annotations);
+        else if (ann.type === 'highlighter_legend') drawHighlighterLegend(ctx, ann, fullExerciseAnnotations.length > 0 ? fullExerciseAnnotations : annotations, scaleFactor);
     }
 }
 
@@ -55,7 +55,7 @@ function drawPen(ctx: CanvasRenderingContext2D, ann: PenAnnotation) {
     ctx.restore();
 }
 
-function drawHighlighter(ctx: CanvasRenderingContext2D, ann: HighlighterAnnotation, skipLabel: boolean = false) {
+function drawHighlighter(ctx: CanvasRenderingContext2D, ann: HighlighterAnnotation, skipLabel: boolean = false, scaleFactor: number = 1) {
     const { r, g, b, a } = parseColor(ann.color);
     ctx.save();
     ctx.globalAlpha = a;
@@ -70,7 +70,11 @@ function drawHighlighter(ctx: CanvasRenderingContext2D, ann: HighlighterAnnotati
     ctx.globalAlpha = 1;
 
     if (!skipLabel) {
-        const parts = [ann.label || '', ann.points !== undefined ? (ann.points > 0 ? `+${ann.points}` : `${ann.points}`) : ''].filter(Boolean);
+        const formatP = (p: number) => {
+            const s = Math.round(p * scaleFactor * 100) / 100;
+            return (s > 0 ? '+' : '') + s;
+        };
+        const parts = [ann.label || '', ann.points !== undefined ? formatP(ann.points) : ''].filter(Boolean);
         if (parts.length) {
             const fontSize = (ann.fontSize || 18) * FONT_SCALE;
             ctx.fillStyle = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
@@ -86,7 +90,7 @@ function drawHighlighter(ctx: CanvasRenderingContext2D, ann: HighlighterAnnotati
     ctx.restore();
 }
 
-function drawHighlighterLegend(ctx: CanvasRenderingContext2D, ann: any, allAnnotations: Annotation[]) {
+function drawHighlighterLegend(ctx: CanvasRenderingContext2D, ann: any, allAnnotations: Annotation[], scaleFactor: number = 1) {
     ctx.save();
     const scale = ann.scale || 1;
     const legendFontSize = 14 * FONT_SCALE * scale;
@@ -97,6 +101,11 @@ function drawHighlighterLegend(ctx: CanvasRenderingContext2D, ann: any, allAnnot
         { label: 'Error Greu', color: 'rgba(225, 29, 72, 0.4)', points: -1.0 },
         { label: 'Anotació Bona', color: 'rgba(16, 185, 129, 0.4)', points: 0.5 },
     ];
+
+    const formatP = (p: number) => {
+        const s = Math.round(p * scaleFactor * 100) / 100;
+        return (s > 0 ? '+' : '') + s;
+    };
 
     const usedLabels = new Set(allAnnotations
         .filter((a): a is HighlighterAnnotation => a.type === 'highlighter' && !!a.label)
@@ -117,12 +126,12 @@ function drawHighlighterLegend(ctx: CanvasRenderingContext2D, ann: any, allAnnot
         ctx.fillStyle = "#1e293b";
         ctx.font = `bold ${legendFontSize * 0.9}px Caveat, cursive`;
         ctx.textBaseline = 'top';
-        ctx.fillText(p.label, ann.x + legendFontSize + (12 * scale), py + (2 * scale));
+        ctx.fillText(`${p.label} (${formatP(p.points)})`, ann.x + legendFontSize + (12 * scale), py + (2 * scale));
     });
     ctx.restore();
 }
 
-function drawText(ctx: CanvasRenderingContext2D, ann: TextAnnotation) {
+function drawText(ctx: CanvasRenderingContext2D, ann: TextAnnotation, scaleFactor: number = 1) {
     const { r, g, b } = parseColor(ann.color);
     ctx.save();
     const family = "Caveat, cursive";
@@ -181,10 +190,14 @@ function drawText(ctx: CanvasRenderingContext2D, ann: TextAnnotation) {
     }
 
     if (ann.score !== undefined) {
+        const formatP = (p: number) => {
+            const s = Math.round(p * scaleFactor * 100) / 100;
+            return (s > 0 ? '+' : '') + s;
+        };
         const scoreFontSize = fontSize * 0.65;
         ctx.font = `bold ${scoreFontSize}px ${family}`;
         ctx.textBaseline = 'bottom';
-        ctx.fillText(ann.score > 0 ? `+${ann.score}` : `${ann.score}`, ann.x, ann.y);
+        ctx.fillText(formatP(ann.score), ann.x, ann.y);
     }
 
     ctx.restore();
@@ -342,7 +355,7 @@ export async function generateStudentPDF(
             const dims = await renderPDFPageToCanvas(pdfDoc, absPageNum, fullCanvas, RENDER_SCALE);
             if (dims) {
                 const sHasLegend = Array.from(pageAnnotMap.values()).some(anns => anns.some(a => a.type === 'highlighter_legend'));
-                drawAnnotationsOnCanvas(fullCanvas.getContext('2d')!, pageAnns, sHasLegend, allStudentAnns);
+                drawAnnotationsOnCanvas(fullCanvas.getContext('2d')!, pageAnns, sHasLegend, allStudentAnns, scaleFactor);
                 const jpg = await pdf.embedJpg(await dataUrlToBytes(fullCanvas.toDataURL('image/jpeg', 0.85)));
                 const page = pdf.addPage([dims.width, dims.height]);
                 page.drawImage(jpg, { x: 0, y: 0, width: dims.width, height: dims.height });
@@ -352,19 +365,23 @@ export async function generateStudentPDF(
     const bytes = await pdf.save(); return new Blob([bytes as any], { type: 'application/pdf' });
 }
 
-export async function exportStudentPDF(pdfDoc: PDFDocumentProxy, student: Student, exercises: ExerciseDef[], annotations: AnnotationStore, rubricCounts: RubricCountStore, _targetMaxScore: number) {
-    const blob = await generateStudentPDF(pdfDoc, student, exercises, annotations, rubricCounts, 1);
+export async function exportStudentPDF(pdfDoc: PDFDocumentProxy, student: Student, exercises: ExerciseDef[], annotations: AnnotationStore, rubricCounts: RubricCountStore, targetMaxScore: number) {
+    const totalPossible = exercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+    const scaleFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
+    const blob = await generateStudentPDF(pdfDoc, student, exercises, annotations, rubricCounts, scaleFactor);
     const url = URL.createObjectURL(blob), a = document.createElement('a');
     a.href = url; a.download = `correccio_${student.name.replace(/\s+/g, '_')}.pdf`;
     document.body.appendChild(a); a.click();
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
 }
 
-export async function exportCombinedPDF(pdfDoc: PDFDocumentProxy, students: Student[], exercises: ExerciseDef[], annotations: AnnotationStore, rubricCounts: RubricCountStore, _targetMaxScore: number, onProgress?: (p: number) => void) {
+export async function exportCombinedPDF(pdfDoc: PDFDocumentProxy, students: Student[], exercises: ExerciseDef[], annotations: AnnotationStore, rubricCounts: RubricCountStore, targetMaxScore: number, onProgress?: (p: number) => void) {
+    const totalPossible = exercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+    const scaleFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
     const mergedPdf = await PDFDocument.create();
     for (let i = 0; i < students.length; i++) {
         const student = students[i];
-        const studentBlob = await generateStudentPDF(pdfDoc, student, exercises, annotations, rubricCounts, 1);
+        const studentBlob = await generateStudentPDF(pdfDoc, student, exercises, annotations, rubricCounts, scaleFactor);
         const studentPdf = await PDFDocument.load(await studentBlob.arrayBuffer());
         const pages = await mergedPdf.copyPages(studentPdf, studentPdf.getPageIndices());
         pages.forEach(p => mergedPdf.addPage(p));
@@ -379,11 +396,18 @@ export async function exportCombinedPDF(pdfDoc: PDFDocumentProxy, students: Stud
 }
 
 // RESTORED MISSING EXPORTS WITH CORRECT SIGNATURES
-export async function exportOriginalLayoutPDF(opts: { pdfDoc: PDFDocumentProxy; students: Student[]; exercises: ExerciseDef[]; annotations: AnnotationStore; rubricCounts: RubricCountStore; scope: 'current' | 'all'; currentStudentIdx: number; scaleFactor?: number; onProgress?: (done: number, total: number) => void; }): Promise<void> {
+export async function exportOriginalLayoutPDF(opts: { pdfDoc: PDFDocumentProxy; students: Student[]; exercises: ExerciseDef[]; annotations: AnnotationStore; rubricCounts: RubricCountStore; scope: 'current' | 'all'; currentStudentIdx: number; scaleFactor?: number; onProgress?: (done: number, total: number) => void; targetMaxScore?: number }): Promise<void> {
     const targets = opts.scope === 'current' ? [opts.students[opts.currentStudentIdx]] : opts.students;
+    
+    let finalScale = opts.scaleFactor || 1;
+    if (!opts.scaleFactor && opts.targetMaxScore) {
+        const totalP = opts.exercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+        finalScale = totalP > 0 ? opts.targetMaxScore / totalP : 1;
+    }
+
     let done = 0;
     for (const student of targets) {
-        const blob = await generateStudentPDF(opts.pdfDoc, student, opts.exercises, opts.annotations, opts.rubricCounts, opts.scaleFactor || 1);
+        const blob = await generateStudentPDF(opts.pdfDoc, student, opts.exercises, opts.annotations, opts.rubricCounts, finalScale);
         const url = URL.createObjectURL(blob), a = document.createElement('a');
         a.href = url; a.download = `layout_${student.name.replace(/\s+/g, '_')}.pdf`;
         document.body.appendChild(a); a.click();
@@ -392,14 +416,22 @@ export async function exportOriginalLayoutPDF(opts: { pdfDoc: PDFDocumentProxy; 
     }
 }
 
-export async function exportAnnotatedPDF(opts: { pdfDoc: PDFDocumentProxy; students: Student[]; exercises: ExerciseDef[]; annotations: AnnotationStore; rubricCounts: RubricCountStore; scope: 'current' | 'all'; currentStudentIdx: number; scaleFactor?: number; onProgress?: (done: number, total: number) => void; }): Promise<void> {
+export async function exportAnnotatedPDF(opts: { pdfDoc: PDFDocumentProxy; students: Student[]; exercises: ExerciseDef[]; annotations: AnnotationStore; rubricCounts: RubricCountStore; scope: 'current' | 'all'; currentStudentIdx: number; scaleFactor?: number; onProgress?: (done: number, total: number) => void; targetMaxScore?: number }): Promise<void> {
     const targets = opts.scope === 'current' ? [opts.students[opts.currentStudentIdx]] : opts.students;
     const pdf = await PDFDocument.create(), font = await pdf.embedFont(StandardFonts.HelveticaBold);
+    
+    // Calculate scaleFactor if not provided but targetMaxScore is
+    let finalScale = opts.scaleFactor || 1;
+    if (!opts.scaleFactor && opts.targetMaxScore) {
+        const totalP = opts.exercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+        finalScale = totalP > 0 ? opts.targetMaxScore / totalP : 1;
+    }
+
     let done = 0; const total = targets.length * opts.exercises.length;
     for (const student of targets) {
         for (const exercise of opts.exercises) {
             if (exercise.type !== 'crop') { done++; continue; }
-            const res = await renderExerciseToDataURL(opts.pdfDoc, student, exercise, opts.annotations[student.id]?.[exercise.id] || []);
+            const res = await renderExerciseToDataURL(opts.pdfDoc, student, exercise, opts.annotations[student.id]?.[exercise.id] || [], finalScale);
             if (res) {
                 const jpg = await pdf.embedJpg(await dataUrlToBytes(res.dataUrl));
                 const page = pdf.addPage([res.width, res.height + 32]);
@@ -414,12 +446,12 @@ export async function exportAnnotatedPDF(opts: { pdfDoc: PDFDocumentProxy; stude
     a.href = url; a.download = 'correccio_retalls.pdf'; document.body.appendChild(a); a.click();
 }
 
-async function renderExerciseToDataURL(pdfDoc: PDFDocumentProxy, student: Student, exercise: ExerciseDef, annotations: Annotation[]): Promise<{ dataUrl: string; width: number; height: number } | null> {
+async function renderExerciseToDataURL(pdfDoc: PDFDocumentProxy, student: Student, exercise: ExerciseDef, annotations: Annotation[], scaleFactor: number = 1): Promise<{ dataUrl: string; width: number; height: number } | null> {
     if (exercise.type !== 'crop') return null;
     const absPage = student.pageIndexes[exercise.pageIndex]; if (absPage === undefined || absPage === -1) return null;
     const fullCanvas = document.createElement('canvas'); await renderPDFPageToCanvas(pdfDoc, absPage, fullCanvas, RENDER_SCALE);
     const crop = document.createElement('canvas'); crop.width = exercise.width; crop.height = exercise.height;
     const ctx = crop.getContext('2d')!; ctx.drawImage(fullCanvas, exercise.x, exercise.y, exercise.width, exercise.height, 0, 0, exercise.width, exercise.height);
-    drawAnnotationsOnCanvas(ctx, annotations.filter(a => a.id !== 'system_score_stamp'));
+    drawAnnotationsOnCanvas(ctx, annotations.filter(a => a.id !== 'system_score_stamp'), false, annotations, scaleFactor);
     return { dataUrl: crop.toDataURL('image/jpeg', 0.92), width: exercise.width, height: exercise.height };
 }
