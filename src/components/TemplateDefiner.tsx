@@ -557,7 +557,7 @@ export default function TemplateDefiner({
             <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 <div className="sidebar" style={{ width: '24rem', flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)', borderRight: '1px solid var(--border)', padding: '1.25rem' }}>
                     <div style={{ paddingBottom: '1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                        <HandwrittenTitle size="1.5rem" color="purple" noMargin={true}>Definir plantilla</HandwrittenTitle>
+                        <HandwrittenTitle size="2rem" color="purple" noMargin={true}>Definir plantilla</HandwrittenTitle>
                         <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, fontWeight: 600 }}>
                             Pàgina {currentPageIndex + 1} de {pagesPerExam}
                         </p>
@@ -623,7 +623,7 @@ export default function TemplateDefiner({
 
                     <div style={{ padding: '1rem 0', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                         <section>
-                            <HandwrittenTitle size="1.3rem" color="yellow" noMargin={true} style={{ marginBottom: '0.5rem' }}>Regions de control</HandwrittenTitle>
+                            <HandwrittenTitle size="1.8rem" color="yellow" noMargin={true} style={{ marginBottom: '0.5rem' }}>Regions de control</HandwrittenTitle>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                                 {['ocr_name', 'total_score'].map(type => {
                                     const reg = exercises.find(ex => ex.type === type);
@@ -654,7 +654,7 @@ export default function TemplateDefiner({
                         </section>
 
                         <section>
-                            <HandwrittenTitle size="1.3rem" color="green" noMargin={true} style={{ marginBottom: '0.5rem' }}>Exercicis corregibles</HandwrittenTitle>
+                            <HandwrittenTitle size="1.8rem" color="green" noMargin={true} style={{ marginBottom: '0.5rem' }}>Exercicis corregibles</HandwrittenTitle>
                             {exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages').length === 0 ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                                     <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic', margin: 0 }}>Cap exercici definit.</p>
