@@ -278,7 +278,7 @@ export default function PageOrganizer({
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
                                             const val = e.currentTarget.value.trim();
-                                            onUpdateSessionAlias(val || null);
+                                            onUpdateSessionAlias(val === currentFileName ? null : (val || null));
                                             setIsEditingHeaderAlias(false);
                                         } else if (e.key === 'Escape') {
                                             setIsEditingHeaderAlias(false);
@@ -286,7 +286,7 @@ export default function PageOrganizer({
                                     }}
                                     onBlur={(e) => {
                                         const val = e.target.value.trim();
-                                        onUpdateSessionAlias(val || null);
+                                        onUpdateSessionAlias(val === currentFileName ? null : (val || null));
                                         setIsEditingHeaderAlias(false);
                                     }}
                                     style={{ 
@@ -332,7 +332,7 @@ export default function PageOrganizer({
                                         </span>
                                         <Pencil size={12} style={{ opacity: 0.4, flexShrink: 0 }} />
                                     </div>
-                                    {sessionAlias && (
+                                    {sessionAlias && sessionAlias !== currentFileName && (
                                         <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '-2px' }}>
                                             {currentFileName}
                                         </span>
