@@ -171,14 +171,17 @@ export default function TemplateDefiner({
 
     const addFullPageExercise = () => {
         const newId = `ex_page_${Date.now()}`;
-        setExercises(prev => [...prev, {
-            id: newId,
-            type: 'pages',
-            name: 'Pàgina completa',
-            pageIndexes: [currentPageIndex],
-            scoringMode: 'from_zero',
-            rubric: []
-        } as PagesExercise]);
+        setExercises(prev => {
+            const typeCount = prev.filter(e => e.type === 'pages').length + 1;
+            return [...prev, {
+                id: newId,
+                type: 'pages',
+                name: `Exercici de pàgina ${typeCount}`,
+                pageIndexes: [currentPageIndex],
+                scoringMode: 'from_zero',
+                rubric: []
+            } as PagesExercise];
+        });
         setLastAddedId(newId);
     };
 
@@ -189,7 +192,10 @@ export default function TemplateDefiner({
             const key = e.key.toLowerCase();
             if (key === 'v') setMode('select');
             if (key === 'r') setMode('draw');
-            if (key === 'p') addFullPageExercise();
+            if (key === 'p') {
+                e.preventDefault();
+                addFullPageExercise();
+            }
             if (key === 'n') setMode('draw_ocr');
             if (key === 's') setMode('draw_total_score');
 
@@ -554,15 +560,6 @@ export default function TemplateDefiner({
 
                     <div style={{ padding: '1rem 0', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem', borderBottom: '1px solid var(--border)' }}>
                         <button 
-                            className={`btn-icon ${mode === 'select' ? 'active' : ''}`} 
-                            onClick={() => setMode('select')} 
-                            title="Seleccionar / Moure (V)"
-                            style={{ width: '100%', height: '40px', borderRadius: '0.5rem', position: 'relative' }}
-                        >
-                            <MousePointer2 size={20} />
-                            <span style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '0.5rem', fontWeight: 900, opacity: 0.5 }}>V</span>
-                        </button>
-                        <button 
                             className={`btn-icon ${mode === 'draw' ? 'active' : ''}`} 
                             onClick={() => setMode('draw')} 
                             title="Dibuixar zona (R)"
@@ -572,19 +569,8 @@ export default function TemplateDefiner({
                             <span style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '0.5rem', fontWeight: 900, opacity: 0.5 }}>R</span>
                         </button>
                         <button 
-                            className={`btn-icon ${mode === 'draw_pages' ? 'active' : ''}`} 
-                            onClick={() => {
-                                const newId = `ex_page_${Date.now()}`;
-                                setExercises(prev => [...prev, {
-                                    id: newId,
-                                    type: 'pages',
-                                    name: 'Pàgina completa',
-                                    pageIndexes: [currentPageIndex],
-                                    scoringMode: 'from_zero',
-                                    rubric: []
-                                } as PagesExercise]);
-                                setLastAddedId(newId);
-                            }} 
+                            className="btn-icon" 
+                            onClick={addFullPageExercise} 
                             title="Afegir pàgina completa (P)"
                             style={{ width: '100%', height: '40px', borderRadius: '0.5rem', position: 'relative' }}
                         >
@@ -592,8 +578,8 @@ export default function TemplateDefiner({
                                 <FileText size={20} />
                                 <div style={{ 
                                     position: 'absolute', top: '-2px', right: '-2px', 
-                                    background: mode === 'draw_pages' ? 'white' : 'var(--accent)', 
-                                    color: mode === 'draw_pages' ? 'var(--accent)' : 'white',
+                                    background: 'var(--accent)', 
+                                    color: 'white',
                                     borderRadius: '50%', width: '12px', height: '12px', 
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                                     fontSize: '10px', fontWeight: 900, border: '1px solid currentColor'
@@ -618,6 +604,15 @@ export default function TemplateDefiner({
                         >
                             <Award size={20} />
                             <span style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '0.5rem', fontWeight: 900, opacity: 0.5 }}>S</span>
+                        </button>
+                        <button 
+                            className={`btn-icon ${mode === 'select' ? 'active' : ''}`} 
+                            onClick={() => setMode('select')} 
+                            title="Seleccionar / Moure (V)"
+                            style={{ width: '100%', height: '40px', borderRadius: '0.5rem', position: 'relative' }}
+                        >
+                            <MousePointer2 size={20} />
+                            <span style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '0.5rem', fontWeight: 900, opacity: 0.5 }}>V</span>
                         </button>
                     </div>
 
