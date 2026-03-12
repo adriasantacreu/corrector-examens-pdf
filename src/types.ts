@@ -50,6 +50,7 @@ export interface OcrNameRegion extends BaseExercise {
   y: number;
   width: number;
   height: number;
+  skipOcr?: boolean; // If true, only the image crop is saved, no text recognition is performed
 }
 
 export interface TotalScoreRegion extends BaseExercise {
@@ -70,6 +71,7 @@ export interface Student {
   originalOcrName?: string; // Experimental: Store the raw OCR result before fuzzy matching
   nameCropUrl?: string;     // Experimental: DataURL of the cropped name area
   pageIndexes: number[]; // Index array where pageIndexes[0] is the absolute PDF page for the student's exam page 1
+  ignoredPageIndexes?: number[]; // Absolute PDF page indexes that are ignored
 }
 
 export type ToolType = 'select' | 'pen' | 'highlighter' | 'text' | 'eraser';
@@ -89,6 +91,7 @@ export interface PresetHighlighter {
   label: string;
   color: string;
   points: number;
+  exerciseId?: string; // If present, only shows up for this specific exercise
 }
 
 export interface HighlighterAnnotation {

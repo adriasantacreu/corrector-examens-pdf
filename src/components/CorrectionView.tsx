@@ -8,7 +8,7 @@ declare global {
 import { Stage, Layer, Image as KonvaImage, Line, Rect, Group, Text, Transformer } from 'react-konva';
 import {
     ChevronLeft, ChevronRight, PenTool, Highlighter, MousePointer2,
-    Undo, Trash2, Type, Plus, Pencil, Check, X, Download, Loader2, Moon, Sun, AlertTriangle, RefreshCw, Send, Minus
+    Undo, Trash2, Type, Plus, Pencil, Check, X, Download, Loader2, Moon, Sun, AlertTriangle, RefreshCw, Send, Minus, ChevronDown, ChevronUp
 } from 'lucide-react';
 // import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas, type PDFDocumentProxy } from '../utils/pdfUtils';
@@ -26,6 +26,8 @@ interface Props {
     targetMaxScore: number;
     onUpdateCommentBank: (bank: AnnotationComment[]) => void;
     onUpdateTargetMaxScore: (score: number) => void;
+    presets: PresetHighlighter[];
+    onUpdatePresets: (presets: PresetHighlighter[]) => void;
     onUpdateAnnotations: (studentId: string, exerciseId: string, annotations: Annotation[]) => void;
     onUpdateRubricCounts: (studentId: string, exerciseId: string, itemId: string, delta: number) => void;
     onUpdateExercise: (exercise: ExerciseDef) => void;
@@ -35,20 +37,12 @@ interface Props {
     exerciseIdx: number;
     onUpdateStudentIdx: (idx: number) => void;
     onUpdateExerciseIdx: (idx: number) => void;
-    showAlert: (title: string, message: string) => void;
     showConfirm: (title: string, message: string, onConfirm: () => void) => void;
     theme: 'light' | 'dark';
     onToggleTheme: () => void;
 }
 
 
-const DEFAULT_HIGHLIGHT_PRESETS: PresetHighlighter[] = [
-    { id: 'h1', label: 'Error Procediment', color: 'rgba(239, 68, 68, 0.4)', points: -0.5 },
-    { id: 'h2', label: 'Error Càlcul', color: 'rgba(249, 115, 22, 0.4)', points: -0.25 },
-    { id: 'h3', label: 'Falta Raonament', color: 'rgba(234, 179, 8, 0.4)', points: -0.5 },
-    { id: 'h4', label: 'Error Greu', color: 'rgba(225, 29, 72, 0.4)', points: -1.0 },
-    { id: 'h5', label: 'Anotació Bona', color: 'rgba(16, 185, 129, 0.4)', points: 0.5 },
-];
 
 const FONT_SCALE = 2.5; // Scale from points to our high-res coordinate system
 
@@ -125,6 +119,7 @@ function NumericInput({ value, onChange, style, placeholder = "" }: {
 export default function CorrectionView({
     pdfDoc, solutionPdfDoc, students, exercises, annotations, rubricCounts,
     commentBank, targetMaxScore, onUpdateCommentBank, onUpdateTargetMaxScore,
+    presets, onUpdatePresets,
     onUpdateAnnotations, onUpdateRubricCounts, onUpdateExercise, onBack, onFinish,
     studentIdx, exerciseIdx, onUpdateStudentIdx, onUpdateExerciseIdx,
     showConfirm, theme, onToggleTheme
@@ -156,13 +151,122 @@ export default function CorrectionView({
     const [newCommentCustomColor, setNewCommentCustomColor] = useState('#6366f1');
     const [commentDefaultSize, setCommentDefaultSize] = useState(18);
     const [commentBankHeight, setCommentBankHeight] = useState(160);
+    const [isCommentBankExpanded, setIsCommentBankExpanded] = useState(true);
     const [draggingComment, setDraggingComment] = useState<string | null>(null);
     const [editingBankComment, setEditingBankComment] = useState<number | null>(null);
     const [pendingStampComment, setPendingStampComment] = useState<any | null>(null);
 
     // Highlighters
-    const [presets, setPresets] = useState<PresetHighlighter[]>(DEFAULT_HIGHLIGHT_PRESETS);
     const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
+
+    const renderPresetHighlighter = (preset: PresetHighlighter) => {
+        const isEditing = editingPresetId === preset.id;
+        const isSelected = tool === 'highlighter' && activePresetId === preset.id;
+
+        if (isEditing) {
+            return (
+                <div key={preset.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.3rem', background: 'var(--bg-secondary)', borderRadius: '0.3rem', border: '1px solid var(--accent)' }}>
+                    <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                        <input
+                            type="text"
+                            value={presetForm.label || ''}
+                            onChange={e => setPresetForm({ ...presetForm, label: e.target.value })}
+                            style={{ flex: 1, background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '2px', padding: '0.1rem 0.2rem', fontSize: '0.7rem' }}
+                            placeholder="Label"
+                        />
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <input
+                            type="color"
+                            value={tempColor}
+                            onChange={e => {
+                                setTempColor(e.target.value);
+                                const hex = e.target.value;
+                                const r = parseInt(hex.slice(1, 3), 16);
+                                const g = parseInt(hex.slice(3, 5), 16);
+                                const b = parseInt(hex.slice(5, 7), 16);
+                                setPresetForm({ ...presetForm, color: `rgba(${r}, ${g}, ${b}, 0.4)` });
+                            }}
+                            style={{ width: '18px', height: '18px', padding: 0, border: 'none', cursor: 'pointer' }}
+                        />
+                        <NumericInput
+                            value={presetForm.points || 0}
+                            onChange={val => setPresetForm({ ...presetForm, points: val })}
+                            style={{ width: '40px' }}
+                        />
+                        <div style={{ display: 'flex', gap: '0.2rem' }}>
+                            <button onClick={() => setEditingPresetId(null)} className="btn-icon" style={{ padding: '0.1rem' }}><X size={10} /></button>
+                            <button
+                                onClick={() => {
+                                    onUpdatePresets(presets.map(p => p.id === preset.id ? { ...p, ...presetForm } as PresetHighlighter : p));
+                                    setEditingPresetId(null);
+                                }}
+                                className="btn-icon" style={{ padding: '0.1rem', color: 'var(--success)' }}
+                            ><Check size={10} /></button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div key={preset.id} style={{ display: 'flex', alignItems: 'center', gap: '0.15rem' }}>
+                <button
+                    onClick={() => {
+                        setTool('highlighter');
+                        setActivePresetId(preset.id);
+                        setSelectedId(null);
+                    }}
+                    style={{
+                        flex: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.2rem 0.4rem',
+                        background: isSelected ? 'var(--bg-tertiary)' : 'transparent',
+                        border: `1px solid ${isSelected ? preset.color.replace('0.4', '1.0') : 'var(--border)'}`,
+                        borderRadius: '0.3rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.1s ease',
+                        textAlign: 'left',
+                        minWidth: 0
+                    }}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', minWidth: 0, flex: 1 }}>
+                        <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: preset.color, flexShrink: 0 }} />
+                        <span style={{ color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: isSelected ? 700 : 400, fontSize: '0.7rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{preset.label}</span>
+                    </div>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 800, color: preset.points > 0 ? 'var(--success)' : (preset.points < 0 ? 'var(--danger)' : 'var(--text-secondary)'), marginLeft: '4px', flexShrink: 0 }}>
+                        {preset.points > 0 ? `+${preset.points}` : preset.points}
+                    </span>
+                </button>
+                <div style={{ display: 'flex', gap: '0.05rem' }}>
+                    <button
+                        onClick={() => {
+                            setEditingPresetId(preset.id);
+                            setPresetForm(preset);
+                            setTempColor(preset.color.startsWith('rgba') ?
+                                '#' + preset.color.match(/\d+/g)!.slice(0, 3).map(x => parseInt(x).toString(16).padStart(2, '0')).join('') :
+                                preset.color
+                            );
+                        }}
+                        style={{ padding: '0.15rem', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }} title="Edit"
+                    >
+                        <Pencil size={10} />
+                    </button>
+                    <button
+                        onClick={() => {
+                            onUpdatePresets(presets.filter(p => p.id !== preset.id));
+                            if (activePresetId === preset.id) setActivePresetId(null);
+                        }}
+                        style={{ padding: '0.15rem', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5, color: 'var(--danger)' }} title="Delete"
+                    >
+                        <Trash2 size={10} />
+                    </button>
+                </div>
+            </div>
+        );
+    };
     const [presetForm, setPresetForm] = useState<Partial<PresetHighlighter>>({});
     const [tempColor, setTempColor] = useState<string>('#fde047');
     const [activePresetId, setActivePresetId] = useState<string | null>(null);
@@ -463,7 +567,7 @@ export default function CorrectionView({
         if (!stage) return;
         const oldScale = stage.scaleX();
         const safeScale = Math.min(10, Math.max(0.1, newScale));
-        
+
         let targetPointer = pointer;
         if (!targetPointer) {
             if (containerRef.current) {
@@ -504,35 +608,31 @@ export default function CorrectionView({
                 if (currentExercise.type === 'crop') {
                     let actualPageIndex = currentStudent.pageIndexes[currentExercise.pageIndex];
 
-                    if ((actualPageIndex === undefined || actualPageIndex === -1) && currentStudent.pageIndexes.length > 0 && currentExercise.pageIndex > 0) {
-                        const baseIndex = currentStudent.pageIndexes.find(p => p > 0) || 1;
-                        const guessedIndex = baseIndex + currentExercise.pageIndex;
-                        if (guessedIndex <= pdfDoc.numPages) {
-                            actualPageIndex = guessedIndex;
-                            console.log(`[DEBUG] CROP Exercise: guessed page index ${guessedIndex}`);
-                        }
-                    }
-
                     console.log(`[DEBUG] CROP Exercise: exercise.pageIndex=${currentExercise.pageIndex}, mapped actualPageIndex=${actualPageIndex}`);
                     if (actualPageIndex !== undefined && actualPageIndex >= 1 && actualPageIndex <= pdfDoc.numPages && !isNaN(actualPageIndex)) {
-                        console.log(`[DEBUG] Attempting to render crop on page ${actualPageIndex}`);
-                        const canvas = document.createElement('canvas');
-                        const dimensions = await renderPDFPageToCanvas(pdfDoc, actualPageIndex, canvas, 2.5, isDarkMode);
-                        if (dimensions) {
-                            const cropCanvas = document.createElement('canvas');
-                            cropCanvas.width = currentExercise.width;
-                            cropCanvas.height = currentExercise.height;
-                            const ctx = cropCanvas.getContext('2d');
-                            if (ctx) {
-                                // Important: We must also apply the same filter logic if we're cropping from a source
-                                // But renderPDFPageToCanvas already applied it to the 'canvas'.
-                                ctx.drawImage(canvas,
-                                    currentExercise.x, currentExercise.y, currentExercise.width, currentExercise.height,
-                                    0, 0, currentExercise.width, currentExercise.height);
-                                const img = new Image();
-                                img.src = cropCanvas.toDataURL('image/png');
-                                await new Promise(r => img.onload = r);
-                                images.push({ img, width: currentExercise.width, height: currentExercise.height, yOffset: 0, xOffset: 0 });
+
+                        // Check if this page is ignored
+                        if (currentStudent.ignoredPageIndexes?.includes(actualPageIndex)) {
+                            console.log(`[DEBUG] Skipping ignored crop page ${actualPageIndex}`);
+                            // Will fall through to placeholder logic below
+                        } else {
+                            console.log(`[DEBUG] Attempting to render crop on page ${actualPageIndex}`);
+                            const canvas = document.createElement('canvas');
+                            const dimensions = await renderPDFPageToCanvas(pdfDoc, actualPageIndex, canvas, 2.5, isDarkMode);
+                            if (dimensions) {
+                                const cropCanvas = document.createElement('canvas');
+                                cropCanvas.width = currentExercise.width;
+                                cropCanvas.height = currentExercise.height;
+                                const ctx = cropCanvas.getContext('2d');
+                                if (ctx) {
+                                    ctx.drawImage(canvas,
+                                        currentExercise.x, currentExercise.y, currentExercise.width, currentExercise.height,
+                                        0, 0, currentExercise.width, currentExercise.height);
+                                    const img = new Image();
+                                    img.src = cropCanvas.toDataURL('image/png');
+                                    await new Promise(r => img.onload = r);
+                                    images.push({ img, width: currentExercise.width, height: currentExercise.height, yOffset: 0, xOffset: 0 });
+                                }
                             }
                         }
                     }
@@ -543,25 +643,16 @@ export default function CorrectionView({
                         const pageIdx = currentExercise.pageIndexes[i];
                         let actualPageIndex = currentStudent.pageIndexes[pageIdx];
 
-                        // Fallback: If student has e.g. only 1 page assigned but the exercise is multi-page,
-                        // try to load the logical next pages from the PDF if available.
-                        if ((actualPageIndex === undefined || actualPageIndex === -1) && currentStudent.pageIndexes.length > 0 && pageIdx > 0) {
-                            const baseIndex = currentStudent.pageIndexes.find(p => p > 0) || 1;
-                            const guessedIndex = baseIndex + pageIdx;
-                            if (guessedIndex <= pdfDoc.numPages) {
-                                actualPageIndex = guessedIndex;
-                                console.log(`[DEBUG] PAGES Exercise: guessed page index ${guessedIndex}`);
-                            }
-                        }
-
-                        console.log(`[DEBUG] PAGES Exercise loop ${i}: mapped actualPageIndex=${actualPageIndex} for pageIdx=${pageIdx}`);
-
-                        if (actualPageIndex === undefined || actualPageIndex < 1 || actualPageIndex > pdfDoc.numPages || isNaN(actualPageIndex)) {
-                            console.log(`[DEBUG] Skipping invalid page: ${actualPageIndex}`);
+                        // Check if this page is ignored
+                        if (currentStudent.ignoredPageIndexes?.includes(actualPageIndex)) {
+                            console.log(`[DEBUG] Skipping ignored page ${actualPageIndex}`);
                             continue;
                         }
 
-                        console.log(`[DEBUG] Attempting to render page on ${actualPageIndex}`);
+                        if (actualPageIndex === undefined || actualPageIndex < 1 || actualPageIndex > pdfDoc.numPages || isNaN(actualPageIndex)) {
+                            continue;
+                        }
+
                         const canvas = document.createElement('canvas');
                         const dimensions = await renderPDFPageToCanvas(pdfDoc, actualPageIndex, canvas, 2.5, isDarkMode);
                         if (dimensions) {
@@ -578,6 +669,30 @@ export default function CorrectionView({
                                 currentYOffset += dimensions.height + 20;
                             }
                         }
+                    }
+                }
+
+                // If no images were loaded (e.g. all pages ignored), and it's a pages exercise
+                if (images.length === 0 && currentExercise.type === 'pages') {
+                    // Create a placeholder image with a message
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 800;
+                    canvas.height = 400;
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        ctx.fillStyle = isDarkMode ? '#1f2937' : '#f3f4f6';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.fillStyle = isDarkMode ? '#9ca3af' : '#4b5563';
+                        ctx.font = 'bold 24px Inter, system-ui, sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('Pàgina marcada com a buida per aquest alumne.', 400, 180);
+                        ctx.font = '18px Inter, system-ui, sans-serif';
+                        ctx.fillText('L\'exercici tindrà un 0 per defecte.', 400, 220);
+
+                        const img = new Image();
+                        img.src = canvas.toDataURL('image/png');
+                        await new Promise(r => img.onload = r);
+                        images.push({ img, width: 800, height: 400, yOffset: 0, xOffset: 0 });
                     }
                 }
 
@@ -1287,8 +1402,8 @@ export default function CorrectionView({
                         {hasNoExercises ? 'No hi ha exercicis' : 'HAS ACABAT!'}
                     </h1>
                     <p style={{ fontSize: '1.2rem', color: 'var(--text-secondary)', maxWidth: '400px' }}>
-                        {hasNoExercises 
-                            ? "Sembla que no has definit cap zona de l'examen per corregir." 
+                        {hasNoExercises
+                            ? "Sembla que no has definit cap zona de l'examen per corregir."
                             : "Has completat tota la correcció. Tots els alumnes tenen els seus exercicis revisats!"}
                     </p>
                     <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '2rem' }}>
@@ -1994,594 +2109,625 @@ export default function CorrectionView({
                             <>
                                 <div
                                     className="canvas-container"
-                                style={{ width: '100%', flex: 1, minHeight: 0, position: 'relative', margin: 0, boxShadow: 'none', background: 'transparent', cursor: pendingStampComment ? 'crosshair' : (tool === 'select' ? 'default' : 'crosshair') }}
-                                onDragOver={(e) => e.preventDefault()}
-                                onDrop={(e) => {
-                                    e.preventDefault();
-                                    const payload = e.dataTransfer.getData('text/comment');
-                                    if (!payload || !stageRef.current) return;
-                                    let commentText = payload;
-                                    let commentScore: number | undefined = undefined;
-                                    try {
-                                        const parsed = JSON.parse(payload);
-                                        commentText = parsed.text;
-                                        commentScore = parsed.score;
-                                    } catch { }
-                                    const rect = (e.target as HTMLElement).closest('.canvas-container')?.getBoundingClientRect();
-                                    if (!rect) return;
-                                    const canvasX = e.clientX - rect.left;
-                                    const canvasY = e.clientY - rect.top;
-                                    const stage = stageRef.current;
-                                    const transform = stage.getAbsoluteTransform().copy().invert();
-                                    const actualPos = transform.point({ x: canvasX, y: canvasY });
-                                    const newId = `text_${Date.now()}`;
-                                    // Resolve comment color from colorMode
-                                    let resolvedColor = defaultTextColor;
-                                    try {
-                                        const parsed = JSON.parse(payload);
-                                        const cm = parsed.colorMode || 'neutral';
-                                        if (cm === 'score') {
-                                            resolvedColor = (parsed.score !== undefined && parsed.score > 0) ? '#10b981' : '#ef4444';
-                                        } else if (cm === 'custom' && parsed.customColor) {
-                                            resolvedColor = parsed.customColor;
-                                        }
-                                    } catch { }
-                                    const newAnnotation: TextAnnotation = {
-                                        id: newId,
-                                        type: 'text',
-                                        x: actualPos.x,
-                                        y: actualPos.y,
-                                        text: commentText,
-                                        color: resolvedColor,
-                                        fontSize: commentDefaultSize,
-                                        score: commentScore,
-                                    };
-                                    updateAnnotationsWithHistory([...currentAnnotations, newAnnotation] as Annotation[]);
-                                    setDraggingComment(null);
-                                    setTool('select');
-                                    // Select after short delay to let state settle
-                                    setTimeout(() => setSelectedId(newId), 50);
-                                }}                            >
-                                <Stage
-                                    ref={stageRef}
-                                    width={containerRef.current?.clientWidth || window.innerWidth}
-                                    height={containerRef.current?.clientHeight || window.innerHeight}
-                                    scaleX={stageScale}
-                                    scaleY={stageScale}
-                                    x={stagePos.x}
-                                    y={stagePos.y}
-                                    onMouseDown={handleMouseDown}
-                                    onMouseMove={handleMouseMove}
-                                    onMouseUp={handleMouseUp}
-                                    onMouseLeave={handleMouseUp}
-                                    onTouchStart={handleMouseDown}
-                                    onTouchMove={handleTouchMove}
-                                    onTouchEnd={handleTouchEnd}
-                                    onWheel={handleWheel}
-                                    preventDefault={true}
-                                    onClick={(e) => {
-                                        // If we click the stage (empty area), deselect
-                                        if (e.target === e.target.getStage()) {
-                                            setSelectedId(null);
-                                        }
-                                    }}
-                                    onTap={(e) => {
-                                        if (e.target === e.target.getStage()) {
-                                            setSelectedId(null);
-                                        }
-                                    }}
-                                    draggable={tool === 'select'}
-                                    onDragEnd={(e) => {
-                                        if (tool === 'select' && e.target === stageRef.current) {
-                                            setStagePos({ x: e.target.x(), y: e.target.y() });
-                                        }
-                                    }}
-                                    style={{ cursor: tool === 'pen' ? 'crosshair' : tool === 'eraser' ? 'cell' : tool === 'highlighter' ? 'text' : tool === 'text' ? 'text' : tool === 'select' ? 'grab' : 'default' }}
-                                >
-                                    <Layer key={`${currentStudent.id}_${currentExercise.id}`}>
-                                        {/* Render the background pages */}
-                                        {renderedPages.map((page, i) => (
-                                            <KonvaImage key={i} image={page.img} x={page.xOffset || 0} y={page.yOffset} width={page.width} height={page.height} />
-                                        ))}
+                                    style={{ width: '100%', flex: 1, minHeight: 0, position: 'relative', margin: 0, boxShadow: 'none', background: 'transparent', cursor: pendingStampComment ? 'crosshair' : (tool === 'select' ? 'default' : 'crosshair') }}
+                                    onDragOver={(e) => e.preventDefault()}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        const payload = e.dataTransfer.getData('text/comment');
+                                        if (!payload || !stageRef.current) return;
+                                        let commentText = payload;
+                                        let commentScore: number | undefined = undefined;
+                                        try {
+                                            const parsed = JSON.parse(payload);
+                                            commentText = parsed.text;
+                                            commentScore = parsed.score;
+                                        } catch { }
+                                        const rect = (e.target as HTMLElement).closest('.canvas-container')?.getBoundingClientRect();
+                                        if (!rect) return;
+                                        const canvasX = e.clientX - rect.left;
+                                        const canvasY = e.clientY - rect.top;
+                                        const stage = stageRef.current;
+                                        const transform = stage.getAbsoluteTransform().copy().invert();
+                                        const actualPos = transform.point({ x: canvasX, y: canvasY });
+                                        const newId = `text_${Date.now()}`;
+                                        // Resolve comment color from colorMode
+                                        let resolvedColor = defaultTextColor;
+                                        try {
+                                            const parsed = JSON.parse(payload);
+                                            const cm = parsed.colorMode || 'neutral';
+                                            if (cm === 'score') {
+                                                resolvedColor = (parsed.score !== undefined && parsed.score > 0) ? '#10b981' : '#ef4444';
+                                            } else if (cm === 'custom' && parsed.customColor) {
+                                                resolvedColor = parsed.customColor;
+                                            }
+                                        } catch { }
+                                        const newAnnotation: TextAnnotation = {
+                                            id: newId,
+                                            type: 'text',
+                                            x: actualPos.x,
+                                            y: actualPos.y,
+                                            text: commentText,
+                                            color: resolvedColor,
+                                            fontSize: commentDefaultSize,
+                                            score: commentScore,
+                                        };
+                                        updateAnnotationsWithHistory([...currentAnnotations, newAnnotation] as Annotation[]);
+                                        setDraggingComment(null);
+                                        setTool('select');
+                                        // Select after short delay to let state settle
+                                        setTimeout(() => setSelectedId(newId), 50);
+                                    }}                            >
+                                    <Stage
+                                        ref={stageRef}
+                                        width={containerRef.current?.clientWidth || window.innerWidth}
+                                        height={containerRef.current?.clientHeight || window.innerHeight}
+                                        scaleX={stageScale}
+                                        scaleY={stageScale}
+                                        x={stagePos.x}
+                                        y={stagePos.y}
+                                        onMouseDown={handleMouseDown}
+                                        onMouseMove={handleMouseMove}
+                                        onMouseUp={handleMouseUp}
+                                        onMouseLeave={handleMouseUp}
+                                        onTouchStart={handleMouseDown}
+                                        onTouchMove={handleTouchMove}
+                                        onTouchEnd={handleTouchEnd}
+                                        onWheel={handleWheel}
+                                        preventDefault={true}
+                                        onClick={(e) => {
+                                            // If we click the stage (empty area), deselect
+                                            if (e.target === e.target.getStage()) {
+                                                setSelectedId(null);
+                                            }
+                                        }}
+                                        onTap={(e) => {
+                                            if (e.target === e.target.getStage()) {
+                                                setSelectedId(null);
+                                            }
+                                        }}
+                                        draggable={tool === 'select'}
+                                        onDragEnd={(e) => {
+                                            if (tool === 'select' && e.target === stageRef.current) {
+                                                setStagePos({ x: e.target.x(), y: e.target.y() });
+                                            }
+                                        }}
+                                        style={{ cursor: tool === 'pen' ? 'crosshair' : tool === 'eraser' ? 'cell' : tool === 'highlighter' ? 'text' : tool === 'text' ? 'text' : tool === 'select' ? 'grab' : 'default' }}
+                                    >
+                                        <Layer key={`${currentStudent.id}_${currentExercise.id}`}>
+                                            {/* Render the background pages */}
+                                            {renderedPages.map((page, i) => (
+                                                <KonvaImage key={i} image={page.img} x={page.xOffset || 0} y={page.yOffset} width={page.width} height={page.height} />
+                                            ))}
 
-                                        {/* Clipping Limit Visualization */}
-                                        {renderedPages.length > 0 && (
-                                            <Rect
-                                                x={0}
-                                                y={0}
-                                                width={(currentExercise.type === 'pages' && (currentExercise as any).spansTwoPages && renderedPages.length > 1)
-                                                    ? renderedPages[0].width + (renderedPages[1].width || 0) + 20
-                                                    : renderedPages[0].width}
-                                                height={renderedPages.reduce((max, p) => Math.max(max, p.yOffset + p.height), 0)}
-                                                stroke="#ef4444"
-                                                strokeWidth={1 / baseScale}
-                                                dash={[15 / baseScale, 10 / baseScale]}                                                opacity={0.6}
-                                                listening={false}
-                                            />
-                                        )}
+                                            {/* Clipping Limit Visualization */}
+                                            {renderedPages.length > 0 && (
+                                                <Rect
+                                                    x={0}
+                                                    y={0}
+                                                    width={(currentExercise.type === 'pages' && (currentExercise as any).spansTwoPages && renderedPages.length > 1)
+                                                        ? renderedPages[0].width + (renderedPages[1].width || 0) + 20
+                                                        : renderedPages[0].width}
+                                                    height={renderedPages.reduce((max, p) => Math.max(max, p.yOffset + p.height), 0)}
+                                                    stroke="#ef4444"
+                                                    strokeWidth={1 / baseScale}
+                                                    dash={[15 / baseScale, 10 / baseScale]} opacity={0.6}
+                                                    listening={false}
+                                                />
+                                            )}
 
-                                        {currentAnnotations.filter(a => a.id !== 'system_score_stamp').map((ann) => {
-                                            const isSelected = ann.id === selectedId;
+                                            {currentAnnotations.filter(a => a.id !== 'system_score_stamp').map((ann) => {
+                                                const isSelected = ann.id === selectedId;
 
-                                            const handleSelect = (e: any) => {
-                                                if (tool === 'select') {
-                                                    e.cancelBubble = true;
-                                                    setSelectedId(ann.id);
-                                                }
-                                            };
+                                                const handleSelect = (e: any) => {
+                                                    if (tool === 'select') {
+                                                        e.cancelBubble = true;
+                                                        setSelectedId(ann.id);
+                                                    }
+                                                };
 
-                                            const handleDbClickText = (e: any) => {
-                                                if (tool === 'select' && ann.type === 'text') {
-                                                    e.cancelBubble = true;
-                                                    setEditingTextNode({
-                                                        id: ann.id,
-                                                        text: ann.text,
-                                                        x: ann.x,
-                                                        y: ann.y
-                                                    });
-                                                }
-                                            };
+                                                const handleDbClickText = (e: any) => {
+                                                    if (tool === 'select' && ann.type === 'text') {
+                                                        e.cancelBubble = true;
+                                                        setEditingTextNode({
+                                                            id: ann.id,
+                                                            text: ann.text,
+                                                            x: ann.x,
+                                                            y: ann.y
+                                                        });
+                                                    }
+                                                };
 
-                                            if (ann.type === 'pen') {
-                                                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                                                for (let i = 0; i < ann.points.length; i += 2) {
-                                                    minX = Math.min(minX, ann.points[i]);
-                                                    minY = Math.min(minY, ann.points[i + 1]);
-                                                    maxX = Math.max(maxX, ann.points[i]);
-                                                    maxY = Math.max(maxY, ann.points[i + 1]);
-                                                }
+                                                if (ann.type === 'pen') {
+                                                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                                                    for (let i = 0; i < ann.points.length; i += 2) {
+                                                        minX = Math.min(minX, ann.points[i]);
+                                                        minY = Math.min(minY, ann.points[i + 1]);
+                                                        maxX = Math.max(maxX, ann.points[i]);
+                                                        maxY = Math.max(maxY, ann.points[i + 1]);
+                                                    }
 
-                                                return (
-                                                    <Group
-                                                        key={ann.id}
-                                                        id={ann.id}
-                                                        draggable={tool === 'select' && isSelected}
-                                                        onDragEnd={(e) => handleDragEnd(e, ann.id)}
-                                                        onClick={handleSelect}
-                                                        onTap={handleSelect}
-                                                        onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
-                                                    >
-                                                        <Line
-                                                            points={ann.points}
-                                                            stroke={ann.color}
-                                                            strokeWidth={(ann.strokeWidth || 2) / baseScale}
-                                                            lineCap="round"
-                                                            lineJoin="round"
-                                                            tension={0.5}
-                                                            opacity={ann.opacity ?? 1}
-                                                            hitStrokeWidth={10 / baseScale}
-                                                        />
-                                                        {isSelected && (
-                                                            <Rect
-                                                                x={minX - 4 / baseScale} y={minY - 4 / baseScale}
-                                                                width={(maxX - minX) + 8 / baseScale} height={(maxY - minY) + 8 / baseScale}
-                                                                stroke="#6366f1" dash={[4 / baseScale, 4 / baseScale]} strokeWidth={1 / baseScale} fill="transparent"
-                                                                listening={false}
+                                                    return (
+                                                        <Group
+                                                            key={ann.id}
+                                                            id={ann.id}
+                                                            draggable={tool === 'select' && isSelected}
+                                                            onDragEnd={(e) => handleDragEnd(e, ann.id)}
+                                                            onClick={handleSelect}
+                                                            onTap={handleSelect}
+                                                            onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
+                                                        >
+                                                            <Line
+                                                                points={ann.points}
+                                                                stroke={ann.color}
+                                                                strokeWidth={(ann.strokeWidth || 2) / baseScale}
+                                                                lineCap="round"
+                                                                lineJoin="round"
+                                                                tension={0.5}
+                                                                opacity={ann.opacity ?? 1}
+                                                                hitStrokeWidth={10 / baseScale}
                                                             />
-                                                        )}
-                                                    </Group>
-                                                );
-                                            } else if (ann.type === 'highlighter') {
-                                                const annFontSize = (ann.fontSize || commentDefaultSize) * FONT_SCALE;
-                                                const labelColor = ann.color.startsWith('rgba')
-                                                    ? ann.color.replace(/[\d.]+\)$/, '1.0)')
-                                                    : ann.color;
-
-                                                const labelX = (ann.labelOffsetX ?? 2);
-                                                const labelY = (ann.labelOffsetY ?? -(annFontSize + 4));
-
-                                                return (
-                                                    <Group
-                                                        key={ann.id}
-                                                        id={ann.id}
-                                                        name="highlighter-group"
-                                                        x={ann.x}
-                                                        y={ann.y}
-                                                        width={ann.width || 100}
-                                                        height={ann.height || 30}
-                                                        draggable={tool === 'select' && isSelected}
-                                                        onClick={handleSelect}
-                                                        onTap={handleSelect}
-                                                        onDragEnd={(e) => handleDragEnd(e, ann.id)}
-                                                        onTransform={handleTransform}
-                                                        onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
-                                                    >
-                                                        <Rect
-                                                            width={ann.width}
-                                                            height={ann.height}
-                                                            fill={ann.color}
-                                                            stroke={isSelected ? 'var(--accent)' : undefined}
-                                                            strokeWidth={isSelected ? 1 / baseScale : 0}
-                                                        />                                                        {highlighterLabelMode === 'individual' && (ann.label || ann.points !== undefined) && (
-                                                            <Text
-                                                                x={labelX}
-                                                                y={labelY}
-                                                                text={[
-                                                                    ann.label || '',
-                                                                    ann.points !== undefined ? (ann.points > 0 ? `+${ann.points}` : `${ann.points}`) : ''
-                                                                ].filter(Boolean).join(' ')}
-                                                                fill={labelColor}
-                                                                fontSize={annFontSize}
-                                                                fontFamily="Caveat"
-                                                                fontStyle="800"
-                                                                letterSpacing={0.5}
-                                                                align="left"
-                                                                draggable={tool === 'select' && isSelected}
-                                                                onDragEnd={(e) => {
-                                                                    e.cancelBubble = true; // Stop group from dragging
-                                                                    const newAnns = currentAnnotations.map(a =>
-                                                                        a.id === ann.id ? {
-                                                                            ...(a as HighlighterAnnotation),
-                                                                            labelOffsetX: e.target.x(),
-                                                                            labelOffsetY: e.target.y()
-                                                                        } : a
-                                                                    );
-                                                                    onUpdateAnnotations(students[studentIdx].id, currentExercise.id, newAnns);
-                                                                }}
-                                                            />
-                                                        )}
-                                                    </Group>
-                                                );
-                                            } else if (ann.type === 'highlighter_legend') {
-                                                if (highlighterLabelMode !== 'legend') return null;
-                                                const usedPresetIds = new Set(currentAnnotations
-                                                    .filter((a): a is HighlighterAnnotation => a.type === 'highlighter' && !!a.presetId)
-                                                    .map(a => a.presetId));
-                                                const usedPresets = presets.filter(p => usedPresetIds.has(p.id));
-                                                if (usedPresets.length === 0) return null;
-
-                                                const legendFontSize = 14 * FONT_SCALE;
-                                                const padding = 10;
-                                                const itemHeight = legendFontSize + 10;
-
-                                                return (
-                                                    <Group
-                                                        key={ann.id}
-                                                        id={ann.id}
-                                                        x={ann.x}
-                                                        y={ann.y}
-                                                        scaleX={ann.scale || 1}
-                                                        scaleY={ann.scale || 1}
-                                                        draggable={tool === 'select' && isSelected}
-                                                        onClick={handleSelect}
-                                                        onTap={handleSelect}
-                                                        onDragEnd={(e) => handleDragEnd(e, ann.id)}
-                                                        onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
-                                                    >
-                                                        {/* Clean selection indicator only when selected */}
-                                                        {isSelected && (
-                                                            <Rect
-                                                                width={250 / baseScale}
-                                                                height={(usedPresets.length * itemHeight + padding) / baseScale}
-                                                                stroke="#6366f1"
-                                                                strokeWidth={1 / baseScale}
-                                                                dash={[5 / baseScale, 5 / baseScale]}
-                                                            />                                                        )}
-                                                        {usedPresets.map((p, pi) => (
-                                                            <Group key={p.id} y={pi * itemHeight}>
+                                                            {isSelected && (
                                                                 <Rect
-                                                                    width={legendFontSize}
-                                                                    height={legendFontSize}
-                                                                    fill={p.color}
-                                                                    cornerRadius={2}
-                                                                    opacity={0.8}
+                                                                    x={minX - 4 / baseScale} y={minY - 4 / baseScale}
+                                                                    width={(maxX - minX) + 8 / baseScale} height={(maxY - minY) + 8 / baseScale}
+                                                                    stroke="#6366f1"
+                                                                    strokeWidth={1 / baseScale}
+                                                                    dash={[4 / baseScale, 4 / baseScale]}
+                                                                    strokeScaleEnabled={true}
+                                                                    listening={false}
                                                                 />
+                                                            )}
+                                                        </Group>
+                                                    );
+                                                } else if (ann.type === 'highlighter') {
+                                                    const annFontSize = (ann.fontSize || commentDefaultSize) * FONT_SCALE;
+                                                    const labelColor = ann.color.startsWith('rgba')
+                                                        ? ann.color.replace(/[\d.]+\)$/, '1.0)')
+                                                        : ann.color;
+
+                                                    const labelX = (ann.labelOffsetX ?? 2);
+                                                    const labelY = (ann.labelOffsetY ?? -(annFontSize + 4));
+
+                                                    return (
+                                                        <Group
+                                                            key={ann.id}
+                                                            id={ann.id}
+                                                            name="highlighter-group"
+                                                            x={ann.x}
+                                                            y={ann.y}
+                                                            width={ann.width || 100}
+                                                            height={ann.height || 30}
+                                                            draggable={tool === 'select' && isSelected}
+                                                            onClick={handleSelect}
+                                                            onTap={handleSelect}
+                                                            onDragEnd={(e) => handleDragEnd(e, ann.id)}
+                                                            onTransform={handleTransform}
+                                                            onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
+                                                        >
+                                                            <Rect
+                                                                width={ann.width}
+                                                                height={ann.height}
+                                                                fill={ann.color}
+                                                                stroke={isSelected ? 'var(--accent)' : undefined}
+                                                                strokeWidth={isSelected ? 1 / baseScale : 0}
+                                                            />                                                        {highlighterLabelMode === 'individual' && (ann.label || ann.points !== undefined) && (
                                                                 <Text
-                                                                    x={legendFontSize + 12}
-                                                                    y={2}
-                                                                    text={p.label}
-                                                                    fontSize={legendFontSize * 0.9}
-                                                                    fill="var(--text-primary)"
+                                                                    x={labelX}
+                                                                    y={labelY}
+                                                                    text={[
+                                                                        ann.label || '',
+                                                                        ann.points !== undefined ? (ann.points > 0 ? `+${ann.points}` : `${ann.points}`) : ''
+                                                                    ].filter(Boolean).join(' ')}
+                                                                    fill={labelColor}
+                                                                    fontSize={annFontSize}
                                                                     fontFamily="Caveat"
+                                                                    fontStyle="800"
+                                                                    letterSpacing={0.5}
+                                                                    align="left"
+                                                                    draggable={tool === 'select' && isSelected}
+                                                                    onDragEnd={(e) => {
+                                                                        e.cancelBubble = true; // Stop group from dragging
+                                                                        const newAnns = currentAnnotations.map(a =>
+                                                                            a.id === ann.id ? {
+                                                                                ...(a as HighlighterAnnotation),
+                                                                                labelOffsetX: e.target.x(),
+                                                                                labelOffsetY: e.target.y()
+                                                                            } : a
+                                                                        );
+                                                                        onUpdateAnnotations(students[studentIdx].id, currentExercise.id, newAnns);
+                                                                    }}
+                                                                />
+                                                            )}
+                                                        </Group>
+                                                    );
+                                                } else if (ann.type === 'highlighter_legend') {
+                                                    if (highlighterLabelMode !== 'legend') return null;
+                                                    const usedPresetIds = new Set(currentAnnotations
+                                                        .filter((a): a is HighlighterAnnotation => a.type === 'highlighter' && !!a.presetId)
+                                                        .map(a => a.presetId));
+                                                    const usedPresets = presets.filter(p => usedPresetIds.has(p.id));
+                                                    if (usedPresets.length === 0) return null;
+
+                                                    const legendFontSize = 14 * FONT_SCALE;
+                                                    const padding = 10;
+                                                    const itemHeight = legendFontSize + 10;
+
+                                                    return (
+                                                        <Group
+                                                            key={ann.id}
+                                                            id={ann.id}
+                                                            x={ann.x}
+                                                            y={ann.y}
+                                                            scaleX={ann.scale || 1}
+                                                            scaleY={ann.scale || 1}
+                                                            draggable={tool === 'select' && isSelected}
+                                                            onClick={handleSelect}
+                                                            onTap={handleSelect}
+                                                            onDragEnd={(e) => handleDragEnd(e, ann.id)}
+                                                            onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
+                                                        >
+                                                            {/* Clean selection indicator only when selected */}
+                                                            {isSelected && (
+                                                                <Rect
+                                                                    width={250 / baseScale}
+                                                                    height={(usedPresets.length * itemHeight + padding) / baseScale}
+                                                                    stroke="#6366f1"
+                                                                    strokeWidth={1 / baseScale}
+                                                                    dash={[5 / baseScale, 5 / baseScale]}
+                                                                />)}
+                                                            {usedPresets.map((p, pi) => (
+                                                                <Group key={p.id} y={pi * itemHeight}>
+                                                                    <Rect
+                                                                        width={legendFontSize}
+                                                                        height={legendFontSize}
+                                                                        fill={p.color}
+                                                                        cornerRadius={2}
+                                                                        opacity={0.8}
+                                                                    />
+                                                                    <Text
+                                                                        x={legendFontSize + 12}
+                                                                        y={2}
+                                                                        text={p.label}
+                                                                        fontSize={legendFontSize * 0.9}
+                                                                        fill="var(--text-primary)"
+                                                                        fontFamily="Caveat"
+                                                                        fontStyle="bold"
+                                                                    />
+                                                                </Group>
+                                                            ))}
+                                                        </Group>
+                                                    );
+                                                } else if (ann.type === 'text') {
+                                                    if (editingTextNode?.id === ann.id) return null;
+
+                                                    const currentFontSize = (ann.fontSize || commentDefaultSize) * FONT_SCALE;
+                                                    return (
+                                                        <Group
+                                                            key={ann.id}
+                                                            id={ann.id}
+                                                            name="text-group"
+                                                            x={ann.x} y={ann.y}
+                                                            width={ann.width || ((ann.text.length * (currentFontSize * 0.6)) + 8)}
+                                                            height={ann.height || (currentFontSize + 8)}
+                                                            draggable={tool === 'select' && isSelected}
+                                                            onClick={handleSelect}
+                                                            onTap={handleSelect}
+                                                            onDblClick={handleDbClickText}
+                                                            onDblTap={handleDbClickText}
+                                                            onDragEnd={(e) => handleDragEnd(e, ann.id)}
+                                                            onTransform={handleTransform}
+                                                            onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
+                                                        >
+                                                            <Text
+                                                                text={ann.text}
+                                                                fill={ann.color}
+                                                                fontSize={currentFontSize}
+                                                                fontFamily="Caveat"
+                                                                width={ann.width || undefined}
+                                                                wrap="word"
+                                                            />
+                                                            {ann.score !== undefined && (
+                                                                <Text
+                                                                    x={0}
+                                                                    y={-(currentFontSize * 0.7)}
+                                                                    text={ann.score > 0 ? `+${ann.score}` : `${ann.score}`}
+                                                                    fill={ann.color}
+                                                                    fontSize={currentFontSize * 0.65}
+                                                                    fontFamily="'Caveat', cursive"
                                                                     fontStyle="bold"
                                                                 />
-                                                            </Group>
-                                                        ))}
-                                                    </Group>
-                                                );
-                                            } else if (ann.type === 'text') {
-                                                if (editingTextNode?.id === ann.id) return null;
-
-                                                const currentFontSize = (ann.fontSize || commentDefaultSize) * FONT_SCALE;
-                                                return (
-                                                    <Group
-                                                        key={ann.id}
-                                                        id={ann.id}
-                                                        name="text-group"
-                                                        x={ann.x} y={ann.y}
-                                                        width={ann.width || ((ann.text.length * (currentFontSize * 0.6)) + 8)}
-                                                        height={ann.height || (currentFontSize + 8)}
-                                                        draggable={tool === 'select' && isSelected}
-                                                        onClick={handleSelect}
-                                                        onTap={handleSelect}
-                                                        onDblClick={handleDbClickText}
-                                                        onDblTap={handleDbClickText}
-                                                        onDragEnd={(e) => handleDragEnd(e, ann.id)}
-                                                        onTransform={handleTransform}
-                                                        onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
-                                                    >
-                                                        <Text
-                                                            text={ann.text}
-                                                            fill={ann.color}
-                                                            fontSize={currentFontSize}
-                                                            fontFamily="Caveat"
-                                                            width={ann.width || undefined}
-                                                            wrap="word"
-                                                        />
-                                                        {ann.score !== undefined && (
-                                                            <Text
-                                                                x={0}
-                                                                y={-(currentFontSize * 0.7)}
-                                                                text={ann.score > 0 ? `+${ann.score}` : `${ann.score}`}
-                                                                fill={ann.color}
-                                                                fontSize={currentFontSize * 0.65}
-                                                                fontFamily="'Caveat', cursive"
-                                                                fontStyle="bold"
-                                                            />
-                                                        )}
-                                                        {isSelected && (
-                                                            <Rect
-                                                                x={-4} y={-4}
-                                                                width={(ann.width || (ann.text.length * (currentFontSize * 0.6))) + 8}
-                                                                height={(ann.height || currentFontSize) + 8}
-                                                                stroke="#6366f1" dash={[4, 4]} strokeWidth={1} fill="transparent"
-                                                            />
-                                                        )}
-                                                    </Group>
-                                                );
-                                            } else if (ann.type === 'image') {
-                                                const img = new Image();
-                                                img.src = ann.dataUrl;
-                                                return (
-                                                    <Group
-                                                        key={ann.id}
-                                                        id={ann.id}
-                                                        x={ann.x} y={ann.y}
-                                                        draggable={tool === 'select' && isSelected}
-                                                        onClick={handleSelect}
-                                                        onTap={handleSelect}
-                                                        onDragEnd={(e) => handleDragEnd(e, ann.id)}
-                                                        onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
-                                                    >
-                                                        <KonvaImage image={img} width={ann.width} height={ann.height} />
-                                                        {isSelected && (
-                                                            <Rect width={ann.width} height={ann.height} stroke="var(--accent)" dash={[5 / baseScale, 5 / baseScale]} strokeWidth={1 / baseScale} />
-                                                        )}
-                                                    </Group>
-                                                );
-                                            }
-                                            return null;
-                                        })}
-                                        {selectedId && !editingTextNode && (
-                                            <Transformer
-                                                ref={transformerRef}
-                                                rotateEnabled={false}
-                                                borderStroke="#6366f1"
-                                                borderStrokeWidth={1 / baseScale}
-                                                anchorFill="white"
-                                                anchorStroke="#6366f1"
-                                                anchorStrokeWidth={1.5 / baseScale}
-                                                anchorSize={5 / baseScale}
-                                                anchorCornerRadius={1 / baseScale}
-                                                padding={5 / baseScale}
-                                                enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right', 'top-center', 'bottom-center']}
-                                            />
-
-                                        )}
-
-                                        {scoreStampData && (
-                                            <Group
-                                                id="system_score_stamp"
-                                                name="stamp-group"
-                                                key={`stamp_${currentExercise.id}_${currentStudent.id}`}
-                                                x={scoreStampData.x}
-                                                y={scoreStampData.y}
-                                                width={500}
-                                                height={scoreStampData.height}
-                                                scaleX={scoreStampData.scale}
-                                                scaleY={scoreStampData.scale}
-                                                draggable={tool === 'select' && selectedId === 'system_score_stamp'}
-                                                onClick={(e) => {
-                                                    if (tool === 'select') {
-                                                        e.cancelBubble = true;
-                                                        setSelectedId('system_score_stamp');
-                                                    }
-                                                }}
-                                                onTap={(e) => {
-                                                    if (tool === 'select') {
-                                                        e.cancelBubble = true;
-                                                        setSelectedId('system_score_stamp');
-                                                    }
-                                                }}
-                                                onDragEnd={(e) => {
-                                                    const node = e.target;
-                                                    setPendingStampChange({
-                                                        x: node.x(),
-                                                        y: node.y(),
-                                                        scale: node.scaleX()
-                                                    });
-                                                }}
-                                                onTransformEnd={(e) => {
-                                                    const node = e.target;
-                                                    const scaleX = node.scaleX();
-                                                    node.scaleX(1);
-                                                    node.scaleY(1);
-                                                    setPendingStampChange({
-                                                        x: node.x(),
-                                                        y: node.y(),
-                                                        scale: scaleX
-                                                    });
-                                                }}
-                                            >
-                                                <Text
-                                                    text={`Nota: ${scoreStampData.scaledExScore} / ${Math.round(scoreStampData.scaledExMax * 100) / 100}`}
-                                                    fontSize={scoreStampSize * 1.5}
-                                                    fontFamily="'Caveat', cursive"
-                                                    fontStyle="bold"
-                                                    fill={(scoreStampData.scaledExScore >= (scoreStampData.scaledExMax / 2)) ? '#10b981' : '#ef4444'}
-                                                    align="left"
-                                                    width={500}
-                                                    wrap="word"
+                                                            )}
+                                                            {isSelected && (
+                                                                <Rect
+                                                                    x={-4} y={-4}
+                                                                    width={(ann.width || (ann.text.length * (currentFontSize * 0.6))) + 8}
+                                                                    height={(ann.height || currentFontSize) + 8}
+                                                                    stroke="#6366f1" dash={[4, 4]} strokeWidth={1} fill="transparent"
+                                                                />
+                                                            )}
+                                                        </Group>
+                                                    );
+                                                } else if (ann.type === 'image') {
+                                                    const img = new Image();
+                                                    img.src = ann.dataUrl;
+                                                    return (
+                                                        <Group
+                                                            key={ann.id}
+                                                            id={ann.id}
+                                                            x={ann.x} y={ann.y}
+                                                            draggable={tool === 'select' && isSelected}
+                                                            onClick={handleSelect}
+                                                            onTap={handleSelect}
+                                                            onDragEnd={(e) => handleDragEnd(e, ann.id)}
+                                                            onTransformEnd={(e) => handleTransformEnd(e, ann.id)}
+                                                        >
+                                                            <KonvaImage image={img} width={ann.width} height={ann.height} />
+                                                            {isSelected && (
+                                                                <Rect width={ann.width} height={ann.height} stroke="var(--accent)" dash={[5 / baseScale, 5 / baseScale]} strokeWidth={1 / baseScale} />
+                                                            )}
+                                                        </Group>
+                                                    );
+                                                }
+                                                return null;
+                                            })}
+                                            {selectedId && !editingTextNode && (
+                                                <Transformer
+                                                    ref={transformerRef}
+                                                    rotateEnabled={false}
+                                                    borderStroke="#6366f1"
+                                                    borderStrokeWidth={1 / baseScale}
+                                                    anchorFill="white"
+                                                    anchorStroke="#6366f1"
+                                                    anchorStrokeWidth={1.5 / baseScale}
+                                                    anchorSize={5 / baseScale}
+                                                    anchorCornerRadius={1 / baseScale}
+                                                    padding={5 / baseScale}
+                                                    enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right', 'top-center', 'bottom-center']}
                                                 />
-                                                {scoreStampData.lines.length > 0 && (
+
+                                            )}
+
+                                            {scoreStampData && (
+                                                <Group
+                                                    id="system_score_stamp"
+                                                    name="stamp-group"
+                                                    key={`stamp_${currentExercise.id}_${currentStudent.id}`}
+                                                    x={scoreStampData.x}
+                                                    y={scoreStampData.y}
+                                                    width={500}
+                                                    height={scoreStampData.height}
+                                                    scaleX={scoreStampData.scale}
+                                                    scaleY={scoreStampData.scale}
+                                                    draggable={tool === 'select' && selectedId === 'system_score_stamp'}
+                                                    onClick={(e) => {
+                                                        if (tool === 'select') {
+                                                            e.cancelBubble = true;
+                                                            setSelectedId('system_score_stamp');
+                                                        }
+                                                    }}
+                                                    onTap={(e) => {
+                                                        if (tool === 'select') {
+                                                            e.cancelBubble = true;
+                                                            setSelectedId('system_score_stamp');
+                                                        }
+                                                    }}
+                                                    onDragEnd={(e) => {
+                                                        const node = e.target;
+                                                        setPendingStampChange({
+                                                            x: node.x(),
+                                                            y: node.y(),
+                                                            scale: node.scaleX()
+                                                        });
+                                                    }}
+                                                    onTransformEnd={(e) => {
+                                                        const node = e.target;
+                                                        const scaleX = node.scaleX();
+                                                        node.scaleX(1);
+                                                        node.scaleY(1);
+                                                        setPendingStampChange({
+                                                            x: node.x(),
+                                                            y: node.y(),
+                                                            scale: scaleX
+                                                        });
+                                                    }}
+                                                >
                                                     <Text
-                                                        y={scoreStampSize * 1.7}
-                                                        text={scoreStampData.lines.join('\n')}
-                                                        fontSize={scoreStampSize * 0.75}
+                                                        text={`Nota: ${scoreStampData.scaledExScore} / ${Math.round(scoreStampData.scaledExMax * 100) / 100}`}
+                                                        fontSize={scoreStampSize * 1.5}
                                                         fontFamily="'Caveat', cursive"
-                                                        fill="rgba(0,0,0,0.6)"
+                                                        fontStyle="bold"
+                                                        fill={(scoreStampData.scaledExScore >= (scoreStampData.scaledExMax / 2)) ? '#10b981' : '#ef4444'}
                                                         align="left"
                                                         width={500}
                                                         wrap="word"
                                                     />
-                                                )}
-                                                {selectedId === 'system_score_stamp' && (
-                                                    <Rect
-                                                        x={-4} y={-4}
-                                                        width={500 + 8}
-                                                        height={scoreStampData.height + 8}
-                                                        stroke="#6366f1" dash={[4, 4]} strokeWidth={1} fill="transparent"
-                                                    />
-                                                )}
-                                            </Group>
-                                        )}
-                                        {/* Editing Text Bounding Box during draw */}
-                                        {isDrawing && tool === 'text' && editingTextNode && (
-                                            <Rect
-                                                x={editingTextNode.x}
-                                                y={editingTextNode.y}
-                                                width={editingTextNode.width}
-                                                height={editingTextNode.height}
-                                                stroke="var(--accent)"
-                                                dash={[5 / stageScale, 5 / stageScale]}
-                                                strokeWidth={2}
-                                            />
-                                        )}
+                                                    {scoreStampData.lines.length > 0 && (
+                                                        <Text
+                                                            y={scoreStampSize * 1.7}
+                                                            text={scoreStampData.lines.join('\n')}
+                                                            fontSize={scoreStampSize * 0.75}
+                                                            fontFamily="'Caveat', cursive"
+                                                            fill="rgba(0,0,0,0.6)"
+                                                            align="left"
+                                                            width={500}
+                                                            wrap="word"
+                                                        />
+                                                    )}
+                                                    {selectedId === 'system_score_stamp' && (
+                                                        <Rect
+                                                            x={-4} y={-4}
+                                                            width={500 + 8}
+                                                            height={scoreStampData.height + 8}
+                                                            stroke="#6366f1" dash={[4, 4]} strokeWidth={1} fill="transparent"
+                                                        />
+                                                    )}
+                                                </Group>
+                                            )}
+                                            {/* Editing Text Bounding Box during draw */}
+                                            {isDrawing && tool === 'text' && editingTextNode && (
+                                                <Rect
+                                                    x={editingTextNode.x}
+                                                    y={editingTextNode.y}
+                                                    width={editingTextNode.width}
+                                                    height={editingTextNode.height}
+                                                    stroke="var(--accent)"
+                                                    dash={[5 / stageScale, 5 / stageScale]}
+                                                    strokeWidth={2}
+                                                />
+                                            )}
 
-                                    </Layer>
-                                </Stage>
+                                        </Layer>
+                                    </Stage>
 
-                                {/* HTML Overlay for Text Editing */}
-                                {editingTextNode && !isDrawing && (
-                                    <textarea
-                                        ref={textareaRef}
-                                        autoFocus
-                                        placeholder="Escriu aquí... (Enter per confirmar, Esc per cancel·lar)"
-                                        value={editingTextNode.text}
-                                        onChange={(e) => setEditingTextNode({ ...editingTextNode, text: e.target.value })}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && !e.shiftKey) {
-                                                e.preventDefault();
-                                                commitTextEdit();
-                                            } else if (e.key === 'Escape') {
-                                                setEditingTextNode(null);
-                                            }
-                                            e.stopPropagation();
-                                        }}
+                                    {/* HTML Overlay for Text Editing */}
+                                    {editingTextNode && !isDrawing && (
+                                        <textarea
+                                            ref={textareaRef}
+                                            autoFocus
+                                            placeholder="Escriu aquí... (Enter per confirmar, Esc per cancel·lar)"
+                                            value={editingTextNode.text}
+                                            onChange={(e) => setEditingTextNode({ ...editingTextNode, text: e.target.value })}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    commitTextEdit();
+                                                } else if (e.key === 'Escape') {
+                                                    setEditingTextNode(null);
+                                                }
+                                                e.stopPropagation();
+                                            }}
+                                            style={{
+                                                position: 'absolute',
+                                                top: (editingTextNode.y * stageScale) + stagePos.y,
+                                                left: (editingTextNode.x * stageScale) + stagePos.x,
+                                                width: editingTextNode.width ? (editingTextNode.width * stageScale) : '200px',
+                                                height: editingTextNode.height ? (editingTextNode.height * stageScale) : '60px',
+                                                margin: 0,
+                                                padding: 0,
+                                                border: '1px dashed var(--accent)',
+                                                background: 'transparent',
+                                                outline: 'none',
+                                                resize: 'none',
+                                                overflow: 'hidden',
+                                                color: defaultTextColor,
+                                                fontSize: `${(activePresetId ? 18 : commentDefaultSize) * FONT_SCALE * stageScale}px`,
+                                                fontFamily: 'Caveat',
+                                                fontWeight: 800,
+                                                lineHeight: 1.0,
+                                                zIndex: 10
+                                            }}
+                                        />
+                                    )}
+                                </div>
+
+                                {/* Floating Zoom Controls - Bottom Center */}
+                                <div className="glass-dark" style={{
+                                    position: 'absolute', bottom: '1.5rem', left: '50%', transform: 'translateX(-50%)', zIndex: 100,
+                                    display: 'flex', alignItems: 'center', gap: '0.75rem',
+                                    padding: '0.4rem 1.25rem', borderRadius: '2.5rem',
+                                    boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    pointerEvents: 'auto'
+                                }}>
+                                    <button
+                                        className="btn-icon"
+                                        style={{ color: 'white', padding: '4px', opacity: 0.8 }}
+                                        onClick={() => applyZoom(stageScale / 1.2)}
+                                        title="Allunyar (-)"
+                                    >
+                                        <Minus size={18} />
+                                    </button>
+
+                                    <input
+                                        type="range"
+                                        min="0.1"
+                                        max="5"
+                                        step="0.1"
+                                        value={stageScale}
+                                        onChange={(e) => applyZoom(parseFloat(e.target.value))}
                                         style={{
-                                            position: 'absolute',
-                                            top: (editingTextNode.y * stageScale) + stagePos.y,
-                                            left: (editingTextNode.x * stageScale) + stagePos.x,
-                                            width: editingTextNode.width ? (editingTextNode.width * stageScale) : '200px',
-                                            height: editingTextNode.height ? (editingTextNode.height * stageScale) : '60px',
-                                            margin: 0,
-                                            padding: 0,
-                                            border: '1px dashed var(--accent)',
-                                            background: 'transparent',
-                                            outline: 'none',
-                                            resize: 'none',
-                                            overflow: 'hidden',
-                                            color: defaultTextColor,
-                                            fontSize: `${(activePresetId ? 18 : commentDefaultSize) * FONT_SCALE * stageScale}px`,
-                                            fontFamily: 'Caveat',
-                                            fontWeight: 800,
-                                            lineHeight: 1.0,
-                                            zIndex: 10
+                                            width: '140px', height: '4px', cursor: 'pointer',
+                                            accentColor: 'var(--accent)'
                                         }}
                                     />
-                                )}
-                            </div>
 
-                            {/* Floating Zoom Controls - Bottom Center */}
-                            <div className="glass-dark" style={{ 
-                                position: 'absolute', bottom: '1.5rem', left: '50%', transform: 'translateX(-50%)', zIndex: 100, 
-                                display: 'flex', alignItems: 'center', gap: '0.75rem', 
-                                padding: '0.4rem 1.25rem', borderRadius: '2.5rem',
-                                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                pointerEvents: 'auto'
-                            }}>
-                                <button 
-                                    className="btn-icon" 
-                                    style={{ color: 'white', padding: '4px', opacity: 0.8 }} 
-                                    onClick={() => applyZoom(stageScale / 1.2)}
-                                    title="Allunyar (-)"
-                                >
-                                    <Minus size={18} />
-                                </button>
-                                
-                                <input 
-                                    type="range" 
-                                    min="0.1" 
-                                    max="5" 
-                                    step="0.1" 
-                                    value={stageScale} 
-                                    onChange={(e) => applyZoom(parseFloat(e.target.value))}
-                                    style={{ 
-                                        width: '140px', height: '4px', cursor: 'pointer',
-                                        accentColor: 'var(--accent)'
-                                    }}
-                                />
-
-                                <button 
-                                    className="btn-icon" 
-                                    style={{ color: 'white', padding: '4px', opacity: 0.8 }} 
-                                    onClick={() => applyZoom(stageScale * 1.2)}
-                                    title="Apropar (+)"
-                                >
-                                    <Plus size={18} />
-                                </button>
-                                
-                                <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', height: '24px', marginLeft: '0.5rem', paddingLeft: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                    <span style={{ color: 'white', fontSize: '0.85rem', fontWeight: 800, minWidth: '45px', textAlign: 'center' }}>
-                                        {Math.round(stageScale * 100)}%
-                                    </span>
-                                    
-                                    <button 
-                                        className="btn-icon" 
-                                        style={{ color: 'white', opacity: 0.7 }} 
-                                        title="Ajustar a la pàgina"
-                                        onClick={() => {
-                                            if (renderedPages.length > 0 && containerRef.current) {
-                                                const totalWidth = ((currentExercise.type === 'pages' && (currentExercise as any).spansTwoPages && renderedPages.length > 1)
-                                                    ? renderedPages[0].width + (renderedPages[1].width || 0) + 20
-                                                    : Math.max(...renderedPages.map(p => p.width)));
-
-                                                const totalHeight = Math.max(...renderedPages.map(p => p.yOffset + p.height));
-
-                                                const containerWidth = containerRef.current.clientWidth;
-                                                const containerHeight = containerRef.current.clientHeight;
-
-                                                const padding = 40;
-                                                const targetScaleX = (containerWidth - padding) / totalWidth;
-                                                const targetScaleY = (containerHeight - padding) / totalHeight;
-                                                const targetScale = Math.min(targetScaleX, targetScaleY, 1.2);
-
-                                                setStageScale(targetScale);
-                    setBaseScale(targetScale);
-                                                setStagePos({
-                                                    x: (containerWidth - (totalWidth * targetScale)) / 2,
-                                                    y: Math.max(20, (containerHeight - (totalHeight * targetScale)) / 2)
-                                                });
-                                            }
-                                        }}
+                                    <button
+                                        className="btn-icon"
+                                        style={{ color: 'white', padding: '4px', opacity: 0.8 }}
+                                        onClick={() => applyZoom(stageScale * 1.2)}
+                                        title="Apropar (+)"
                                     >
-                                        <RefreshCw size={16} />
+                                        <Plus size={18} />
                                     </button>
+
+                                    <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', height: '24px', marginLeft: '0.5rem', paddingLeft: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                        <span style={{ color: 'white', fontSize: '0.85rem', fontWeight: 800, minWidth: '45px', textAlign: 'center' }}>
+                                            {Math.round(stageScale * 100)}%
+                                        </span>
+
+                                        <button
+                                            className="btn-icon"
+                                            style={{ color: 'white', opacity: 0.7 }}
+                                            title="Ajustar a la pàgina"
+                                            onClick={() => {
+                                                if (renderedPages.length > 0 && containerRef.current) {
+                                                    const totalWidth = ((currentExercise.type === 'pages' && (currentExercise as any).spansTwoPages && renderedPages.length > 1)
+                                                        ? renderedPages[0].width + (renderedPages[1].width || 0) + 20
+                                                        : Math.max(...renderedPages.map(p => p.width)));
+
+                                                    const totalHeight = Math.max(...renderedPages.map(p => p.yOffset + p.height));
+
+                                                    const containerWidth = containerRef.current.clientWidth;
+                                                    const containerHeight = containerRef.current.clientHeight;
+
+                                                    const padding = 40;
+                                                    const targetScaleX = (containerWidth - padding) / totalWidth;
+                                                    const targetScaleY = (containerHeight - padding) / totalHeight;
+                                                    const targetScale = Math.min(targetScaleX, targetScaleY, 1.2);
+
+                                                    setStageScale(targetScale);
+                                                    setBaseScale(targetScale);
+                                                    setStagePos({
+                                                        x: (containerWidth - (totalWidth * targetScale)) / 2,
+                                                        y: Math.max(20, (containerHeight - (totalHeight * targetScale)) / 2)
+                                                    });
+                                                }
+                                            }}
+                                        >
+                                            <RefreshCw size={16} />
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                        </>
-                    ) : (
+
+                                {/* Floating Toggle Comments - Bottom Left */}
+                                <div
+                                    onClick={() => setIsCommentBankExpanded(!isCommentBankExpanded)}
+                                    style={{
+                                        position: 'absolute',
+                                        bottom: '1.5rem',
+                                        left: '1.5rem',
+                                        zIndex: 400,
+                                        background: isCommentBankExpanded ? 'var(--bg-secondary)' : 'var(--accent)',
+                                        border: '1px solid var(--border)',
+                                        padding: '0.4rem 1rem',
+                                        borderRadius: '2rem',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        color: isCommentBankExpanded ? 'var(--text-secondary)' : 'white',
+                                        fontSize: '0.65rem',
+                                        fontWeight: 800,
+                                        boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+                                        transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        pointerEvents: 'auto'
+                                    }}
+                                >
+                                    {isCommentBankExpanded ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                                    <span>{isCommentBankExpanded ? 'AMAGA COMENTARIS' : 'MOSTRA COMENTARIS'}</span>
+                                </div>
+                            </>
+                        ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '1.5rem', padding: '2rem', textAlign: 'center' }}>
                                 <div style={{ background: 'var(--bg-secondary)', padding: '2rem', borderRadius: '1rem', border: '1px solid var(--border)', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', maxWidth: '400px' }}>
                                     <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
@@ -2619,26 +2765,31 @@ export default function CorrectionView({
 
                     {/* Bottom Comment Bar (Inside Center Column so Sidebars reach bottom) */}
                     <div className="bottom-comment-bank" style={{
-                        height: `${commentBankHeight}px`,
+                        height: isCommentBankExpanded ? `${commentBankHeight}px` : '0px',
                         background: 'var(--bg-secondary)',
-                        padding: '0.4rem 0.75rem',
+                        padding: isCommentBankExpanded ? '0.4rem 0.75rem' : '0',
                         display: 'flex',
                         gap: '0.75rem',
                         flexShrink: 0,
                         position: 'relative',
-                        zIndex: 20,
-                        boxShadow: 'none'
+                        zIndex: 200,
+                        transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+                        overflow: isCommentBankExpanded ? 'visible' : 'hidden',
+                        borderTop: isCommentBankExpanded ? '1px solid var(--border)' : 'none'
                     }}>
+
                         {/* Resize handle */}
-                        <div
-                            onMouseDown={startResizing}
-                            style={{
-                                position: 'absolute', top: '-3px', left: 0, right: 0, height: '6px',
-                                cursor: 'ns-resize', zIndex: 30, display: 'flex', justifyContent: 'center'
-                            }}
-                        >
-                            <div style={{ width: '32px', height: '3px', background: 'var(--border)', borderRadius: '2px', marginTop: '2px', opacity: 0.5 }} />
-                        </div>
+                        {isCommentBankExpanded && (
+                            <div
+                                onMouseDown={startResizing}
+                                style={{
+                                    position: 'absolute', top: '-3px', left: 0, right: 0, height: '6px',
+                                    cursor: 'ns-resize', zIndex: 30, display: 'flex', justifyContent: 'center'
+                                }}
+                            >
+                                <div style={{ width: '32px', height: '3px', background: 'var(--border)', borderRadius: '2px', marginTop: '2px', opacity: 0.5 }} />
+                            </div>
+                        )}
                         {/* Left: Comment Bank Sections (Now Horizontal) */}
                         <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: '1rem', overflowY: 'hidden', paddingRight: '0.5rem' }}>
                             {/* Generals */}
@@ -3270,132 +3421,56 @@ export default function CorrectionView({
                                     LLEGENDA
                                 </button>
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                                {presets.map(preset => {
-                                    const isEditing = editingPresetId === preset.id;
-                                    const isSelected = tool === 'highlighter' && activePresetId === preset.id;
 
-                                    if (isEditing) {
-                                        return (
-                                            <div key={preset.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.3rem', background: 'var(--bg-secondary)', borderRadius: '0.3rem', border: '1px solid var(--accent)' }}>
-                                                <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
-                                                    <input
-                                                        type="text"
-                                                        value={presetForm.label || ''}
-                                                        onChange={e => setPresetForm({ ...presetForm, label: e.target.value })}
-                                                        style={{ flex: 1, background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '2px', padding: '0.1rem 0.2rem', fontSize: '0.7rem' }}
-                                                        placeholder="Label"
-                                                    />
-                                                </div>
-                                                <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                    <input
-                                                        type="color"
-                                                        value={tempColor}
-                                                        onChange={e => {
-                                                            setTempColor(e.target.value);
-                                                            const hex = e.target.value;
-                                                            const r = parseInt(hex.slice(1, 3), 16);
-                                                            const g = parseInt(hex.slice(3, 5), 16);
-                                                            const b = parseInt(hex.slice(5, 7), 16);
-                                                            setPresetForm({ ...presetForm, color: `rgba(${r}, ${g}, ${b}, 0.4)` });
-                                                        }}
-                                                        style={{ width: '18px', height: '18px', padding: 0, border: 'none', cursor: 'pointer' }}
-                                                    />
-                                                    <NumericInput
-                                                        value={presetForm.points || 0}
-                                                        onChange={val => setPresetForm({ ...presetForm, points: val })}
-                                                        style={{ width: '40px' }}
-                                                    />
-                                                    <div style={{ display: 'flex', gap: '0.2rem' }}>
-                                                        <button onClick={() => setEditingPresetId(null)} className="btn-icon" style={{ padding: '0.1rem' }}><X size={10} /></button>
-                                                        <button
-                                                            onClick={() => {
-                                                                setPresets(presets.map(p => p.id === preset.id ? { ...p, ...presetForm } as PresetHighlighter : p));
-                                                                setEditingPresetId(null);
-                                                            }}
-                                                            className="btn-icon" style={{ padding: '0.1rem', color: 'var(--success)' }}
-                                                        ><Check size={10} /></button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    }
+                            {/* Highlighter Sections: Generals vs Exercise */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                                {/* Generals */}
+                                <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.5rem' }}>
+                                        <div style={{ width: '3px', height: '9px', background: 'var(--accent)', borderRadius: '1px' }} />
+                                        <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Generals</span>
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                        {presets.filter(p => !p.exerciseId).map(preset => renderPresetHighlighter(preset))}
+                                        <button
+                                            onClick={() => {
+                                                const newPreset: PresetHighlighter = { id: `preset_${Date.now()}`, label: 'Nou Highlight', color: 'rgba(239, 68, 68, 0.4)', points: -0.5 };
+                                                onUpdatePresets([...presets, newPreset]);
+                                                setEditingPresetId(newPreset.id);
+                                                setPresetForm(newPreset);
+                                                setTempColor('#ef4444');
+                                            }}
+                                            style={{ marginTop: '0.4rem', background: 'none', border: '1px dashed var(--border)', borderRadius: '4px', color: 'var(--text-secondary)', fontSize: '0.65rem', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                        >
+                                            <Plus size={10} /> Afegir General
+                                        </button>
+                                    </div>
+                                </div>
 
-                                    return (
-                                        <div key={preset.id} style={{ display: 'flex', alignItems: 'center', gap: '0.15rem' }}>
-                                            <button
-                                                onClick={() => {
-                                                    setTool('highlighter');
-                                                    setActivePresetId(preset.id);
-                                                    setSelectedId(null);
-                                                }}
-                                                style={{
-                                                    flex: 1,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'space-between',
-                                                    padding: '0.2rem 0.4rem',
-                                                    background: isSelected ? 'var(--bg-tertiary)' : 'transparent',
-                                                    border: `1px solid ${isSelected ? preset.color.replace('0.4', '1.0') : 'var(--border)'}`,
-                                                    borderRadius: '0.3rem',
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.1s ease',
-                                                    textAlign: 'left',
-                                                    minWidth: 0
-                                                }}
-                                            >
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', minWidth: 0, flex: 1 }}>
-                                                    <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: preset.color, flexShrink: 0 }} />
-                                                    <span style={{ color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: isSelected ? 700 : 400, fontSize: '0.7rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{preset.label}</span>
-                                                </div>
-                                                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: preset.points > 0 ? 'var(--success)' : (preset.points < 0 ? 'var(--danger)' : 'var(--text-secondary)'), marginLeft: '4px', flexShrink: 0 }}>
-                                                    {preset.points > 0 ? `+${preset.points}` : preset.points}
-                                                </span>
-                                            </button>
-                                            <div style={{ display: 'flex', gap: '0.05rem' }}>
-                                                <button
-                                                    onClick={() => {
-                                                        setEditingPresetId(preset.id);
-                                                        setPresetForm(preset);
-                                                        setTempColor(preset.color.startsWith('rgba') ?
-                                                            '#' + preset.color.match(/\d+/g)!.slice(0, 3).map(x => parseInt(x).toString(16).padStart(2, '0')).join('') :
-                                                            preset.color
-                                                        );
-                                                    }}
-                                                    style={{ padding: '0.15rem', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }} title="Edit"
-                                                >
-                                                    <Pencil size={10} />
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        setPresets(presets.filter(p => p.id !== preset.id));
-                                                        if (activePresetId === preset.id) setActivePresetId(null);
-                                                    }}
-                                                    style={{ padding: '0.15rem', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5, color: 'var(--danger)' }} title="Delete"
-                                                >
-                                                    <Trash2 size={10} />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                                <button
-                                    onClick={() => {
-                                        const newPreset: PresetHighlighter = { id: `preset_${Date.now()}`, label: 'New Error', color: 'rgba(239, 68, 68, 0.4)', points: -0.5 };
-                                        setPresets([...presets, newPreset]);
-                                        setEditingPresetId(newPreset.id);
-                                        setPresetForm(newPreset);
-                                        setTempColor('#ef4444');
-                                    }}
-                                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', padding: '0.2rem', background: 'transparent', border: '1px dashed var(--border)', borderRadius: '0.3rem', color: 'var(--text-secondary)', cursor: 'pointer', marginTop: '0.1rem' }}
-                                >
-                                    <Plus size={10} />
-                                    <span style={{ fontSize: '0.65rem', fontWeight: 500 }}>Afegir</span>
-                                </button>
+                                {/* Per Exercici */}
+                                <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.5rem' }}>
+                                        <div style={{ width: '3px', height: '9px', background: '#f59e0b', borderRadius: '1px' }} />
+                                        <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Ex. {exerciseIdx + 1}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                        {presets.filter(p => p.exerciseId === currentExercise.id).map(preset => renderPresetHighlighter(preset))}
+                                        <button
+                                            onClick={() => {
+                                                const newPreset: PresetHighlighter = { id: `preset_${Date.now()}`, label: 'Highlight Exercici', color: 'rgba(239, 68, 68, 0.4)', points: -0.5, exerciseId: currentExercise.id };
+                                                onUpdatePresets([...presets, newPreset]);
+                                                setEditingPresetId(newPreset.id);
+                                                setPresetForm(newPreset);
+                                                setTempColor('#ef4444');
+                                            }}
+                                            style={{ marginTop: '0.4rem', background: 'none', border: '1px dashed var(--border)', borderRadius: '4px', color: 'var(--text-secondary)', fontSize: '0.65rem', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                        >
+                                            <Plus size={10} /> Afegir a l'Ex. {exerciseIdx + 1}
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-
-
                     </div>
                 </div>
             </div>

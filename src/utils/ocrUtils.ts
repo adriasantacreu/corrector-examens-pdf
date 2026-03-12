@@ -9,7 +9,7 @@ export async function extractTextFromRegion(
     pdfDoc: PDFDocumentProxy,
     pageIndex: number,
     region: { x: number; y: number; width: number; height: number },
-    scale: number = 3.5
+    scale: number = 4.5
 ): Promise<string> {
     try {
         const fullCanvas = document.createElement('canvas');
@@ -37,9 +37,21 @@ export async function extractTextFromRegion(
             0, 0, sW, sH
         );
 
-        const dataUrl = cropCanvas.toDataURL('image/jpeg', 1.0);
+        // Apply a quick threshold to the canvas for better OCR results
+        const ctx2 = cropCanvas.getContext('2d')!;
+        const imageData = ctx2.getImageData(0, 0, sW, sH);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            const gray = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+            // Thresholding: darker than 150 becomes black, else white
+            const val = gray < 150 ? 0 : 255;
+            data[i] = data[i + 1] = data[i + 2] = val;
+        }
+        ctx2.putImageData(imageData, 0, 0);
 
-        const { data: { text } } = await Tesseract.recognize(dataUrl, 'cat+spa+eng', {
+        const processedDataUrl = cropCanvas.toDataURL('image/png');
+
+        const { data: { text } } = await Tesseract.recognize(processedDataUrl, 'cat+spa+eng', {
             logger: m => console.log('OCR Progress:', m)
         });
 

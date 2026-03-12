@@ -24,6 +24,7 @@ interface Props {
     onAuthorize: () => void;
     onLogout: () => void;
     onRunOCR: () => void;
+    onResetOCR: () => void;
     ocrCompleted: boolean;
     showAlert: (title: string, message: string, options?: { checkboxLabel?: string, initialCheckboxState?: boolean, onCheckboxChange?: (checked: boolean) => void }) => void;
     showConfirm: (title: string, message: string, onConfirm: () => void) => void;
@@ -98,9 +99,9 @@ const NumericInput = forwardRef<HTMLInputElement, {
     );
 });
 
-function RegionItem({ 
-    region, fill, stroke, label, mode, isTransforming, baseScale, 
-    setSelectedId, setTransformingId, setExercises, bgImage, stageRef 
+function RegionItem({
+    region, fill, stroke, label, mode, isTransforming, baseScale,
+    setSelectedId, setTransformingId, setExercises, bgImage, stageRef
 }: any) {
     const shapeRef = useRef<any>(null);
     const labelGroupRef = useRef<any>(null);
@@ -114,28 +115,8 @@ function RegionItem({
     }, [isTransforming]);
 
     const handleTransform = () => {
-        if (shapeRef.current && labelGroupRef.current && bgImage) {
+        if (shapeRef.current && labelGroupRef.current) {
             const node = shapeRef.current;
-            
-            // Strict clamping during transform
-            const absX = region.x + node.x();
-            const absY = region.y + node.y();
-            const scaleX = node.scaleX();
-            const scaleY = node.scaleY();
-            const w = node.width() * scaleX;
-            const h = node.height() * scaleY;
-
-            if (absX < 0) node.x(-region.x);
-            if (absY < 0) node.y(-region.y);
-            if (absX + w > bgImage.width) {
-                const maxW = bgImage.width - absX;
-                node.scaleX(maxW / node.width());
-            }
-            if (absY + h > bgImage.height) {
-                const maxH = bgImage.height - absY;
-                node.scaleY(maxH / node.height());
-            }
-
             // Make the label follow the rectangle's local x,y during transform
             labelGroupRef.current.x(node.x());
             labelGroupRef.current.y(node.y());
@@ -147,14 +128,14 @@ function RegionItem({
             const node = shapeRef.current;
             const sX = node.scaleX();
             const sY = node.scaleY();
-            
+
             // Calculate new absolute coordinates
             const newX = region.x + node.x();
             const newY = region.y + node.y();
             const newW = Math.max(10, node.width() * sX);
             const newH = Math.max(10, node.height() * sY);
 
-            setExercises((prev: any) => prev.map((ex: any) => 
+            setExercises((prev: any) => prev.map((ex: any) =>
                 ex.id === region.id ? { ...ex, x: newX, y: newY, width: newW, height: newH } : ex
             ));
 
@@ -163,7 +144,7 @@ function RegionItem({
             node.y(0);
             node.scaleX(1);
             node.scaleY(1);
-            
+
             if (labelGroupRef.current) {
                 labelGroupRef.current.x(0);
                 labelGroupRef.current.y(0);
@@ -172,16 +153,16 @@ function RegionItem({
     };
 
     return (
-        <Group 
-            draggable={mode === 'select'} 
-            onClick={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }} 
+        <Group
+            draggable={mode === 'select'}
+            onClick={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }}
 
 
-            onTap={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }} 
+            onTap={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }}
             onDblClick={(e) => { if (mode === 'select') { e.cancelBubble = true; setTransformingId(region.id); setSelectedId(region.id); } }}
             onDblTap={(e) => { if (mode === 'select') { e.cancelBubble = true; setTransformingId(region.id); setSelectedId(region.id); } }}
-            onDragEnd={(e) => { e.cancelBubble = true; const x = e.target.x(); const y = e.target.y(); setExercises((prev: any) => prev.map((ex: any) => ex.id === region.id ? { ...ex, x, y } : ex)); e.target.x(0); e.target.y(0); }} 
-            x={region.x} 
+            onDragEnd={(e) => { e.cancelBubble = true; const x = e.target.x(); const y = e.target.y(); setExercises((prev: any) => prev.map((ex: any) => ex.id === region.id ? { ...ex, x, y } : ex)); e.target.x(0); e.target.y(0); }}
+            x={region.x}
             y={region.y}
             dragBoundFunc={(pos) => {
                 if (!bgImage || !stageRef.current) return pos;
@@ -196,34 +177,37 @@ function RegionItem({
                 return { x: localX * scale + stage.x(), y: localY * scale + stage.y() };
             }}
         >
-            <Rect 
+            <Rect
                 ref={shapeRef}
-                name="regionRect" 
-                x={0} y={0} 
-                width={region.width} height={region.height} 
-                fill={fill} stroke={stroke} 
-                strokeWidth={1.5 / baseScale} 
-                strokeScaleEnabled={true} 
+                name="regionRect"
+                x={0} y={0}
+                width={region.width} height={region.height}
+                fill={fill} stroke={stroke}
+                strokeWidth={1 / baseScale}
+                strokeScaleEnabled={true}
             />
-            
+
             <Group ref={labelGroupRef}>
                 <Rect x={0} y={-(24 / baseScale)} width={Math.max(80, label.length * 8 + 16) / baseScale} height={24 / baseScale} fill={stroke} />
                 <Text text={label} fill="white" x={8 / baseScale} y={-(18 / baseScale)} fontSize={12 / baseScale} fontStyle="bold" />
             </Group>
 
             {isTransforming && mode === 'select' && (
-                <Transformer 
+                <Transformer
                     ref={trRef}
-                    rotateEnabled={false} 
-                    keepRatio={false} 
+                    rotateEnabled={false}
+                    keepRatio={false}
                     onTransform={handleTransform}
                     onTransformEnd={handleTransformEnd}
                     borderStrokeWidth={1 / baseScale}
                     anchorSize={5 / baseScale}
                     padding={5 / baseScale}
-                    boundBoxFunc={(oldBox, newBox) => { 
+                    boundBoxFunc={(oldBox, newBox) => {
                         if (!bgImage) return oldBox;
-                        
+
+                        // Minimum size check
+                        if (Math.abs(newBox.width) < 5 || Math.abs(newBox.height) < 5) return oldBox;
+
                         const minX = -region.x;
                         const minY = -region.y;
                         const maxX = bgImage.width - region.x;
@@ -231,10 +215,6 @@ function RegionItem({
 
                         let resultBox = { ...newBox };
 
-                        // 1. Minimum size check (must happen before clamping to avoid logic loops)
-                        if (newBox.width < 5 || newBox.height < 5) return oldBox;
-
-                        // 2. Individual Edge Clamping
                         // Left
                         if (resultBox.x < minX) {
                             resultBox.width += (resultBox.x - minX);
@@ -254,22 +234,22 @@ function RegionItem({
                             resultBox.height = maxY - resultBox.y;
                         }
 
-                        // 3. Final safety check for min size after clamping
+                        // Final safety check for min size after clamping
                         if (resultBox.width < 5 || resultBox.height < 5) return oldBox;
 
-                        return resultBox; 
-                    }} 
+                        return resultBox;
+                    }}
                 />
             )}
         </Group>
     );
 }
 
-export default function TemplateDefiner({ 
-    pdfDoc, pagesPerExam, initialExercises, 
+export default function TemplateDefiner({
+    pdfDoc, pagesPerExam, initialExercises,
     currentFileName, sessionAlias, onUpdateSessionAlias,
     onComplete, onBack, theme, onToggleTheme,
-    accessToken, userEmail, userPicture, onAuthorize, onLogout, onRunOCR, ocrCompleted,
+    accessToken, userEmail, userPicture, onAuthorize, onLogout, onRunOCR, onResetOCR, ocrCompleted,
     showAlert, showConfirm
 }: Props) {
     const [currentPageIndex, setCurrentPageIndex] = useState(0);
@@ -365,7 +345,7 @@ export default function TemplateDefiner({
         if (!stage) return;
         const oldScale = stage.scaleX();
         const safeScale = Math.min(10, Math.max(0.1, newScale));
-        
+
         let targetPointer = pointer;
         if (!targetPointer) {
             if (containerRef.current) {
@@ -386,7 +366,7 @@ export default function TemplateDefiner({
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             const isInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-            
+
             if (e.key === 'Enter' || e.key === 'Escape') {
                 setTransformingId(null);
                 setSelectedId(null);
@@ -395,7 +375,7 @@ export default function TemplateDefiner({
             }
 
             if (isInput) return;
-            
+
             const key = e.key.toLowerCase();
             if (key === 'v') setMode('select');
             if (key === 'r') setMode('draw');
@@ -506,14 +486,14 @@ export default function TemplateDefiner({
             if (width > 20 && height > 20) {
                 const finalType = mode === 'draw' ? 'crop' : mode === 'draw_ocr' ? 'ocr_name' : 'total_score';
                 const newId = `ex_${Date.now()}`;
-                
+
                 const typeCount = exercises.filter(e => e.type === (finalType === 'crop' ? 'crop' : finalType)).length + 1;
                 const defaultName = finalType === 'crop' ? `Exercici de retall ${typeCount}` : finalType === 'ocr_name' ? 'Àrea del nom' : 'Nota final';
 
-                const finalCrop: any = { 
-                    id: newId, 
-                    type: finalType, 
-                    pageIndex: currentPageIndex, 
+                const finalCrop: any = {
+                    id: newId,
+                    type: finalType,
+                    pageIndex: currentPageIndex,
                     x, y, width, height,
                     name: defaultName,
                     maxScore: 1,
@@ -559,13 +539,13 @@ export default function TemplateDefiner({
             if (ex.id === exId) {
                 const items = ex.rubric || [];
                 const newItems = [...items, { id: `r_${Date.now()}`, label: '', points: 0 }];
-                
+
                 if (autoDistributeMap[exId] && ex.maxScore !== undefined) {
                     let perItem = Math.round((ex.maxScore / newItems.length) * 100) / 100;
                     if ((ex.scoringMode ?? 'from_zero') === 'from_max') perItem = -perItem;
                     return { ...ex, rubric: newItems.map(r => ({ ...r, points: perItem })) };
                 }
-                
+
                 return { ...ex, rubric: newItems };
             }
             return ex;
@@ -580,14 +560,14 @@ export default function TemplateDefiner({
         setExercises(prev => prev.map(ex => {
             if (ex.id === exId) {
                 const items = (ex.rubric || []).map(item => item.id === itemId ? { ...item, ...updates } : item);
-                
+
                 const sum = items.reduce((s, i) => s + (i.points || 0), 0);
                 const isExceeded = (ex.scoringMode ?? 'from_zero') === 'from_max' ? Math.abs(sum) > (ex.maxScore ?? 0) : sum > (ex.maxScore ?? 0);
-                
+
                 if (ex.maxScore !== undefined && isExceeded && !warnedExceeded[exId] && !suppressMaxScoreWarning) {
                     setWarnedExceeded(prevMap => ({ ...prevMap, [exId]: true }));
                     showAlert(
-                        "Atenció", 
+                        "Atenció",
                         "La suma dels criteris de la rúbrica supera la nota màxima de l'exercici.",
                         {
                             checkboxLabel: "No tornis a mostrar en aquesta sessió",
@@ -645,7 +625,7 @@ export default function TemplateDefiner({
                     {currentFileName && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1 }}>
                             {isEditingHeaderAlias ? (
-                                <input 
+                                <input
                                     autoFocus
                                     defaultValue={sessionAlias || currentFileName}
                                     onKeyDown={(e) => {
@@ -662,10 +642,10 @@ export default function TemplateDefiner({
                                         onUpdateSessionAlias(val === currentFileName ? null : (val || null));
                                         setIsEditingHeaderAlias(false);
                                     }}
-                                    style={{ 
-                                        background: 'var(--bg-secondary)', 
-                                        color: 'var(--text-primary)', 
-                                        border: '1px solid var(--accent)', 
+                                    style={{
+                                        background: 'var(--bg-secondary)',
+                                        color: 'var(--text-primary)',
+                                        border: '1px solid var(--accent)',
                                         borderRadius: '0.4rem',
                                         padding: '0.2rem 0.6rem',
                                         fontSize: '1rem',
@@ -675,11 +655,11 @@ export default function TemplateDefiner({
                                     }}
                                 />
                             ) : (
-                                <div 
+                                <div
                                     onClick={() => setIsEditingHeaderAlias(true)}
-                                    style={{ 
-                                        cursor: 'pointer', 
-                                        display: 'flex', 
+                                    style={{
+                                        cursor: 'pointer',
+                                        display: 'flex',
                                         flexDirection: 'column',
                                         justifyContent: 'center',
                                         minWidth: 0,
@@ -692,13 +672,13 @@ export default function TemplateDefiner({
                                     title="Clic per canviar el nom de la sessió"
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
-                                        <span style={{ 
-                                            fontSize: '1.1rem', 
-                                            fontWeight: 800, 
-                                            color: 'var(--text-primary)', 
-                                            opacity: 0.8, 
-                                            overflow: 'hidden', 
-                                            textOverflow: 'ellipsis', 
+                                        <span style={{
+                                            fontSize: '1.1rem',
+                                            fontWeight: 800,
+                                            color: 'var(--text-primary)',
+                                            opacity: 0.8,
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
                                             whiteSpace: 'nowrap'
                                         }}>
                                             {sessionAlias || currentFileName}
@@ -723,8 +703,8 @@ export default function TemplateDefiner({
                         {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
                     </button>
                     {accessToken ? (
-                        <div style={{ 
-                            display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.4rem 1rem', 
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.4rem 1rem',
                             background: 'var(--bg-tertiary)', borderRadius: '2rem', border: '1px solid var(--border)',
                             height: '42px'
                         }}>
@@ -742,11 +722,11 @@ export default function TemplateDefiner({
                             <span style={{ fontWeight: 700 }}>Connecta</span>
                         </button>
                     )}
-                    <button 
-                        className="btn btn-primary" 
+                    <button
+                        className="btn btn-primary"
                         onClick={() => (exercises.some(e => e.type === 'crop' || e.type === 'pages')) && onComplete(exercises)}
                         disabled={!exercises.some(e => e.type === 'crop' || e.type === 'pages')}
-                        style={{ 
+                        style={{
                             opacity: !exercises.some(e => e.type === 'crop' || e.type === 'pages') ? 0.5 : 1,
                             cursor: !exercises.some(e => e.type === 'crop' || e.type === 'pages') ? 'not-allowed' : 'pointer'
                         }}
@@ -766,55 +746,55 @@ export default function TemplateDefiner({
                     </div>
 
                     <div style={{ padding: '1rem 0', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem', borderBottom: '1px solid var(--border)' }}>
-                        <button 
-                            className={`btn-icon ${mode === 'draw' ? 'active' : ''}`} 
-                            onClick={() => setMode('draw')} 
+                        <button
+                            className={`btn-icon ${mode === 'draw' ? 'active' : ''}`}
+                            onClick={() => setMode('draw')}
                             title="Dibuixar zona (R)"
                             style={{ width: '100%', height: '40px', borderRadius: '0.5rem', position: 'relative' }}
                         >
                             <Square size={20} />
                             <span style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '0.5rem', fontWeight: 900, opacity: 0.5 }}>R</span>
                         </button>
-                        <button 
-                            className="btn-icon" 
-                            onClick={addFullPageExercise} 
+                        <button
+                            className="btn-icon"
+                            onClick={addFullPageExercise}
                             title="Afegir pàgina completa (P)"
                             style={{ width: '100%', height: '40px', borderRadius: '0.5rem', position: 'relative' }}
                         >
                             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <FileText size={20} />
-                                <div style={{ 
-                                    position: 'absolute', top: '-2px', right: '-2px', 
-                                    background: 'var(--accent)', 
+                                <div style={{
+                                    position: 'absolute', top: '-2px', right: '-2px',
+                                    background: 'var(--accent)',
                                     color: 'white',
-                                    borderRadius: '50%', width: '12px', height: '12px', 
+                                    borderRadius: '50%', width: '12px', height: '12px',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                                     fontSize: '10px', fontWeight: 900, border: '1px solid currentColor'
                                 }}>+</div>
                             </div>
                             <span style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '0.5rem', fontWeight: 900, opacity: 0.5 }}>P</span>
                         </button>
-                        <button 
-                            className={`btn-icon ${mode === 'draw_ocr' ? 'active' : ''}`} 
-                            onClick={() => setMode('draw_ocr')} 
+                        <button
+                            className={`btn-icon ${mode === 'draw_ocr' ? 'active' : ''}`}
+                            onClick={() => setMode('draw_ocr')}
                             title="Àrea de Nom OCR (N)"
                             style={{ width: '100%', height: '40px', borderRadius: '0.5rem', color: mode === 'draw_ocr' ? '#eab308' : undefined, position: 'relative' }}
                         >
                             <TextSelect size={20} />
                             <span style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '0.5rem', fontWeight: 900, opacity: 0.5 }}>N</span>
                         </button>
-                        <button 
-                            className={`btn-icon ${mode === 'draw_total_score' ? 'active' : ''}`} 
-                            onClick={() => setMode('draw_total_score')} 
+                        <button
+                            className={`btn-icon ${mode === 'draw_total_score' ? 'active' : ''}`}
+                            onClick={() => setMode('draw_total_score')}
                             title="Àrea de Nota Final (S)"
                             style={{ width: '100%', height: '40px', borderRadius: '0.5rem', color: mode === 'draw_total_score' ? '#ef4444' : undefined, position: 'relative' }}
                         >
                             <Award size={20} />
                             <span style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '0.5rem', fontWeight: 900, opacity: 0.5 }}>S</span>
                         </button>
-                        <button 
-                            className={`btn-icon ${mode === 'select' ? 'active' : ''}`} 
-                            onClick={() => setMode('select')} 
+                        <button
+                            className={`btn-icon ${mode === 'select' ? 'active' : ''}`}
+                            onClick={() => setMode('select')}
                             title="Seleccionar / Moure (V)"
                             style={{ width: '100%', height: '40px', borderRadius: '0.5rem', position: 'relative' }}
                         >
@@ -831,14 +811,34 @@ export default function TemplateDefiner({
                                     const reg = exercises.find(ex => ex.type === type);
                                     const label = type === 'ocr_name' ? '👤 Àrea del nom' : '📊 Àrea de la nota';
                                     const color = type === 'ocr_name' ? '#eab308' : '#ef4444';
+
+                                    // Cast to respective types for property access
+                                    const ocrReg = type === 'ocr_name' ? reg as import('../types').OcrNameRegion : null;
+
                                     return (
                                         <div key={type} style={{ padding: '0.5rem 0.75rem', borderRadius: '0.5rem', background: reg ? `${color}10` : 'var(--bg-tertiary)', border: reg ? `1px solid ${color}` : '1px dashed var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: reg ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{label}</span>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: reg ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{label}</span>
+                                                    {ocrReg && (
+                                                        <label style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer', background: 'var(--bg-primary)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border)' }}>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={!!ocrReg.skipOcr}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.checked;
+                                                                    updateExerciseMeta(ocrReg.id, { skipOcr: val });
+                                                                    if (val) onResetOCR();
+                                                                }}
+                                                            />
+                                                            No fer OCR
+                                                        </label>
+                                                    )}
+                                                </div>
                                                 {reg && <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>Pàg. {(reg as any).pageIndex + 1}</span>}
                                             </div>
                                             <div style={{ display: 'flex', gap: '4px' }}>
-                                                {reg && type === 'ocr_name' && (
+                                                {ocrReg && !ocrReg.skipOcr && (
                                                     <button onClick={onRunOCR} className="btn-icon" style={{ color: ocrCompleted ? 'var(--success)' : 'var(--accent)', padding: '4px' }} title="Tornar a executar OCR">
                                                         <RefreshCw size={14} className={!ocrCompleted ? 'spin' : ''} />
                                                     </button>
@@ -861,9 +861,9 @@ export default function TemplateDefiner({
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                                     <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic', margin: 0 }}>Cap exercici definit.</p>
                                     {exercises.length > 0 && (
-                                        <div style={{ 
-                                            fontSize: '0.75rem', color: 'var(--danger)', fontWeight: 700, 
-                                            background: 'var(--danger-light)', padding: '0.6rem 0.8rem', 
+                                        <div style={{
+                                            fontSize: '0.75rem', color: 'var(--danger)', fontWeight: 700,
+                                            background: 'var(--danger-light)', padding: '0.6rem 0.8rem',
                                             borderRadius: '0.5rem', border: '1px solid var(--danger)',
                                             lineHeight: '1.2', animation: 'pulse 2s infinite'
                                         }}>
@@ -882,12 +882,12 @@ export default function TemplateDefiner({
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
                                                         <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: ex.type === 'pages' ? 'var(--accent)' : '#6366f1', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 800 }}>{idx + 1}</div>
                                                         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: '2px' }}>
-                                                            <input 
-                                                                ref={(el) => { inputRefs.current[ex.id] = el; }} 
-                                                                type="text" 
-                                                                value={ex.name || ''} 
-                                                                placeholder="Nom exercici" 
-                                                                onChange={e => updateExerciseMeta(ex.id, { name: e.target.value })} 
+                                                            <input
+                                                                ref={(el) => { inputRefs.current[ex.id] = el; }}
+                                                                type="text"
+                                                                value={ex.name || ''}
+                                                                placeholder="Nom exercici"
+                                                                onChange={e => updateExerciseMeta(ex.id, { name: e.target.value })}
                                                                 onKeyDown={(e) => {
                                                                     if (e.key === 'Enter' || e.key === 'Tab') {
                                                                         e.preventDefault();
@@ -895,8 +895,8 @@ export default function TemplateDefiner({
                                                                         maxScoreRefs.current[ex.id]?.select();
                                                                     }
                                                                 }}
-                                                                style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', padding: '2px 0', fontSize: '0.85rem', fontWeight: 700 }} 
-                                                                onClick={e => e.stopPropagation()} 
+                                                                style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', padding: '2px 0', fontSize: '0.85rem', fontWeight: 700 }}
+                                                                onClick={e => e.stopPropagation()}
                                                             />
                                                         </div>
                                                     </div>
@@ -906,10 +906,10 @@ export default function TemplateDefiner({
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                                         <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)' }}>MÀX:</span>
-                                                        <NumericInput 
+                                                        <NumericInput
                                                             ref={(el) => { maxScoreRefs.current[ex.id] = el; }}
-                                                            value={ex.maxScore} 
-                                                            onChange={val => updateExerciseMeta(ex.id, { maxScore: val })} 
+                                                            value={ex.maxScore}
+                                                            onChange={val => updateExerciseMeta(ex.id, { maxScore: val })}
                                                             onKeyDown={(e) => {
                                                                 if (e.key === 'Enter' || e.key === 'Tab') {
                                                                     e.preventDefault();
@@ -917,26 +917,26 @@ export default function TemplateDefiner({
                                                                     e.currentTarget.blur();
                                                                 }
                                                             }}
-                                                            style={{ width: '45px', textAlign: 'center', fontWeight: 800 }} 
+                                                            style={{ width: '45px', textAlign: 'center', fontWeight: 800 }}
                                                         />
                                                     </div>
-                                                    
+
                                                     <div style={{ flex: 1 }}></div>
-                                                    
+
                                                     {/* Segmented Control / Switch for Scoring Mode */}
                                                     <div style={{ display: 'flex', background: 'var(--bg-primary)', borderRadius: '0.5rem', padding: '2px', border: '1px solid var(--border)', height: '28px', width: '90px' }}>
-                                                        <button 
+                                                        <button
                                                             onClick={(e) => { e.stopPropagation(); updateExerciseMeta(ex.id, { scoringMode: 'from_zero' }); }}
-                                                            style={{ 
+                                                            style={{
                                                                 flex: 1, padding: 0, fontSize: '0.6rem', fontWeight: 800, borderRadius: '0.35rem', border: 'none', cursor: 'pointer',
                                                                 background: (ex.scoringMode ?? 'from_max') === 'from_zero' ? 'var(--accent)' : 'transparent',
                                                                 color: (ex.scoringMode ?? 'from_max') === 'from_zero' ? 'white' : 'var(--text-secondary)',
                                                                 transition: 'all 0.2s ease'
                                                             }}
                                                         >0 ↑</button>
-                                                        <button 
+                                                        <button
                                                             onClick={(e) => { e.stopPropagation(); updateExerciseMeta(ex.id, { scoringMode: 'from_max' }); }}
-                                                            style={{ 
+                                                            style={{
                                                                 flex: 1, padding: 0, fontSize: '0.6rem', fontWeight: 800, borderRadius: '0.35rem', border: 'none', cursor: 'pointer',
                                                                 background: (ex.scoringMode ?? 'from_max') === 'from_max' ? 'var(--accent)' : 'transparent',
                                                                 color: (ex.scoringMode ?? 'from_max') === 'from_max' ? 'white' : 'var(--text-secondary)',
@@ -952,10 +952,10 @@ export default function TemplateDefiner({
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                             <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-secondary)' }}>PÀGINES ASSIGNADES</span>
                                                             {!ex.pageIndexes.includes(currentPageIndex) && (
-                                                                <button 
-                                                                    onClick={(e) => { 
-                                                                        e.stopPropagation(); 
-                                                                        updateExerciseMeta(ex.id, { pageIndexes: [...ex.pageIndexes, currentPageIndex].sort((a,b) => a-b) });
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        updateExerciseMeta(ex.id, { pageIndexes: [...ex.pageIndexes, currentPageIndex].sort((a, b) => a - b) });
                                                                     }}
                                                                     className="btn btn-secondary"
                                                                     style={{ fontSize: '0.6rem', height: '20px', padding: '0 0.4rem' }}
@@ -968,8 +968,8 @@ export default function TemplateDefiner({
                                                             {ex.pageIndexes.map(pIdx => (
                                                                 <div key={pIdx} style={{ display: 'flex', alignItems: 'center', gap: '2px', background: 'var(--bg-tertiary)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border)' }}>
                                                                     <span style={{ fontSize: '0.65rem', fontWeight: 700 }}>P{pIdx + 1}</span>
-                                                                    <button 
-                                                                        onClick={(e) => { 
+                                                                    <button
+                                                                        onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             if (ex.pageIndexes.length > 1) {
                                                                                 updateExerciseMeta(ex.id, { pageIndexes: ex.pageIndexes.filter(p => p !== pIdx) });
@@ -984,7 +984,7 @@ export default function TemplateDefiner({
                                                                 </div>
                                                             ))}
                                                         </div>
-                                                        <div 
+                                                        <div
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 updateExerciseMeta(ex.id, { spansTwoPages: !ex.spansTwoPages });
@@ -1005,10 +1005,10 @@ export default function TemplateDefiner({
                                                         <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Criteris de rúbrica</span>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                                             <label style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.2rem', cursor: 'pointer' }} onClick={e => e.stopPropagation()}>
-                                                                <input 
-                                                                    type="checkbox" 
-                                                                    checked={autoDistributeMap[ex.id] !== false} 
-                                                                    onChange={(e) => setAutoDistributeMap(prev => ({ ...prev, [ex.id]: e.target.checked }))} 
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={autoDistributeMap[ex.id] !== false}
+                                                                    onChange={(e) => setAutoDistributeMap(prev => ({ ...prev, [ex.id]: e.target.checked }))}
                                                                 />
                                                                 Auto-repartir
                                                             </label>
@@ -1017,21 +1017,21 @@ export default function TemplateDefiner({
                                                             </button>
                                                         </div>
                                                     </div>
-                                                    
+
                                                     {(ex.rubric || []).map((item) => (
                                                         <div key={item.id} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                                                            <input 
-                                                                type="text" 
-                                                                value={item.label} 
-                                                                placeholder="Concepte..." 
+                                                            <input
+                                                                type="text"
+                                                                value={item.label}
+                                                                placeholder="Concepte..."
                                                                 onChange={e => updateRubricItem(ex.id, item.id, { label: e.target.value })}
                                                                 style={{ flex: 1, fontSize: '0.7rem', padding: '0.2rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
                                                                 onClick={e => e.stopPropagation()}
                                                             />
-                                                            <NumericInput 
-                                                                value={item.points} 
-                                                                onChange={val => updateRubricItem(ex.id, item.id, { points: val || 0 })} 
-                                                                style={{ width: '40px', textAlign: 'center' }} 
+                                                            <NumericInput
+                                                                value={item.points}
+                                                                onChange={val => updateRubricItem(ex.id, item.id, { points: val || 0 })}
+                                                                style={{ width: '40px', textAlign: 'center' }}
                                                             />
                                                             <button onClick={(e) => { e.stopPropagation(); removeRubricItem(ex.id, item.id); }} style={{ padding: '4px', color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}>
                                                                 <X size={14} />
@@ -1061,52 +1061,52 @@ export default function TemplateDefiner({
                     </div>
 
                     {/* Floating Zoom Controls - Bottom Center */}
-                    <div className="glass-dark" style={{ 
-                        position: 'absolute', bottom: '1.5rem', zIndex: 10, 
-                        display: 'flex', alignItems: 'center', gap: '0.75rem', 
+                    <div className="glass-dark" style={{
+                        position: 'absolute', bottom: '1.5rem', zIndex: 10,
+                        display: 'flex', alignItems: 'center', gap: '0.75rem',
                         padding: '0.4rem 1.25rem', borderRadius: '2.5rem',
                         boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
                         border: '1px solid rgba(255,255,255,0.1)'
                     }}>
-                        <button 
-                            className="btn-icon" 
-                            style={{ color: 'white', padding: '4px', opacity: 0.8 }} 
+                        <button
+                            className="btn-icon"
+                            style={{ color: 'white', padding: '4px', opacity: 0.8 }}
                             onClick={() => applyZoom(stageScale / 1.2)}
                             title="Allunyar (-)"
                         >
                             <Minus size={18} />
                         </button>
-                        
-                        <input 
-                            type="range" 
-                            min="0.1" 
-                            max="5" 
-                            step="0.1" 
-                            value={stageScale} 
+
+                        <input
+                            type="range"
+                            min="0.1"
+                            max="5"
+                            step="0.1"
+                            value={stageScale}
                             onChange={(e) => applyZoom(parseFloat(e.target.value))}
-                            style={{ 
+                            style={{
                                 width: '140px', height: '4px', cursor: 'pointer',
                                 accentColor: 'var(--accent)'
                             }}
                         />
 
-                        <button 
-                            className="btn-icon" 
-                            style={{ color: 'white', padding: '4px', opacity: 0.8 }} 
+                        <button
+                            className="btn-icon"
+                            style={{ color: 'white', padding: '4px', opacity: 0.8 }}
                             onClick={() => applyZoom(stageScale * 1.2)}
                             title="Apropar (+)"
                         >
                             <Plus size={18} />
                         </button>
-                        
+
                         <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', height: '24px', marginLeft: '0.5rem', paddingLeft: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
                             <span style={{ color: 'white', fontSize: '0.85rem', fontWeight: 800, minWidth: '45px', textAlign: 'center' }}>
                                 {Math.round(stageScale * 100)}%
                             </span>
-                            
-                            <button 
-                                className="btn-icon" 
-                                style={{ color: 'white', opacity: 0.7 }} 
+
+                            <button
+                                className="btn-icon"
+                                style={{ color: 'white', opacity: 0.7 }}
                                 title="Ajustar a la pàgina"
                                 onClick={() => {
                                     if (bgImage && containerRef.current) {
@@ -1132,14 +1132,14 @@ export default function TemplateDefiner({
 
                     {bgImage ? (
                         <div className="canvas-container" style={{ width: '100%', height: '100%', cursor: mode !== 'select' ? 'crosshair' : 'grab' }}>
-                            <Stage 
-                                ref={stageRef} 
-                                width={containerRef.current?.clientWidth || 800} 
-                                height={containerRef.current?.clientHeight || 600} 
-                                scaleX={stageScale} 
-                                scaleY={stageScale} 
-                                x={stagePos.x} 
-                                y={stagePos.y} 
+                            <Stage
+                                ref={stageRef}
+                                width={containerRef.current?.clientWidth || 800}
+                                height={containerRef.current?.clientHeight || 600}
+                                scaleX={stageScale}
+                                scaleY={stageScale}
+                                x={stagePos.x}
+                                y={stagePos.y}
                                 onMouseDown={(e) => {
                                     // Exit transformation/selection if clicking on stage or background image
                                     const clickedOnEmpty = e.target === stageRef.current || e.target.name() === 'bgImage';
@@ -1148,14 +1148,14 @@ export default function TemplateDefiner({
                                         setSelectedId(null);
                                     }
                                     handleMouseDown(e);
-                                }} 
-                                onMouseMove={handleMouseMove} 
-                                onMouseUp={handleMouseUp} 
-                                onWheel={handleWheel} 
-                                onTouchStart={handleMouseDown} 
-                                onTouchMove={handleTouchMove} 
-                                onTouchEnd={handleTouchEnd} 
-                                draggable={mode === 'select' && !transformingId} 
+                                }}
+                                onMouseMove={handleMouseMove}
+                                onMouseUp={handleMouseUp}
+                                onWheel={handleWheel}
+                                onTouchStart={handleMouseDown}
+                                onTouchMove={handleTouchMove}
+                                onTouchEnd={handleTouchEnd}
+                                draggable={mode === 'select' && !transformingId}
                                 onDragEnd={(e) => { if (e.target === stageRef.current) { setStagePos({ x: e.target.x(), y: e.target.y() }); } }}
                             >
                                 <Layer>

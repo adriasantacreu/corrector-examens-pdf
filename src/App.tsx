@@ -17,15 +17,15 @@ const SESSION_PREFIX = 'flowgrading_session_';
 const GLOBAL_KEY = 'flowgrading_global';
 
 interface DialogState {
-    show: boolean;
-    title: string;
-    message: string;
-    type: 'alert' | 'confirm';
-    onConfirm?: () => void;
-    onCancel?: () => void;
-    checkboxLabel?: string;
-    checkboxChecked?: boolean;
-    onCheckboxChange?: (checked: boolean) => void;
+  show: boolean;
+  title: string;
+  message: string;
+  type: 'alert' | 'confirm';
+  onConfirm?: () => void;
+  onCancel?: () => void;
+  checkboxLabel?: string;
+  checkboxChecked?: boolean;
+  onCheckboxChange?: (checked: boolean) => void;
 }
 
 function getLevenshteinDistance(a: string, b: string): number {
@@ -44,7 +44,7 @@ function calculateProgress(students: Student[], exercises: ExerciseDef[], annota
   if (!students.length || !exercises.length) return 0;
   const gradable = exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages');
   if (!gradable.length) return 0;
-  
+
   let completed = 0;
   students.forEach(s => {
     gradable.forEach(ex => {
@@ -60,8 +60,23 @@ function App() {
   const [mode, setMode] = useState<AppMode>('upload');
   const [theme, setTheme] = useState<'light' | 'dark'>(globalSaved.theme || 'light');
   const [cloudSyncPDF, setCloudSyncPDF] = useState<boolean>(globalSaved.cloudSyncPDF ?? true);
+  const [globalPresets, setGlobalPresets] = useState<import('./types').PresetHighlighter[]>(() => {
+    const saved = globalSaved.presets || [];
+    if (saved.length >= 3) return saved;
+    return [
+      { id: 'h1', label: 'Error Procediment', color: 'rgba(239, 68, 68, 0.4)', points: -0.5 },
+      { id: 'h2', label: 'Error Càlcul', color: 'rgba(249, 115, 22, 0.4)', points: -0.25 },
+      { id: 'h3', label: 'Concepte Erroni', color: 'rgba(225, 29, 72, 0.4)', points: -1.0 },
+    ];
+  });
   const [cloudSyncSolution, setCloudSyncSolution] = useState<boolean>(true);
   const [currentFileName, setCurrentFileName] = useState<string | null>(globalSaved.lastActiveFileName || null);
+  const [globalCommentBank, setGlobalCommentBank] = useState<import('./types').AnnotationComment[]>(globalSaved.commentBank || [
+    { text: 'Excel·lent!', score: 1, colorMode: 'score' },
+    { text: 'Molt bé', score: 0.5, colorMode: 'score' },
+    { text: 'Revisa aquest concepte', score: -0.5, colorMode: 'neutral' },
+    { text: 'Falta justificar la resposta', score: -1, colorMode: 'neutral' },
+  ]);
   const [sessionAlias, setSessionAlias] = useState<string | null>(null);
   const [pendingSession, setPendingSession] = useState<any | null>(null);
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
@@ -73,23 +88,19 @@ function App() {
   const [isDraggingSolution, setIsDraggingSolution] = useState(false);
   const [numPages, setNumPages] = useState<number>(0);
   const [solutionPageIndexes, setSolutionPageIndexes] = useState<number[]>([]);
-  
+
   const [tempPagesPerExam, setTempPagesPerExam] = useState<string>('1');
   const [tempNumStudents, setTempNumStudents] = useState<string>('0');
-  
+
   const [pagesPerExam, setPagesPerExam] = useState<number | ''>(1);
   const [students, setStudents] = useState<Student[]>([]);
   const [exercises, setExercises] = useState<ExerciseDef[]>([]);
   const [annotations, setAnnotations] = useState<AnnotationStore>({});
   const [rubricCounts, setRubricCounts] = useState<RubricCountStore>({});
   const [targetMaxScore, setTargetMaxScore] = useState<number>(10);
+  const [presets, setPresets] = useState<import('./types').PresetHighlighter[]>([]);
   const [studentList, setStudentList] = useState<string>('');
-  const [commentBank, setCommentBank] = useState<import('./types').AnnotationComment[]>([
-    { text: 'Excel·lent!', score: 1, colorMode: 'score' },
-    { text: 'Molt bé', score: 0.5, colorMode: 'score' },
-    { text: 'Revisa aquest concepte', score: -0.5, colorMode: 'neutral' },
-    { text: 'Falta justificar la resposta', score: -1, colorMode: 'neutral' },
-  ]);
+  const [commentBank, setCommentBank] = useState<import('./types').AnnotationComment[]>([]);
   const [studentIdx, setStudentIdx] = useState<number>(0);
   const [exerciseIdx, setExerciseIdx] = useState<number>(0);
   const [recentSessions, setRecentSessions] = useState<any[]>([]);
@@ -122,7 +133,7 @@ function App() {
   const [dialog, setDialog] = useState<DialogState>({ show: false, title: '', message: '', type: 'alert' });
 
   const showAlert = (title: string, message: string, options?: { checkboxLabel?: string, initialCheckboxState?: boolean, onCheckboxChange?: (checked: boolean) => void }) => {
-    setDialog({ 
+    setDialog({
       show: true, title, message, type: 'alert',
       checkboxLabel: options?.checkboxLabel,
       checkboxChecked: options?.initialCheckboxState,
@@ -176,17 +187,17 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     const existing = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
-    localStorage.setItem(GLOBAL_KEY, JSON.stringify({ 
-        theme, accessToken, userEmail, userPicture, 
-        lastActiveFileName: currentFileName || existing.lastActiveFileName,
-        cloudSyncPDF
+    localStorage.setItem(GLOBAL_KEY, JSON.stringify({
+      theme, accessToken, userEmail, userPicture,
+      lastActiveFileName: currentFileName || existing.lastActiveFileName,
+      cloudSyncPDF
     }));
   }, [theme, accessToken, userEmail, userPicture, currentFileName, cloudSyncPDF]);
 
   const findLastSession = async () => {
     const globalData = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
     let targetFile = globalData.lastActiveFileName;
-    
+
     // If no last active, try to find the newest session from all localStorage
     if (!targetFile) {
       const keys = [];
@@ -222,7 +233,7 @@ function App() {
         try {
           const content = JSON.parse(localStorage.getItem(k)!);
           localSessions.push({ ...content, isCloud: false });
-        } catch(e) {}
+        } catch (e) { }
       }
     }
 
@@ -231,9 +242,9 @@ function App() {
         const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=mimeType='application/json' and parents in 'appDataFolder' and name contains '.json'&spaces=appDataFolder&fields=files(id,name,modifiedTime)`, {
           headers: { 'Authorization': `Bearer ${accessToken}` }
         });
-        
+
         if (res.status === 401) { handleLogout(); return; }
-        
+
         const data = await res.json();
         const files = data.files || [];
         const cloudSessions = [];
@@ -244,9 +255,9 @@ function App() {
             });
             const content = await contentRes.json();
             cloudSessions.push({ ...content, isCloud: true, lastModified: file.modifiedTime, cloudId: file.id });
-          } catch(e) {}
+          } catch (e) { }
         }
-        
+
         const combined = [...localSessions];
         cloudSessions.forEach(cs => {
           const idx = combined.findIndex(ls => ls.fileName === cs.fileName);
@@ -255,12 +266,12 @@ function App() {
             combined[idx] = cs;
           }
         });
-        setRecentSessions(combined.sort((a,b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()));
+        setRecentSessions(combined.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()));
       } catch (e) {
-        setRecentSessions(localSessions.sort((a,b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()));
+        setRecentSessions(localSessions.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()));
       }
     } else {
-      setRecentSessions(localSessions.sort((a,b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()));
+      setRecentSessions(localSessions.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()));
     }
   };
 
@@ -276,7 +287,7 @@ function App() {
 
     // 2. Remove from localStorage
     localStorage.removeItem(SESSION_PREFIX + session.fileName);
-    
+
     // 3. Remove PDF from IndexedDB
     try {
       const { deletePDFLocal } = await import('./utils/dbUtils');
@@ -323,7 +334,7 @@ function App() {
             setUserPicture(data.picture);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
 
       fetch('https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE', { headers: { 'Authorization': `Bearer ${accessToken}` } })
         .then(r => {
@@ -333,7 +344,7 @@ function App() {
         .then(data => {
           if (data && data.courses) setCourses(data.courses);
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [accessToken]);
 
@@ -346,29 +357,52 @@ function App() {
       });
       const searchData = await searchRes.json();
       const existingFile = searchData.files && searchData.files[0];
-      
+
       const boundary = '-------314159265358979323846';
       const metadata = { name: `${fileName}.json`, parents: ['appDataFolder'] };
       const multipartRequestBody = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(data)}\r\n--${boundary}--`;
-      
+
       await fetch(existingFile ? `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart` : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
         method: existingFile ? 'PATCH' : 'POST',
         headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
         body: multipartRequestBody
       });
-    } catch (err) {}
+    } catch (err) { }
   };
 
   useEffect(() => {
     if (currentFileName && mode !== 'upload') {
       const state = {
-        fileName: currentFileName, sessionAlias, mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, lastStudentIdx: studentIdx, lastExerciseIdx: exerciseIdx, lastModified: new Date().toISOString(), studentEmailMap, progress: calculateProgress(students, exercises, annotations),
+        fileName: currentFileName, sessionAlias, mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, presets, lastStudentIdx: studentIdx, lastExerciseIdx: exerciseIdx, lastModified: new Date().toISOString(), studentEmailMap, progress: calculateProgress(students, exercises, annotations),
         classroomStudents, ocrCompleted, solutionFileName, solutionPageIndexes
-      };      localStorage.setItem(SESSION_PREFIX + currentFileName, JSON.stringify(state));
+      };
+      localStorage.setItem(SESSION_PREFIX + currentFileName, JSON.stringify(state));
+
+      // Update Global Comment Bank with "General" comments (those without exerciseId)
+      const generalComments = commentBank.filter(c => !c.exerciseId);
+      if (JSON.stringify(generalComments) !== JSON.stringify(globalCommentBank)) {
+        setGlobalCommentBank(generalComments);
+      }
+
+      // Update Global Presets with "General" presets
+      const generalPresets = presets.filter(p => !p.exerciseId);
+      if (JSON.stringify(generalPresets) !== JSON.stringify(globalPresets)) {
+        setGlobalPresets(generalPresets);
+      }
+
       const timeout = setTimeout(() => saveToDrive(currentFileName, state), 3000);
       return () => clearTimeout(timeout);
     }
-  }, [mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, studentIdx, exerciseIdx, classroomStudents, ocrCompleted, solutionFileName, solutionPageIndexes, sessionAlias]);
+  }, [mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, presets, studentIdx, exerciseIdx, classroomStudents, ocrCompleted, solutionFileName, solutionPageIndexes, sessionAlias]);
+
+  // Sync global settings
+  useEffect(() => {
+    const globalState = {
+      theme, cloudSyncPDF, lastActiveFileName: currentFileName, accessToken, userEmail, userPicture,
+      commentBank: globalCommentBank, presets: globalPresets
+    };
+    localStorage.setItem(GLOBAL_KEY, JSON.stringify(globalState));
+  }, [theme, cloudSyncPDF, currentFileName, accessToken, userEmail, userPicture, globalCommentBank, globalPresets]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -432,9 +466,16 @@ function App() {
   const loadSessionFromFile = async (file: File, forceReset: boolean = false) => {
     setIsProcessing(true); setProcessingMessage('Carregant PDF...');
     const saved = forceReset ? null : JSON.parse(localStorage.getItem(SESSION_PREFIX + file.name) || 'null');
-    
+
     if (saved) {
-      setPagesPerExam(saved.pagesPerExam); setExercises(saved.exercises); setStudents(saved.students); setAnnotations(saved.annotations); setRubricCounts(saved.rubricCounts); setTargetMaxScore(saved.targetMaxScore); setStudentList(saved.studentList); setCommentBank(saved.commentBank); setStudentIdx(saved.lastStudentIdx || 0); setExerciseIdx(saved.lastExerciseIdx || 0); setStudentEmailMap(saved.studentEmailMap || {});
+      // Merge session comments/presets with global ones
+      const sessionComments = saved.commentBank || [];
+      const mergedComments = [...globalCommentBank, ...sessionComments.filter((c: any) => c.exerciseId)];
+
+      const sessionPresets = saved.presets || [];
+      const mergedPresets = [...globalPresets, ...sessionPresets.filter((p: any) => p.exerciseId)];
+
+      setPagesPerExam(saved.pagesPerExam); setExercises(saved.exercises); setStudents(saved.students); setAnnotations(saved.annotations); setRubricCounts(saved.rubricCounts); setTargetMaxScore(saved.targetMaxScore); setStudentList(saved.studentList); setCommentBank(mergedComments); setPresets(mergedPresets); setStudentIdx(saved.lastStudentIdx || 0); setExerciseIdx(saved.lastExerciseIdx || 0); setStudentEmailMap(saved.studentEmailMap || {});
       setClassroomStudents(saved.classroomStudents || []);
       setOcrCompleted(saved.ocrCompleted || false);
       setTempPagesPerExam(String(saved.pagesPerExam));
@@ -450,13 +491,9 @@ function App() {
       }
     } else {
       // CRITICAL FIX: Reset all state to prevent data-crossing from previous sessions
-      setPagesPerExam(1); setExercises([]); setStudents([]); setAnnotations({}); setRubricCounts({}); setTargetMaxScore(10); setStudentList(''); 
-      setCommentBank([
-        { text: 'Excel·lent!', score: 1, colorMode: 'score' },
-        { text: 'Molt bé', score: 0.5, colorMode: 'score' },
-        { text: 'Revisa aquest concepte', score: -0.5, colorMode: 'neutral' },
-        { text: 'Falta justificar la resposta', score: -1, colorMode: 'neutral' },
-      ]);
+      setPagesPerExam(1); setExercises([]); setStudents([]); setAnnotations({}); setRubricCounts({}); setTargetMaxScore(10); setStudentList('');
+      setCommentBank([...globalCommentBank]);
+      setPresets([...globalPresets]);
       setStudentIdx(0); setExerciseIdx(0); setStudentEmailMap({});
       setClassroomStudents([]); setOcrCompleted(false); setTempPagesPerExam('1');
       setSolutionFileName(null); setSolutionPageIndexes([]); setSolutionPdfDoc(null);
@@ -468,7 +505,7 @@ function App() {
       const calcStudentsCount = saved ? (saved.students.length || Math.floor(doc.numPages / (saved.pagesPerExam || 1))) : doc.numPages;
       setTempNumStudents(String(calcStudentsCount));
       if (!saved) setTempPagesPerExam('1');
-      
+
       setMode(saved?.mode || 'setup'); setCurrentFileName(file.name);
       storePDFLocal(file.name, file).catch(console.error);
     } catch { showAlert("Error", "Error carregant el fitxer PDF."); } finally { setIsProcessing(false); }
@@ -478,8 +515,8 @@ function App() {
     const existingSession = localStorage.getItem(SESSION_PREFIX + file.name);
     if (existingSession) {
       showConfirm(
-        "Sessió existent", 
-        `Hem trobat dades guardades per a '${file.name}'. Vols continuar amb la correcció o començar de zero (s'esborraran les dades anteriors)?`, 
+        "Sessió existent",
+        `Hem trobat dades guardades per a '${file.name}'. Vols continuar amb la correcció o començar de zero (s'esborraran les dades anteriors)?`,
         () => loadSessionFromFile(file, false)
       );
       // Hack to allow "Començar de zero" on cancel
@@ -513,7 +550,7 @@ function App() {
 
   const handleSelectSession = async (s: any) => {
     let f = await getPDFLocal(s.fileName);
-    
+
     // If not in local IndexedDB, try to get it from Drive
     if (!f && accessToken) {
       setIsProcessing(true);
@@ -546,7 +583,7 @@ function App() {
     if (f) {
       loadSessionFromFile(f);
     } else {
-      setCurrentFileName(s.fileName); 
+      setCurrentFileName(s.fileName);
       showAlert("Fitxer no trobat", "No hem trobat el PDF en aquest ordinador ni al teu Drive. Si us plau, torna'l a carregar.");
       const input = document.createElement('input');
       input.type = 'file';
@@ -571,10 +608,10 @@ function App() {
       setClassroomStudents(cs);
       const names = cs.map((c: any) => c.profile?.name?.fullName || c.profile?.emailAddress || 'Desconegut');
       setStudentList(Array.from(new Set([...studentList.split('\n'), ...names])).filter(n => n && n.trim()).join('\n'));
-      const newMap = { ...studentEmailMap }; 
-      cs.forEach((c: any) => { 
+      const newMap = { ...studentEmailMap };
+      cs.forEach((c: any) => {
         if (c.profile?.name?.fullName) {
-          newMap[c.profile.name.fullName] = c.profile.emailAddress; 
+          newMap[c.profile.name.fullName] = c.profile.emailAddress;
         }
       });
       setStudentEmailMap(newMap);
@@ -582,41 +619,46 @@ function App() {
         const { updatedStudents } = matchClassroomStudents(students, cs);
         setStudents(updatedStudents);
       }
-    } catch(err) { 
+    } catch (err) {
       console.error(err);
-      showAlert("Error Classroom", "Error sincronitzant amb Classroom. Revisa els permisos."); 
+      showAlert("Error Classroom", "Error sincronitzant amb Classroom. Revisa els permisos.");
     } finally { setIsProcessing(false); }
   };
 
   const runOCR = async (customExercises?: ExerciseDef[]) => {
     const targetEx = customExercises || exercises;
-    const ocr = targetEx.find(e => e.type === 'ocr_name');
+    const ocr = targetEx.find(e => e.type === 'ocr_name') as import('./types').OcrNameRegion;
     if (!ocr || !pdfDoc) return;
 
     setIsProcessing(true);
-    setProcessingMessage('Llegint noms amb OCR...');
+    setProcessingMessage(ocr.skipOcr ? 'Retallant noms...' : 'Llegint noms amb OCR...');
     const { extractTextFromRegion, extractImageFromRegion } = await import('./utils/ocrUtils');
     const updated = [...students];
     const known = studentList.split('\n').map(n => n.trim()).filter(n => n.length > 0);
-    
+
     for (let i = 0; i < updated.length; i++) {
-      setProcessingMessage(`OCR alumne ${i + 1} de ${updated.length}...`);
+      setProcessingMessage(ocr.skipOcr ? `Retallant nom alumne ${i + 1} de ${updated.length}...` : `OCR alumne ${i + 1} de ${updated.length}...`);
       try {
         const pIdx = updated[i].pageIndexes[Math.min(ocr.pageIndex, updated[i].pageIndexes.length - 1)] || updated[i].pageIndexes[0];
-        const text = await extractTextFromRegion(pdfDoc, pIdx, ocr);
         const crop = await extractImageFromRegion(pdfDoc, pIdx, ocr);
-        let name = text.trim();
-        if (known.length > 0 && name.length > 2) {
-          let best = '', min = 999;
-          known.forEach(kn => {
-            const d = getLevenshteinDistance(name.toLowerCase(), kn.toLowerCase());
-            if (d < min) { min = d; best = kn; }
-          });
-          if (min < best.length * 0.4) {
-            name = best;
-            if (studentEmailMap[best]) updated[i].email = studentEmailMap[best];
+
+        let name = updated[i].name;
+        if (!ocr.skipOcr) {
+          const text = await extractTextFromRegion(pdfDoc, pIdx, ocr);
+          name = text.trim();
+          if (known.length > 0 && name.length > 2) {
+            let best = '', min = 999;
+            known.forEach(kn => {
+              const d = getLevenshteinDistance(name.toLowerCase(), kn.toLowerCase());
+              if (d < min) { min = d; best = kn; }
+            });
+            if (min < best.length * 0.4) {
+              name = best;
+              if (studentEmailMap[best]) updated[i].email = studentEmailMap[best];
+            }
           }
         }
+
         updated[i] = { ...updated[i], name: name || updated[i].name, nameCropUrl: crop };
       } catch { }
     }
@@ -628,8 +670,8 @@ function App() {
   const handleAuthorize = () => {
     setIsAuthorizing(true);
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const clientId = isLocal 
-      ? "89755629853-3i114l0ocgkpv5cla6d86n8ufuammvii.apps.googleusercontent.com" 
+    const clientId = isLocal
+      ? "89755629853-3i114l0ocgkpv5cla6d86n8ufuammvii.apps.googleusercontent.com"
       : "89755629853-lplrdbb6oh5vb2j169minkt8nh5nreog.apps.googleusercontent.com";
 
     try {
@@ -639,14 +681,14 @@ function App() {
         callback: (r: any) => { if (r.access_token) setAccessToken(r.access_token); setIsAuthorizing(false); }
       });
       client.requestAccessToken();
-    } catch(e) { setIsAuthorizing(false); }
+    } catch (e) { setIsAuthorizing(false); }
   };
 
   const performFileSync = async (fileName: string, shouldSync: boolean, prefix: string = '', fileType: string = 'application/pdf') => {
     if (!accessToken) return;
     const fullFileName = prefix ? `${prefix}_${currentFileName}_${fileName}` : fileName;
     const driveName = prefix ? `${prefix}_${currentFileName}_${fileName}.pdf` : `${fileName}.pdf`;
-    
+
     try {
       const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${driveName}' and parents in 'appDataFolder'&spaces=appDataFolder`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
@@ -741,7 +783,7 @@ function App() {
 
   const UnifiedHeader = ({ nextAction, nextLabel }: { nextAction?: () => void, nextLabel?: string }) => {
     const [isEditingHeaderAlias, setIsEditingHeaderAlias] = useState(false);
-    
+
     return (
       <header className="header">
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 0 }}>
@@ -751,7 +793,7 @@ function App() {
           {currentFileName && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1 }}>
               {isEditingHeaderAlias ? (
-                <input 
+                <input
                   autoFocus
                   defaultValue={sessionAlias || currentFileName}
                   onKeyDown={(e) => {
@@ -768,10 +810,10 @@ function App() {
                     setSessionAlias(val === currentFileName ? null : (val || null));
                     setIsEditingHeaderAlias(false);
                   }}
-                  style={{ 
-                    background: 'var(--bg-secondary)', 
-                    color: 'var(--text-primary)', 
-                    border: '1px solid var(--accent)', 
+                  style={{
+                    background: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--accent)',
                     borderRadius: '0.4rem',
                     padding: '0.2rem 0.6rem',
                     fontSize: '1rem',
@@ -781,11 +823,11 @@ function App() {
                   }}
                 />
               ) : (
-                <div 
+                <div
                   onClick={() => setIsEditingHeaderAlias(true)}
-                  style={{ 
-                    cursor: 'pointer', 
-                    display: 'flex', 
+                  style={{
+                    cursor: 'pointer',
+                    display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'center',
                     minWidth: 0,
@@ -798,13 +840,13 @@ function App() {
                   title="Clic per canviar el nom de la sessió"
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
-                    <span style={{ 
-                      fontSize: '1.1rem', 
-                      fontWeight: 800, 
-                      color: 'var(--text-primary)', 
-                      opacity: 0.8, 
-                      overflow: 'hidden', 
-                      textOverflow: 'ellipsis', 
+                    <span style={{
+                      fontSize: '1.1rem',
+                      fontWeight: 800,
+                      color: 'var(--text-primary)',
+                      opacity: 0.8,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap'
                     }}>
                       {sessionAlias || currentFileName}
@@ -822,7 +864,7 @@ function App() {
           )}
         </div>
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-         <FlowGradingLogo size="2.2rem" animate={false} />
+          <FlowGradingLogo size="2.2rem" animate={false} />
         </div>
 
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '1.25rem', justifyContent: 'flex-end' }}>
@@ -830,8 +872,8 @@ function App() {
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
           </button>
           {accessToken ? (
-            <div style={{ 
-              display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.4rem 1rem', 
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.4rem 1rem',
               background: 'var(--bg-tertiary)', borderRadius: '2rem', border: '1px solid var(--border)',
               height: '42px'
             }}>
@@ -872,61 +914,61 @@ function App() {
           </div>
         </div>
       )}
-      
+
       {dialog.show && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)' }}>
-            <div className="card" style={{ maxWidth: '480px', width: '90%', padding: '3.5rem 3rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '2.5rem', border: '1px solid var(--border)', boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.3)', position: 'relative', overflow: 'hidden' }}>
-                <div style={{ 
-                  position: 'absolute', top: 0, left: 0, right: 0, height: '8px', 
-                  background: dialog.type === 'alert' ? 'var(--hl-yellow)' : 'var(--hl-blue)' 
-                }} />
-                
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '-0.5rem' }}>
-                  <div style={{ transform: 'rotate(-2deg)' }}>
-                    <HandwrittenTitle size="3rem" color={dialog.type === 'alert' ? 'yellow' : 'blue'} noMargin={true}>
-                      {dialog.title}
-                    </HandwrittenTitle>
-                  </div>
-                </div>
+          <div className="card" style={{ maxWidth: '480px', width: '90%', padding: '3.5rem 3rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '2.5rem', border: '1px solid var(--border)', boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.3)', position: 'relative', overflow: 'hidden' }}>
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0, height: '8px',
+              background: dialog.type === 'alert' ? 'var(--hl-yellow)' : 'var(--hl-blue)'
+            }} />
 
-                <div style={{ color: 'var(--text-primary)', fontSize: '1.15rem', lineHeight: '1.6', fontWeight: 600 }}>
-                    {dialog.message}
-                </div>
-
-                {dialog.checkboxLabel && (
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center', cursor: 'pointer', marginTop: '-1rem' }}>
-                      <input 
-                        type="checkbox" 
-                        checked={dialog.checkboxChecked} 
-                        onChange={(e) => {
-                            const checked = e.target.checked;
-                            setDialog(prev => ({ ...prev, checkboxChecked: checked }));
-                            if (dialog.onCheckboxChange) dialog.onCheckboxChange(checked);
-                        }} 
-                      />
-                      <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{dialog.checkboxLabel}</span>
-                  </label>
-                )}
-
-                <div style={{ display: 'flex', gap: '1.25rem', justifyContent: 'center', width: '100%' }}>
-                    {dialog.type === 'confirm' && (
-                        <button 
-                          className="btn btn-secondary" 
-                          style={{ flex: 1, fontWeight: 800, padding: '0.8rem' }} 
-                          onClick={() => { dialog.onCancel?.(); setDialog(d => ({ ...d, show: false })); }}
-                        >
-                          <X size={18} /> Cancel·lar
-                        </button>
-                    )}
-                    <button 
-                      className="btn btn-primary" 
-                      style={{ flex: 1, fontWeight: 800, padding: '0.8rem' }} 
-                      onClick={() => { dialog.onConfirm?.(); setDialog(d => ({ ...d, show: false })); }}
-                    >
-                      <Check size={20} /> D'acord
-                    </button>
-                </div>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '-0.5rem' }}>
+              <div style={{ transform: 'rotate(-2deg)' }}>
+                <HandwrittenTitle size="3rem" color={dialog.type === 'alert' ? 'yellow' : 'blue'} noMargin={true}>
+                  {dialog.title}
+                </HandwrittenTitle>
+              </div>
             </div>
+
+            <div style={{ color: 'var(--text-primary)', fontSize: '1.15rem', lineHeight: '1.6', fontWeight: 600 }}>
+              {dialog.message}
+            </div>
+
+            {dialog.checkboxLabel && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center', cursor: 'pointer', marginTop: '-1rem' }}>
+                <input
+                  type="checkbox"
+                  checked={dialog.checkboxChecked}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setDialog(prev => ({ ...prev, checkboxChecked: checked }));
+                    if (dialog.onCheckboxChange) dialog.onCheckboxChange(checked);
+                  }}
+                />
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{dialog.checkboxLabel}</span>
+              </label>
+            )}
+
+            <div style={{ display: 'flex', gap: '1.25rem', justifyContent: 'center', width: '100%' }}>
+              {dialog.type === 'confirm' && (
+                <button
+                  className="btn btn-secondary"
+                  style={{ flex: 1, fontWeight: 800, padding: '0.8rem' }}
+                  onClick={() => { dialog.onCancel?.(); setDialog(d => ({ ...d, show: false })); }}
+                >
+                  <X size={18} /> Cancel·lar
+                </button>
+              )}
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1, fontWeight: 800, padding: '0.8rem' }}
+                onClick={() => { dialog.onConfirm?.(); setDialog(d => ({ ...d, show: false })); }}
+              >
+                <Check size={20} /> D'acord
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -936,8 +978,8 @@ function App() {
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
           </button>
           {accessToken ? (
-            <div style={{ 
-              display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.4rem 1rem', 
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.4rem 1rem',
               background: 'var(--bg-tertiary)', borderRadius: '2rem', border: '1px solid var(--border)',
               height: '42px'
             }}>
@@ -960,13 +1002,13 @@ function App() {
 
       <main className="main-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
         {mode === 'upload' && (
-          <div 
+          <div
             onScroll={handleScroll}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            style={{ 
-              height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', 
+            style={{
+              height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center',
               justifyContent: 'flex-start', overflowY: 'auto', position: 'relative',
               background: isDragging ? 'var(--accent-light)' : 'transparent',
               transition: 'background 0.3s ease'
@@ -980,7 +1022,7 @@ function App() {
                 background: 'rgba(59, 130, 246, 0.1)', backdropFilter: 'blur(4px)',
                 pointerEvents: 'none'
               }}>
-                <div style={{ 
+                <div style={{
                   padding: '3rem 5rem', border: '4px dashed var(--accent)', borderRadius: '3rem',
                   background: 'var(--bg-secondary)', boxShadow: '0 20px 50px rgba(0,0,0,0.1)',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem',
@@ -993,14 +1035,14 @@ function App() {
                 </div>
               </div>
             )}
-            
+
             {/* Subtle Scroll Button - Bottom Left Horizontal */}
             {recentSessions.filter(s => s.fileName !== pendingSession?.fileName).length > 0 && (
-              <button 
+              <button
                 onClick={() => recentSessionsRef.current?.scrollIntoView({ behavior: 'smooth' })}
                 style={{
                   position: 'fixed', left: '2rem', bottom: '2rem',
-                  display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-secondary)', 
+                  display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-secondary)',
                   border: '1px solid var(--border)', borderRadius: '2rem', padding: '0.6rem 1.2rem',
                   color: 'var(--text-secondary)', opacity: isAtTop ? 0.7 : 0, cursor: 'pointer', fontSize: '0.85rem', fontWeight: 700,
                   transition: 'all 0.3s', zIndex: 50, boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
@@ -1020,7 +1062,7 @@ function App() {
               <div style={{ marginBottom: '14rem', transform: 'rotate(-4.5deg)', flexShrink: 0 }}>
                 <FlowGradingLogo size="13rem" rotation={-7} extraThick={true} scrollProgress={calculateScrollProgress()} />
               </div>
-              
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '3rem', alignItems: 'center', marginBottom: '6rem', flexShrink: 0, width: '100%', maxWidth: '900px' }}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', justifyContent: 'center', width: '100%' }}>
                   {/* Main CTA: Upload New */}
@@ -1045,8 +1087,8 @@ function App() {
                   {/* Session Recovery CTA (Only if pendingSession exists) */}
                   {pendingSession && (
                     <div style={{ flex: '1', minWidth: '20rem', maxWidth: '26rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                      <button 
-                        className="btn btn-secondary" 
+                      <button
+                        className="btn btn-secondary"
                         onClick={() => {
                           loadSessionFromFile(pendingSession.file);
                           setPendingSession(null);
@@ -1067,10 +1109,10 @@ function App() {
                       </button>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{pendingSession.students?.length || 0} alumnes detectats</span>
-                        
+
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                           {accessToken && (
-                            <div 
+                            <div
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 const newSync = !cloudSyncPDF;
@@ -1081,18 +1123,18 @@ function App() {
                                 setPendingSession({ ...pendingSession, cloudSyncPDF: newSync });
                                 await performFileSync(pendingSession.fileName, newSync);
                               }}
-                              style={{ 
-                                display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', 
-                                padding: '0.2rem 0.6rem', background: 'var(--bg-tertiary)70', borderRadius: '1rem', 
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer',
+                                padding: '0.2rem 0.6rem', background: 'var(--bg-tertiary)70', borderRadius: '1rem',
                                 border: '1px solid var(--border)'
                               }}
                             >
-                              <div style={{ 
-                                width: '24px', height: '12px', background: cloudSyncPDF ? 'var(--success)' : 'var(--text-secondary)', 
-                                borderRadius: '6px', position: 'relative', transition: 'all 0.3s ease' 
+                              <div style={{
+                                width: '24px', height: '12px', background: cloudSyncPDF ? 'var(--success)' : 'var(--text-secondary)',
+                                borderRadius: '6px', position: 'relative', transition: 'all 0.3s ease'
                               }}>
-                                <div style={{ 
-                                  width: '8px', height: '8px', background: 'white', borderRadius: '50%', 
+                                <div style={{
+                                  width: '8px', height: '8px', background: 'white', borderRadius: '50%',
                                   position: 'absolute', top: '2px', left: cloudSyncPDF ? '14px' : '2px', transition: 'all 0.3s ease'
                                 }} />
                               </div>
@@ -1100,9 +1142,9 @@ function App() {
                             </div>
                           )}
 
-                          <button 
-                            onClick={(e) => { 
-                              e.stopPropagation(); 
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
                               showConfirm("Eliminar sessió", `Vols eliminar la sessió de '${pendingSession.fileName}'?`, () => handleDeleteSession(pendingSession));
                             }}
                             style={{ background: 'none', border: 'none', color: 'var(--danger)', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
@@ -1116,7 +1158,7 @@ function App() {
                 </div>
               </div>
             </div>
-            
+
             {/* Scrollable Sessions Section */}
             {recentSessions.filter(s => s.fileName !== pendingSession?.fileName).length > 0 && (
               <div ref={recentSessionsRef} style={{ width: '100%', maxWidth: '1000px', flexShrink: 0, paddingBottom: '8rem' }}>
@@ -1127,102 +1169,103 @@ function App() {
                   {recentSessions.filter(s => s.fileName !== pendingSession?.fileName).map(s => {
                     const isEditingAlias = s.isEditingAlias;
                     return (
-                    <div key={s.fileName} className="card" style={{ padding: '1.5rem', cursor: isEditingAlias ? 'default' : 'pointer', transition: 'all 0.2s ease', position: 'relative', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '1rem' }} onMouseEnter={e => { if(!isEditingAlias) { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 12px 24px -10px rgba(0,0,0,0.1)'; } }} onMouseLeave={e => { if(!isEditingAlias) { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; } }} onClick={() => !isEditingAlias && handleSelectSession(s)}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div style={{ fontWeight: 800, fontSize: '1.05rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', overflow: 'hidden', flex: 1, position: 'relative' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
-                            {isEditingAlias ? (
-                              <input 
-                                autoFocus
-                                defaultValue={s.sessionAlias || s.fileName}
-                                onClick={e => e.stopPropagation()}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.stopPropagation();
-                                    const val = e.currentTarget.value.trim();
-                                    const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + s.fileName) || '{}');
-                                    saved.sessionAlias = val || null;
-                                    localStorage.setItem(SESSION_PREFIX + s.fileName, JSON.stringify(saved));
-                                    // Update state to remove edit mode
-                                    setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, sessionAlias: val || null, isEditingAlias: false } : rs));
-                                  } else if (e.key === 'Escape') {
-                                    e.stopPropagation();
-                                    setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, isEditingAlias: false } : rs));
-                                  }
-                                }}
-                                onBlur={() => setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, isEditingAlias: false } : rs))}
-                                style={{ width: '100%', padding: '0.2rem 0.5rem', border: '1px solid var(--accent)', borderRadius: '0.25rem', fontSize: '1rem', fontWeight: 800 }}
-                              />
-                            ) : (
-                              <>
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                  {s.sessionAlias || s.fileName}
-                                  {s.isCloud && <Cloud size={14} color="var(--accent)" />}
-                                </span>
-                                <button 
-                                  onClick={(e) => { e.stopPropagation(); setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, isEditingAlias: true } : rs)); }}
-                                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px', display: 'flex', alignItems: 'center', opacity: 0.5 }}
-                                  onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-                                  onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}
-                                  title="Canviar nom"
-                                >
-                                  <Pencil size={12} />
-                                </button>
-                              </>
+                      <div key={s.fileName} className="card" style={{ padding: '1.5rem', cursor: isEditingAlias ? 'default' : 'pointer', transition: 'all 0.2s ease', position: 'relative', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '1rem' }} onMouseEnter={e => { if (!isEditingAlias) { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 12px 24px -10px rgba(0,0,0,0.1)'; } }} onMouseLeave={e => { if (!isEditingAlias) { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; } }} onClick={() => !isEditingAlias && handleSelectSession(s)}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ fontWeight: 800, fontSize: '1.05rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', overflow: 'hidden', flex: 1, position: 'relative' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
+                              {isEditingAlias ? (
+                                <input
+                                  autoFocus
+                                  defaultValue={s.sessionAlias || s.fileName}
+                                  onClick={e => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.stopPropagation();
+                                      const val = e.currentTarget.value.trim();
+                                      const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + s.fileName) || '{}');
+                                      saved.sessionAlias = val || null;
+                                      localStorage.setItem(SESSION_PREFIX + s.fileName, JSON.stringify(saved));
+                                      // Update state to remove edit mode
+                                      setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, sessionAlias: val || null, isEditingAlias: false } : rs));
+                                    } else if (e.key === 'Escape') {
+                                      e.stopPropagation();
+                                      setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, isEditingAlias: false } : rs));
+                                    }
+                                  }}
+                                  onBlur={() => setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, isEditingAlias: false } : rs))}
+                                  style={{ width: '100%', padding: '0.2rem 0.5rem', border: '1px solid var(--accent)', borderRadius: '0.25rem', fontSize: '1rem', fontWeight: 800 }}
+                                />
+                              ) : (
+                                <>
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    {s.sessionAlias || s.fileName}
+                                    {s.isCloud && <Cloud size={14} color="var(--accent)" />}
+                                  </span>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, isEditingAlias: true } : rs)); }}
+                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px', display: 'flex', alignItems: 'center', opacity: 0.5 }}
+                                    onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                                    onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}
+                                    title="Canviar nom"
+                                  >
+                                    <Pencil size={12} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                            {s.sessionAlias && !isEditingAlias && (
+                              <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {s.fileName}
+                              </span>
                             )}
                           </div>
-                          {s.sessionAlias && !isEditingAlias && (
-                            <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {s.fileName}
-                            </span>
+                          <button onClick={(e) => { e.stopPropagation(); showConfirm("Eliminar sessió", `Vols eliminar la sessió de '${s.fileName}'?`, () => handleDeleteSession(s)); }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '4px', opacity: 0.6 }} onMouseEnter={e => e.currentTarget.style.opacity = '1'} onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}><Trash2 size={16} /></button>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}><Clock size={14} /> {new Date(s.lastModified).toLocaleDateString()}</div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 800, marginBottom: '0.2rem' }}>
+                          <span style={{ color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Progrés</span>
+                          <span style={{ color: 'var(--success)' }}>{s.progress || 0}%</span>
+                        </div>
+                        <div className="progress-bar-container" style={{ marginTop: 0 }}><div className="progress-bar-fill" style={{ width: `${s.progress || 0}%` }}></div></div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{s.students?.length || 0} alumnes detectats</div>
+
+                          {accessToken && (
+                            <div
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const newSync = !(s.cloudSyncPDF ?? true);
+                                const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + s.fileName) || '{}');
+                                saved.cloudSyncPDF = newSync;
+                                localStorage.setItem(SESSION_PREFIX + s.fileName, JSON.stringify(saved));
+                                setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, cloudSyncPDF: newSync } : rs));
+                                if (currentFileName === s.fileName) setCloudSyncPDF(newSync);
+                                await performFileSync(s.fileName, newSync);
+                              }}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer',
+                                padding: '0.2rem 0.5rem', background: 'var(--bg-tertiary)70', borderRadius: '1rem',
+                                border: '1px solid var(--border)'
+                              }}
+                            >
+                              <div style={{
+                                width: '24px', height: '12px', background: (s.cloudSyncPDF ?? true) ? 'var(--success)' : 'var(--text-secondary)',
+                                borderRadius: '6px', position: 'relative', transition: 'all 0.3s ease'
+                              }}>
+                                <div style={{
+                                  width: '8px', height: '8px', background: 'white', borderRadius: '50%',
+                                  position: 'absolute', top: '2px', left: (s.cloudSyncPDF ?? true) ? '14px' : '2px', transition: 'all 0.3s ease'
+                                }} />
+                              </div>
+                              <span style={{ fontSize: '0.6rem', fontWeight: 800 }}>Núvol {(s.cloudSyncPDF ?? true) ? "Sí" : "No"}</span>
+                            </div>
                           )}
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); showConfirm("Eliminar sessió", `Vols eliminar la sessió de '${s.fileName}'?`, () => handleDeleteSession(s)); }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '4px', opacity: 0.6 }} onMouseEnter={e => e.currentTarget.style.opacity = '1'} onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}><Trash2 size={16} /></button>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}><Clock size={14} /> {new Date(s.lastModified).toLocaleDateString()}</div>
-                      
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 800, marginBottom: '0.2rem' }}>
-                        <span style={{ color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Progrés</span>
-                        <span style={{ color: 'var(--success)' }}>{s.progress || 0}%</span>
-                      </div>
-                      <div className="progress-bar-container" style={{ marginTop: 0 }}><div className="progress-bar-fill" style={{ width: `${s.progress || 0}%` }}></div></div>
-                      
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{s.students?.length || 0} alumnes detectats</div>
-                        
-                        {accessToken && (
-                          <div 
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              const newSync = !(s.cloudSyncPDF ?? true);
-                              const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + s.fileName) || '{}');
-                              saved.cloudSyncPDF = newSync;
-                              localStorage.setItem(SESSION_PREFIX + s.fileName, JSON.stringify(saved));
-                              setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, cloudSyncPDF: newSync } : rs));
-                              if (currentFileName === s.fileName) setCloudSyncPDF(newSync);
-                              await performFileSync(s.fileName, newSync);
-                            }}
-                            style={{ 
-                              display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', 
-                              padding: '0.2rem 0.5rem', background: 'var(--bg-tertiary)70', borderRadius: '1rem', 
-                              border: '1px solid var(--border)'
-                            }}
-                          >
-                            <div style={{ 
-                              width: '24px', height: '12px', background: (s.cloudSyncPDF ?? true) ? 'var(--success)' : 'var(--text-secondary)', 
-                              borderRadius: '6px', position: 'relative', transition: 'all 0.3s ease' 
-                            }}>
-                              <div style={{ 
-                                width: '8px', height: '8px', background: 'white', borderRadius: '50%', 
-                                position: 'absolute', top: '2px', left: (s.cloudSyncPDF ?? true) ? '14px' : '2px', transition: 'all 0.3s ease'
-                              }} />
-                            </div>
-                            <span style={{ fontSize: '0.6rem', fontWeight: 800 }}>Núvol {(s.cloudSyncPDF ?? true) ? "Sí" : "No"}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )})}
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -1243,9 +1286,9 @@ function App() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
                       <div style={{ flex: 1 }}>
                         <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>Pàgines/Examen</span>
-                        <input 
-                          type="text" 
-                          value={tempPagesPerExam} 
+                        <input
+                          type="text"
+                          value={tempPagesPerExam}
                           onChange={e => setTempPagesPerExam(e.target.value)}
                           onKeyDown={e => {
                             if (e.key === 'Enter') {
@@ -1259,15 +1302,15 @@ function App() {
                             setPagesPerExam(val);
                             setTempNumStudents(String(Math.floor(numPages / val)));
                           }}
-                          style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid var(--border)', fontSize: '1.25rem', fontWeight: 800, textAlign: 'center' }} 
+                          style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid var(--border)', fontSize: '1.25rem', fontWeight: 800, textAlign: 'center' }}
                         />
                       </div>
                       <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: '1rem' }}>O</div>
                       <div style={{ flex: 1 }}>
                         <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>Total alumnes</span>
-                        <input 
-                          type="text" 
-                          value={tempNumStudents} 
+                        <input
+                          type="text"
+                          value={tempNumStudents}
                           onChange={e => setTempNumStudents(e.target.value)}
                           onKeyDown={e => {
                             if (e.key === 'Enter') {
@@ -1281,7 +1324,7 @@ function App() {
                             setPagesPerExam(Math.floor(numPages / val));
                             setTempPagesPerExam(String(Math.floor(numPages / val)));
                           }}
-                          style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid var(--border)', fontSize: '1.25rem', fontWeight: 800, textAlign: 'center' }} 
+                          style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid var(--border)', fontSize: '1.25rem', fontWeight: 800, textAlign: 'center' }}
                         />
                       </div>
                     </div>
@@ -1292,20 +1335,20 @@ function App() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div 
-                    className="card" 
+                  <div
+                    className="card"
                     onDragOver={handleSolutionDragOver}
                     onDragLeave={handleSolutionDragLeave}
                     onDrop={handleSolutionDrop}
-                    style={{ 
-                      flex: 1, background: isDraggingSolution ? 'var(--accent-light)' : 'var(--bg-tertiary)', 
+                    style={{
+                      flex: 1, background: isDraggingSolution ? 'var(--accent-light)' : 'var(--bg-tertiary)',
                       padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem',
                       border: isDraggingSolution ? '2px dashed var(--accent)' : '1px solid transparent',
                       transition: 'all 0.2s ease'
                     }}
                   >
                     <label style={{ display: 'block', fontWeight: 800, fontSize: '0.85rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Solucionari</label>
-                    <div 
+                    <div
                       style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '1rem' }}
                     >
                       {!solutionFileName ? (
@@ -1325,26 +1368,26 @@ function App() {
                             </div>
                             <button className="btn-icon" onClick={() => { setSolutionPdfDoc(null); setSolutionFileName(null); }} style={{ color: 'var(--danger)' }}><Trash2 size={16} /></button>
                           </div>
-                          
+
                           {accessToken && (
-                            <div 
+                            <div
                               onClick={() => {
                                 const newSync = !cloudSyncSolution;
                                 setCloudSyncSolution(newSync);
                                 if (solutionFileName) performFileSync(solutionFileName, newSync, 'solution');
                               }}
-                              style={{ 
-                                display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', 
-                                padding: '0.4rem 0.8rem', background: 'var(--bg-secondary)', borderRadius: '1rem', 
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer',
+                                padding: '0.4rem 0.8rem', background: 'var(--bg-secondary)', borderRadius: '1rem',
                                 border: '1px solid var(--border)', width: 'fit-content', alignSelf: 'center'
                               }}
                             >
-                              <div style={{ 
-                                width: '28px', height: '14px', background: cloudSyncSolution ? 'var(--success)' : 'var(--text-secondary)', 
-                                borderRadius: '7px', position: 'relative', transition: 'all 0.3s ease' 
+                              <div style={{
+                                width: '28px', height: '14px', background: cloudSyncSolution ? 'var(--success)' : 'var(--text-secondary)',
+                                borderRadius: '7px', position: 'relative', transition: 'all 0.3s ease'
                               }}>
-                                <div style={{ 
-                                  width: '10px', height: '10px', background: 'white', borderRadius: '50%', 
+                                <div style={{
+                                  width: '10px', height: '10px', background: 'white', borderRadius: '50%',
                                   position: 'absolute', top: '2px', left: cloudSyncSolution ? '16px' : '2px', transition: 'all 0.3s ease'
                                 }} />
                               </div>
@@ -1359,16 +1402,16 @@ function App() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   <div className="card" style={{ flex: 1, background: 'var(--bg-tertiary)', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     <label style={{ display: 'block', fontWeight: 800, fontSize: '0.85rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Carrega el teu llistat</label>
                     {accessToken ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <select 
+                          <select
                             value={selectedCourseId}
-                            onChange={e => setSelectedCourseId(e.target.value)} 
+                            onChange={e => setSelectedCourseId(e.target.value)}
                             style={{ flex: 1, padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid var(--accent)', color: 'var(--accent)', fontWeight: 700, background: 'var(--bg-secondary)' }}
                           >
                             <option value="" disabled>Selecciona un curs Classroom...</option>
@@ -1433,7 +1476,7 @@ function App() {
                     {classroomStudents.length > 0 ? (
                       classroomStudents.map((cs, i) => (
                         <tr key={i}>
-                          <td style={{ fontWeight: 800, color: 'var(--text-secondary)' }}>{i+1}</td>
+                          <td style={{ fontWeight: 800, color: 'var(--text-secondary)' }}>{i + 1}</td>
                           <td style={{ fontWeight: 700 }}>{cs.profile?.name?.fullName || 'Desconegut'}</td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--success)', fontWeight: 600, fontSize: '0.85rem' }}>
@@ -1452,7 +1495,7 @@ function App() {
                     ) : studentList.trim() ? (
                       studentList.split('\n').filter(n => n.trim()).map((name, i) => (
                         <tr key={i}>
-                          <td style={{ fontWeight: 800, color: 'var(--text-secondary)' }}>{i+1}</td>
+                          <td style={{ fontWeight: 800, color: 'var(--text-secondary)' }}>{i + 1}</td>
                           <td style={{ fontWeight: 700 }}>{name}</td>
                           <td style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontStyle: 'italic' }}>Introduït manualment</td>
                           <td style={{ textAlign: 'center' }}>
@@ -1486,37 +1529,43 @@ function App() {
         {mode === 'organize_pages' && pdfDoc && <PageOrganizer pdfDoc={pdfDoc} solutionPdfDoc={solutionPdfDoc} initialGroups={students} initialSolutionPages={solutionPageIndexes} pagesPerExam={Number(pagesPerExam) || 1} currentFileName={currentFileName} sessionAlias={sessionAlias} onUpdateSessionAlias={setSessionAlias} onBack={handleBack} onConfirm={(g, sp) => { setStudents(g); setSolutionPageIndexes(sp); setMode('configure_crops'); }} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout} showAlert={showAlert} showConfirm={showConfirm} />}
         {mode === 'configure_crops' && pdfDoc && (
           <TemplateDefiner
-            pdfDoc={pdfDoc} pagesPerExam={Number(pagesPerExam) || 1} initialExercises={exercises} 
+            pdfDoc={pdfDoc} pagesPerExam={Number(pagesPerExam) || 1} initialExercises={exercises}
             currentFileName={currentFileName} sessionAlias={sessionAlias} onUpdateSessionAlias={setSessionAlias}
             onBack={handleBack}
             onComplete={async (ex) => {
-                setExercises(ex);
-                if (ocrCompleted) { setMode('correction'); return; }
-                await runOCR(ex);
-                setMode('correction');
+              setExercises(ex);
+              if (ocrCompleted) { setMode('correction'); return; }
+              await runOCR(ex);
+              setMode('correction');
             }}
             theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
             accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout}
-            onRunOCR={() => runOCR()} ocrCompleted={ocrCompleted}
+            onRunOCR={() => runOCR()}
+            onResetOCR={() => {
+              setStudents(prev => prev.map(s => ({ ...s, name: s.id, nameCropUrl: undefined })));
+              setOcrCompleted(false);
+            }}
+            ocrCompleted={ocrCompleted}
             showAlert={showAlert} showConfirm={showConfirm}
           />
         )}
         {mode === 'correction' && pdfDoc && (
-          <CorrectionView 
-            pdfDoc={pdfDoc} solutionPdfDoc={solutionPdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} 
-            commentBank={commentBank} targetMaxScore={targetMaxScore} onUpdateCommentBank={setCommentBank} onUpdateTargetMaxScore={setTargetMaxScore} 
-            onBack={handleBack} onFinish={() => setMode('results')} 
-            onUpdateAnnotations={(s, e, a) => setAnnotations(prev => ({ ...prev, [s]: { ...prev[s], [e]: a } }))} 
+          <CorrectionView
+            pdfDoc={pdfDoc} solutionPdfDoc={solutionPdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts}
+            commentBank={commentBank} targetMaxScore={targetMaxScore} onUpdateCommentBank={setCommentBank} onUpdateTargetMaxScore={setTargetMaxScore}
+            presets={presets} onUpdatePresets={setPresets}
+            onBack={handleBack} onFinish={() => setMode('results')}
+            onUpdateAnnotations={(s, e, a) => setAnnotations(prev => ({ ...prev, [s]: { ...prev[s], [e]: a } }))}
             onUpdateRubricCounts={(s, e, i, d) => setRubricCounts(prev => {
               const cur = prev?.[s]?.[e]?.[i] ?? 0; return { ...prev, [s]: { ...prev[s], [e]: { ...prev[s]?.[e], [i]: Math.max(0, cur + d) } } };
-            })} 
+            })}
             onUpdateExercise={ux => setExercises(prev => prev.map(ex => ex.id === ux.id ? ux : ex))}
             studentIdx={studentIdx} exerciseIdx={exerciseIdx} onUpdateStudentIdx={setStudentIdx} onUpdateExerciseIdx={setExerciseIdx}
             theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
-            showAlert={showAlert} showConfirm={showConfirm}
+            showConfirm={showConfirm}
           />
         )}
-        
+
         {mode === 'results' && pdfDoc && <ResultsView pdfDoc={pdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} targetMaxScore={targetMaxScore} onUpdateStudents={setStudents} onBack={() => setMode('correction')} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} onAuthorize={handleAuthorize} courses={courses} isAuthorizing={isAuthorizing} classroomStudents={classroomStudents} showAlert={showAlert} showConfirm={showConfirm} />}
       </main>
     </div>

@@ -9,6 +9,7 @@ interface StudentGroup {
     id: string;
     name: string;
     pageIndexes: number[]; // 1-indexed absolute PDF pages
+    ignoredPageIndexes?: number[]; // 1-indexed absolute PDF pages
 }
 
 interface Props {
@@ -33,14 +34,14 @@ interface Props {
     showConfirm: (title: string, message: string, onConfirm: () => void) => void;
 }
 
-export default function PageOrganizer({ 
-    pdfDoc, solutionPdfDoc, initialGroups, initialSolutionPages = [], pagesPerExam, 
+export default function PageOrganizer({
+    pdfDoc, solutionPdfDoc, initialGroups, initialSolutionPages = [], pagesPerExam,
     currentFileName, sessionAlias, onUpdateSessionAlias,
     onConfirm, onBack, theme, onToggleTheme,
     accessToken, userEmail, userPicture, onAuthorize, onLogout,
     showConfirm
 }: Props) {
-    const [groups, setGroups] = useState<StudentGroup[]>(initialGroups);
+    const [groups, setGroups] = useState<StudentGroup[]>(() => initialGroups.map(g => ({ ...g, ignoredPageIndexes: g.ignoredPageIndexes || [] })));
     const [solutionPageIndexes, setSolutionPageIndexes] = useState<number[]>(initialSolutionPages);
     const [thumbnails, setThumbnails] = useState<Record<number, string>>({});
     const [solutionThumbnails, setSolutionThumbnails] = useState<Record<number, string>>({});
@@ -56,7 +57,7 @@ export default function PageOrganizer({
 
     useEffect(() => {
         let cancelled = false;
-        
+
         const loadSolutionThumbs = async () => {
             if (!solutionPdfDoc) return;
             for (let i = 1; i <= solutionPdfDoc.numPages; i++) {
@@ -66,7 +67,7 @@ export default function PageOrganizer({
                     await renderPDFPageToCanvas(solutionPdfDoc, i, canvas, 0.5, false);
                     const url = canvas.toDataURL('image/jpeg', 0.7);
                     if (!cancelled) setSolutionThumbnails(prev => ({ ...prev, [i]: url }));
-                } catch {}
+                } catch { }
             }
         };
 
@@ -77,11 +78,11 @@ export default function PageOrganizer({
     useEffect(() => {
         let cancelled = false;
         const totalPages = pdfDoc.numPages;
-        
+
         const generateOrder = () => {
             const order: number[] = [];
             const processed = new Set<number>();
-            
+
             for (let p = 0; p < pagesPerExam; p++) {
                 for (let i = 0; i < initialGroups.length; i++) {
                     const page = initialGroups[i].pageIndexes[p];
@@ -101,7 +102,7 @@ export default function PageOrganizer({
                     }
                 }
             }
-            
+
             for (let i = 1; i <= totalPages; i++) {
                 if (!processed.has(i)) order.push(i);
             }
@@ -122,15 +123,29 @@ export default function PageOrganizer({
                 } catch { }
             }
         };
-        
+
         loadOrdered();
         return () => { cancelled = true; };
     }, [pdfDoc, initialGroups, pagesPerExam]);
 
     const handleReset = () => {
         showConfirm("Restablir distribució", "Vols restablir la distribució original de pàgines? Es perdran tots els canvis manuals.", () => {
-            setGroups(initialGroups);
+            setGroups(initialGroups.map(g => ({ ...g, ignoredPageIndexes: [] })));
         });
+    };
+
+    const toggleIgnore = (gi: number, pageNum: number) => {
+        setGroups(prev => prev.map((g, i) => {
+            if (i !== gi) return g;
+            const ignored = g.ignoredPageIndexes || [];
+            const isIgnored = ignored.includes(pageNum);
+            return {
+                ...g,
+                ignoredPageIndexes: isIgnored
+                    ? ignored.filter(p => p !== pageNum)
+                    : [...ignored, pageNum]
+            };
+        }));
     };
 
     const ripplePushForward = (groupIdx: number) => {
@@ -190,7 +205,9 @@ export default function PageOrganizer({
     };
 
     const removeGroup = (idx: number) => setGroups(prev => prev.filter((_, i) => i !== idx));
-    
+
+    const addGroup = () => setGroups([...groups, { id: `s_${Date.now()}`, name: `Alumne ${groups.length + 1}`, pageIndexes: [], ignoredPageIndexes: [] }]);
+
     const moveGroupUp = (idx: number) => {
         if (idx === 0) return;
         setGroups(prev => {
@@ -210,11 +227,11 @@ export default function PageOrganizer({
     };
 
     const handleDragStart = (groupIdx: number | 'solution', pageIdx: number) => setDragState({ fromGroup: groupIdx, fromPage: pageIdx });
-    
+
     const handleDrop = (toGroupIdx: number | 'solution') => {
         if (!dragState) return;
         if (dragState.fromGroup === toGroupIdx) { setDragState(null); return; }
-        
+
         let movedPage: number | null = null;
 
         if (dragState.fromGroup === 'solution') {
@@ -272,7 +289,7 @@ export default function PageOrganizer({
                     {currentFileName && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1 }}>
                             {isEditingHeaderAlias ? (
-                                <input 
+                                <input
                                     autoFocus
                                     defaultValue={sessionAlias || currentFileName}
                                     onKeyDown={(e) => {
@@ -289,10 +306,10 @@ export default function PageOrganizer({
                                         onUpdateSessionAlias(val === currentFileName ? null : (val || null));
                                         setIsEditingHeaderAlias(false);
                                     }}
-                                    style={{ 
-                                        background: 'var(--bg-secondary)', 
-                                        color: 'var(--text-primary)', 
-                                        border: '1px solid var(--accent)', 
+                                    style={{
+                                        background: 'var(--bg-secondary)',
+                                        color: 'var(--text-primary)',
+                                        border: '1px solid var(--accent)',
                                         borderRadius: '0.4rem',
                                         padding: '0.2rem 0.6rem',
                                         fontSize: '1rem',
@@ -302,11 +319,11 @@ export default function PageOrganizer({
                                     }}
                                 />
                             ) : (
-                                <div 
+                                <div
                                     onClick={() => setIsEditingHeaderAlias(true)}
-                                    style={{ 
-                                        cursor: 'pointer', 
-                                        display: 'flex', 
+                                    style={{
+                                        cursor: 'pointer',
+                                        display: 'flex',
                                         flexDirection: 'column',
                                         justifyContent: 'center',
                                         minWidth: 0,
@@ -319,13 +336,13 @@ export default function PageOrganizer({
                                     title="Clic per canviar el nom de la sessió"
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
-                                        <span style={{ 
-                                            fontSize: '1.1rem', 
-                                            fontWeight: 800, 
-                                            color: 'var(--text-primary)', 
-                                            opacity: 0.8, 
-                                            overflow: 'hidden', 
-                                            textOverflow: 'ellipsis', 
+                                        <span style={{
+                                            fontSize: '1.1rem',
+                                            fontWeight: 800,
+                                            color: 'var(--text-primary)',
+                                            opacity: 0.8,
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
                                             whiteSpace: 'nowrap'
                                         }}>
                                             {sessionAlias || currentFileName}
@@ -345,10 +362,10 @@ export default function PageOrganizer({
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}><FlowGradingLogo size="2.2rem" animate={false} /></div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '1.25rem', alignItems: 'center' }}>
                     <button className="btn-icon" onClick={onToggleTheme}>{theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}</button>
-                    
+
                     {accessToken ? (
-                        <div style={{ 
-                            display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.4rem 1rem', 
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.4rem 1rem',
                             background: 'var(--bg-tertiary)', borderRadius: '2rem', border: '1px solid var(--border)',
                             height: '42px'
                         }}>
@@ -400,8 +417,8 @@ export default function PageOrganizer({
                                     {solutionPageIndexes.map((p, pi) => {
                                         const isHovered = hoveredThumb === `solution-${pi}`;
                                         return (
-                                            <div 
-                                                key={`sol-${p}-${pi}`} 
+                                            <div
+                                                key={`sol-${p}-${pi}`}
                                                 draggable
                                                 onDragStart={() => handleDragStart('solution', pi)}
                                                 onMouseEnter={() => setHoveredThumb(`solution-${pi}`)}
@@ -409,20 +426,20 @@ export default function PageOrganizer({
                                                 style={{ position: 'relative', cursor: 'grab', background: 'white', borderRadius: '0.6rem', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', overflow: 'hidden', flexShrink: 0 }}
                                             >
                                                 {solutionThumbnails[p] ? <img src={solutionThumbnails[p]} alt={p.toString()} style={{ height: '220px', width: 'auto', display: 'block' }} /> : <div style={{ height: '220px', width: '150px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>Carregant...</div>}
-                                                
+
                                                 {/* Swap controls overlay */}
-                                                <div style={{ 
-                                                    position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
-                                                    padding: '0 8px', zIndex: 10, background: 'rgba(0,0,0,0.1)', 
-                                                    opacity: isHovered ? 1 : 0, transition: 'opacity 0.2s', pointerEvents: isHovered ? 'auto' : 'none' 
+                                                <div style={{
+                                                    position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                                    padding: '0 8px', zIndex: 10, background: 'rgba(0,0,0,0.1)',
+                                                    opacity: isHovered ? 1 : 0, transition: 'opacity 0.2s', pointerEvents: isHovered ? 'auto' : 'none'
                                                 }}>
                                                     {pi > 0 ? (
-                                                        <button onClick={(e) => { e.stopPropagation(); const next = [...solutionPageIndexes]; [next[pi], next[pi-1]] = [next[pi-1], next[pi]]; setSolutionPageIndexes(next); }} className="btn-icon" style={{ background: 'white', opacity: 0.9, width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+                                                        <button onClick={(e) => { e.stopPropagation(); const next = [...solutionPageIndexes];[next[pi], next[pi - 1]] = [next[pi - 1], next[pi]]; setSolutionPageIndexes(next); }} className="btn-icon" style={{ background: 'white', opacity: 0.9, width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
                                                             <ChevronLeft size={20} />
                                                         </button>
                                                     ) : <div />}
                                                     {pi < solutionPageIndexes.length - 1 ? (
-                                                        <button onClick={(e) => { e.stopPropagation(); const next = [...solutionPageIndexes]; [next[pi], next[pi+1]] = [next[pi+1], next[pi]]; setSolutionPageIndexes(next); }} className="btn-icon" style={{ background: 'white', opacity: 0.9, width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+                                                        <button onClick={(e) => { e.stopPropagation(); const next = [...solutionPageIndexes];[next[pi], next[pi + 1]] = [next[pi + 1], next[pi]]; setSolutionPageIndexes(next); }} className="btn-icon" style={{ background: 'white', opacity: 0.9, width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
                                                             <ChevronRight size={20} />
                                                         </button>
                                                     ) : <div />}
@@ -475,43 +492,105 @@ export default function PageOrganizer({
                                         {group.pageIndexes.map((p, pi) => {
                                             const isHovered = hoveredThumb === `${gi}-${pi}`;
                                             return (
-                                                <div 
-                                                    key={`${p}-${pi}`} 
-                                                    draggable 
-                                                    onDragStart={() => handleDragStart(gi, pi)} 
+                                                <div
+                                                    key={`${p}-${pi}`}
                                                     onMouseEnter={() => setHoveredThumb(`${gi}-${pi}`)}
                                                     onMouseLeave={() => setHoveredThumb(null)}
-                                                    style={{ position: 'relative', cursor: 'grab', background: 'white', borderRadius: '0.6rem', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', overflow: 'hidden', flexShrink: 0 }}
+                                                    style={{
+                                                        position: 'relative',
+                                                        background: 'white',
+                                                        borderRadius: '0.6rem',
+                                                        border: groups[gi].ignoredPageIndexes?.includes(p) ? '2px solid var(--accent)' : '1px solid var(--border)',
+                                                        boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                                                        overflow: 'hidden',
+                                                        flexShrink: 0,
+                                                        transition: 'all 0.2s',
+                                                        transform: isHovered ? 'translateY(-4px)' : 'none'
+                                                    }}
                                                 >
-                                                    {thumbnails[p] ? <img src={thumbnails[p]} alt={p.toString()} style={{ height: '220px', width: 'auto', display: 'block' }} /> : <div style={{ height: '220px', width: '150px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>Carregant...</div>}
-                                                    
+                                                    <div style={{
+                                                        position: 'relative',
+                                                        filter: groups[gi].ignoredPageIndexes?.includes(p) ? 'grayscale(1) opacity(0.5)' : 'none',
+                                                        transition: 'filter 0.3s, opacity 0.3s'
+                                                    }}>
+                                                        {thumbnails[p] ? <img src={thumbnails[p]} alt={p.toString()} style={{ height: '220px', width: 'auto', display: 'block' }} /> : <div style={{ height: '220px', width: '150px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>Carregant...</div>}
+                                                    </div>
+
+                                                    {/* Central Click Target for Ignoring */}
+                                                    <div
+                                                        onClick={(e) => { e.stopPropagation(); toggleIgnore(gi, p); }}
+                                                        style={{
+                                                            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                            zIndex: 20, cursor: 'pointer',
+                                                            background: (isHovered && !groups[gi].ignoredPageIndexes?.includes(p)) ? 'rgba(0,0,0,0.05)' : 'transparent',
+                                                            transition: 'background 0.2s',
+                                                            pointerEvents: 'auto'
+                                                        }}
+                                                        title={groups[gi].ignoredPageIndexes?.includes(p) ? "Marca com a NO buida" : "Marca com a PÀGINA BUIDA"}
+                                                    >
+                                                        {groups[gi].ignoredPageIndexes?.includes(p) ? (
+                                                            <div style={{
+                                                                background: 'rgba(0,0,0,0.7)', borderRadius: '50%', padding: '1.2rem',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                                                                backdropFilter: 'blur(8px)',
+                                                                border: '2px solid rgba(255,255,255,0.2)'
+                                                            }}>
+                                                                <X size={48} color="white" strokeWidth={3} />
+                                                            </div>
+                                                        ) : isHovered ? (
+                                                            <div style={{
+                                                                background: 'rgba(255,255,255,0.9)', borderRadius: '50%', padding: '0.8rem',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                color: 'var(--text-secondary)',
+                                                                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                                                opacity: 0.8
+                                                            }}>
+                                                                <X size={32} />
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+
                                                     {/* Swap controls overlay */}
-                                                    <div style={{ 
-                                                        position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
-                                                        padding: '0 8px', zIndex: 10, background: 'rgba(0,0,0,0.1)', 
-                                                        opacity: isHovered ? 1 : 0, transition: 'opacity 0.2s', pointerEvents: isHovered ? 'auto' : 'none' 
+                                                    <div style={{
+                                                        position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                                        padding: '0 8px', zIndex: 16, pointerEvents: 'none',
+                                                        opacity: (isHovered && !groups[gi].ignoredPageIndexes?.includes(p)) ? 1 : 0, transition: 'opacity 0.2s'
                                                     }}>
                                                         {pi > 0 ? (
-                                                            <button onClick={(e) => { e.stopPropagation(); swapPages(gi, pi, pi - 1); }} className="btn-icon" style={{ background: 'white', opacity: 0.9, width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+                                                            <button onClick={(e) => { e.stopPropagation(); swapPages(gi, pi, pi - 1); }} className="btn-icon" style={{ background: 'white', opacity: 0.9, width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 8px rgba(0,0,0,0.2)', pointerEvents: 'auto' }}>
                                                                 <ChevronLeft size={20} />
                                                             </button>
                                                         ) : <div />}
                                                         {pi < group.pageIndexes.length - 1 ? (
-                                                            <button onClick={(e) => { e.stopPropagation(); swapPages(gi, pi, pi + 1); }} className="btn-icon" style={{ background: 'white', opacity: 0.9, width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>
+                                                            <button onClick={(e) => { e.stopPropagation(); swapPages(gi, pi, pi + 1); }} className="btn-icon" style={{ background: 'white', opacity: 0.9, width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 8px rgba(0,0,0,0.2)', pointerEvents: 'auto' }}>
                                                                 <ChevronRight size={20} />
                                                             </button>
                                                         ) : <div />}
                                                     </div>
 
-                                                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(2px)', color: 'white', fontSize: '0.8rem', fontWeight: 800, textAlign: 'center', padding: '4px 0', zIndex: 5 }}>p.{p}</div>
-                                                    <button 
-                                                        onClick={(e) => { e.stopPropagation(); removePage(gi, pi); }} 
-                                                        className="btn-icon" 
-                                                        style={{ 
-                                                            position: 'absolute', top: '6px', right: '6px', 
-                                                            background: 'rgba(255,255,255,0.8)', color: 'var(--text-secondary)', 
-                                                            width: '24px', height: '24px', borderRadius: '50%', 
-                                                            padding: 0, cursor: 'pointer', zIndex: 12,
+                                                    <div
+                                                        draggable
+                                                        onDragStart={() => handleDragStart(gi, pi)}
+                                                        style={{
+                                                            position: 'absolute', bottom: 0, left: 0, right: 0,
+                                                            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(2px)',
+                                                            color: 'white', fontSize: '0.8rem', fontWeight: 800,
+                                                            textAlign: 'center', padding: '4px 0', zIndex: 25,
+                                                            cursor: 'grab'
+                                                        }}
+                                                        title="Arrossega per moure la pàgina"
+                                                    >
+                                                        p.{p}
+                                                    </div>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); removePage(gi, pi); }}
+                                                        className="btn-icon"
+                                                        style={{
+                                                            position: 'absolute', top: '6px', right: '6px',
+                                                            background: 'rgba(255,255,255,0.8)', color: 'var(--text-secondary)',
+                                                            width: '24px', height: '24px', borderRadius: '50%',
+                                                            padding: 0, cursor: 'pointer', zIndex: 30,
                                                             border: '1px solid var(--border)',
                                                             transition: 'all 0.2s'
                                                         }}
@@ -539,7 +618,7 @@ export default function PageOrganizer({
                                 </div>
                             );
                         })}
-                        <button onClick={() => setGroups([...groups, { id: `s_${Date.now()}`, name: `Alumne ${groups.length + 1}`, pageIndexes: [] }])} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', border: '2px dashed var(--border)', background: 'transparent', color: 'var(--text-secondary)', padding: '2rem', cursor: 'pointer', borderRadius: '1.5rem' }}>
+                        <button onClick={addGroup} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', border: '2px dashed var(--border)', background: 'transparent', color: 'var(--text-secondary)', padding: '2rem', cursor: 'pointer', borderRadius: '1.5rem' }}>
                             <Plus size={24} /> <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>Afegir nou alumne</span>
                         </button>
                     </div>
