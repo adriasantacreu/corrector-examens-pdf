@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, forwardRef } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Group, Text, Transformer } from 'react-konva';
 import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, Award, TextSelect, Sun, Moon, LogOut, RefreshCw, X, Pencil, FileText } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
@@ -30,12 +30,13 @@ interface Props {
 }
 
 // Helper for natural number input (handles commas, dots, negative signs, etc)
-function NumericInput({ value, onChange, style, placeholder = "" }: {
+const NumericInput = forwardRef<HTMLInputElement, {
     value: number | undefined,
     onChange: (val: number | undefined) => void,
     style?: React.CSSProperties,
-    placeholder?: string
-}) {
+    placeholder?: string,
+    onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
+}>(({ value, onChange, style, placeholder = "", onKeyDown }, ref) => {
     const [tempValue, setTempValue] = useState<string>(value !== undefined ? value.toString().replace('.', ',') : "");
 
     useEffect(() => {
@@ -51,10 +52,12 @@ function NumericInput({ value, onChange, style, placeholder = "" }: {
 
     return (
         <input
+            ref={ref}
             type="text"
             inputMode="decimal"
             placeholder={placeholder}
             value={tempValue}
+            onKeyDown={onKeyDown}
             onChange={(e) => {
                 const val = e.target.value.replace('.', ',');
                 if (val === "" || val === "-" || /^-?\d*,?\d*$/.test(val)) {
@@ -88,7 +91,7 @@ function NumericInput({ value, onChange, style, placeholder = "" }: {
             }}
         />
     );
-}
+});
 
 export default function TemplateDefiner({ 
     pdfDoc, pagesPerExam, initialExercises, 
@@ -103,6 +106,8 @@ export default function TemplateDefiner({
     const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
     const [exercises, setExercises] = useState<ExerciseDef[]>(initialExercises);
     const [lastAddedId, setLastAddedId] = useState<string | null>(null);
+    const [autoDistributeMap, setAutoDistributeMap] = useState<Record<string, boolean>>({});
+    const [warnedExceeded, setWarnedExceeded] = useState<Record<string, boolean>>({});
 
     // Drawing state
     const [isDrawing, setIsDrawing] = useState(false);
@@ -113,6 +118,7 @@ export default function TemplateDefiner({
 
     const containerRef = useRef<HTMLDivElement>(null);
     const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+    const maxScoreRefs = useRef<Record<string, HTMLInputElement | null>>({});
     const stageRef = useRef<any>(null);
     const lastDistRef = useRef<number>(0);
 
@@ -120,7 +126,11 @@ export default function TemplateDefiner({
 
     useEffect(() => {
         if (lastAddedId && inputRefs.current[lastAddedId]) {
-            inputRefs.current[lastAddedId]?.focus();
+            const el = inputRefs.current[lastAddedId];
+            if (el) {
+                el.focus();
+                el.select();
+            }
             setLastAddedId(null);
         }
     }, [lastAddedId, exercises]);
@@ -269,16 +279,23 @@ export default function TemplateDefiner({
             if (width > 20 && height > 20) {
                 const finalType = mode === 'draw' ? 'crop' : mode === 'draw_ocr' ? 'ocr_name' : 'total_score';
                 const newId = `ex_${Date.now()}`;
+                
+                const typeCount = exercises.filter(e => e.type === (finalType === 'crop' ? 'crop' : finalType)).length + 1;
+                const defaultName = finalType === 'crop' ? `Exercici de retall ${typeCount}` : finalType === 'ocr_name' ? 'Àrea del nom' : 'Nota final';
+
                 const finalCrop: any = { 
                     id: newId, 
                     type: finalType, 
                     pageIndex: currentPageIndex, 
                     x, y, width, height,
+                    name: defaultName,
+                    maxScore: 1,
                     scoringMode: 'from_zero', // Default to rubric mode starting from zero
                     rubric: []
                 };
                 setExercises(prev => [...prev, finalCrop]);
                 setLastAddedId(newId);
+                if (finalType === 'crop') setAutoDistributeMap(prev => ({ ...prev, [newId]: true }));
             }
         }
         setIsDrawing(false);
@@ -288,26 +305,60 @@ export default function TemplateDefiner({
     const removeExercise = (id: string) => {
         setExercises(prev => prev.filter(c => c.id !== id));
         if (selectedId === id) setSelectedId(null);
+        setAutoDistributeMap(prev => { const n = { ...prev }; delete n[id]; return n; });
     };
 
     const updateExerciseMeta = (id: string, updates: Partial<ExerciseDef>) => {
-        setExercises(prev => prev.map(ex => ex.id === id ? { ...ex, ...updates } as ExerciseDef : ex));
+        setExercises(prev => {
+            const newExercises = prev.map(ex => {
+                if (ex.id === id) {
+                    const updated = { ...ex, ...updates } as ExerciseDef;
+                    if (updates.maxScore !== undefined && autoDistributeMap[id] && updated.rubric && updated.rubric.length > 0) {
+                        const perItem = Math.round((updates.maxScore / updated.rubric.length) * 100) / 100;
+                        updated.rubric = updated.rubric.map(r => ({ ...r, points: perItem }));
+                    }
+                    return updated;
+                }
+                return ex;
+            });
+            return newExercises;
+        });
     };
 
     const addRubricItem = (exId: string) => {
         setExercises(prev => prev.map(ex => {
             if (ex.id === exId) {
                 const items = ex.rubric || [];
-                return { ...ex, rubric: [...items, { id: `r_${Date.now()}`, label: '', points: 0 }] };
+                const newItems = [...items, { id: `r_${Date.now()}`, label: '', points: 0 }];
+                
+                if (autoDistributeMap[exId] && ex.maxScore !== undefined) {
+                    const perItem = Math.round((ex.maxScore / newItems.length) * 100) / 100;
+                    return { ...ex, rubric: newItems.map(r => ({ ...r, points: perItem })) };
+                }
+                
+                return { ...ex, rubric: newItems };
             }
             return ex;
         }));
+        if (!autoDistributeMap[exId]) setAutoDistributeMap(prev => ({ ...prev, [exId]: true }));
     };
 
     const updateRubricItem = (exId: string, itemId: string, updates: Partial<RubricItem>) => {
+        if (updates.points !== undefined) {
+            setAutoDistributeMap(prev => ({ ...prev, [exId]: false }));
+        }
         setExercises(prev => prev.map(ex => {
             if (ex.id === exId) {
                 const items = (ex.rubric || []).map(item => item.id === itemId ? { ...item, ...updates } : item);
+                
+                const sum = items.reduce((s, i) => s + (i.points || 0), 0);
+                if (ex.maxScore !== undefined && sum > ex.maxScore && !warnedExceeded[exId]) {
+                    setWarnedExceeded(prevMap => ({ ...prevMap, [exId]: true }));
+                    showAlert("Atenció", "La suma dels criteris de la rúbrica supera la nota màxima de l'exercici.");
+                } else if (ex.maxScore !== undefined && sum <= ex.maxScore) {
+                    setWarnedExceeded(prevMap => ({ ...prevMap, [exId]: false }));
+                }
+
                 return { ...ex, rubric: items };
             }
             return ex;
@@ -317,7 +368,12 @@ export default function TemplateDefiner({
     const removeRubricItem = (exId: string, itemId: string) => {
         setExercises(prev => prev.map(ex => {
             if (ex.id === exId) {
-                return { ...ex, rubric: (ex.rubric || []).filter(i => i.id !== itemId) };
+                const newItems = (ex.rubric || []).filter(i => i.id !== itemId);
+                if (autoDistributeMap[exId] && ex.maxScore !== undefined && newItems.length > 0) {
+                    const perItem = Math.round((ex.maxScore / newItems.length) * 100) / 100;
+                    return { ...ex, rubric: newItems.map(r => ({ ...r, points: perItem })) };
+                }
+                return { ...ex, rubric: newItems };
             }
             return ex;
         }));
@@ -595,7 +651,22 @@ export default function TemplateDefiner({
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
                                                         <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: ex.type === 'pages' ? 'var(--accent)' : '#6366f1', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 800 }}>{idx + 1}</div>
                                                         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: '2px' }}>
-                                                            <input ref={(el) => { inputRefs.current[ex.id] = el; }} type="text" value={ex.name || ''} placeholder="Nom exercici" onChange={e => updateExerciseMeta(ex.id, { name: e.target.value })} style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', padding: '2px 0', fontSize: '0.85rem', fontWeight: 700 }} onClick={e => e.stopPropagation()} />
+                                                            <input 
+                                                                ref={(el) => { inputRefs.current[ex.id] = el; }} 
+                                                                type="text" 
+                                                                value={ex.name || ''} 
+                                                                placeholder="Nom exercici" 
+                                                                onChange={e => updateExerciseMeta(ex.id, { name: e.target.value })} 
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter' || e.key === 'Tab') {
+                                                                        e.preventDefault();
+                                                                        maxScoreRefs.current[ex.id]?.focus();
+                                                                        maxScoreRefs.current[ex.id]?.select();
+                                                                    }
+                                                                }}
+                                                                style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', padding: '2px 0', fontSize: '0.85rem', fontWeight: 700 }} 
+                                                                onClick={e => e.stopPropagation()} 
+                                                            />
                                                         </div>
                                                     </div>
                                                     <button onClick={(e) => { e.stopPropagation(); removeExercise(ex.id); }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '4px' }}><Trash2 size={16} /></button>
@@ -604,7 +675,19 @@ export default function TemplateDefiner({
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                                         <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-secondary)' }}>MÀX:</span>
-                                                        <NumericInput value={ex.maxScore} onChange={val => updateExerciseMeta(ex.id, { maxScore: val })} style={{ width: '45px', textAlign: 'center', fontWeight: 800 }} />
+                                                        <NumericInput 
+                                                            ref={(el) => { maxScoreRefs.current[ex.id] = el; }}
+                                                            value={ex.maxScore} 
+                                                            onChange={val => updateExerciseMeta(ex.id, { maxScore: val })} 
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter' || e.key === 'Tab') {
+                                                                    e.preventDefault();
+                                                                    e.currentTarget.blur();
+                                                                    // Optionally could add a new rubric item here, but sticking to basics
+                                                                }
+                                                            }}
+                                                            style={{ width: '45px', textAlign: 'center', fontWeight: 800 }} 
+                                                        />
                                                     </div>
                                                     
                                                     <div style={{ flex: 1 }}></div>
@@ -688,9 +771,19 @@ export default function TemplateDefiner({
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', borderTop: '1px solid var(--border)', paddingTop: '0.5rem' }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                         <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Criteris de rúbrica</span>
-                                                        <button onClick={(e) => { e.stopPropagation(); addRubricItem(ex.id); }} className="btn btn-icon" style={{ padding: '2px', height: '20px', width: '20px', color: 'var(--accent)' }}>
-                                                            <Plus size={14} />
-                                                        </button>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                            <label style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.2rem', cursor: 'pointer' }} onClick={e => e.stopPropagation()}>
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    checked={autoDistributeMap[ex.id] !== false} 
+                                                                    onChange={(e) => setAutoDistributeMap(prev => ({ ...prev, [ex.id]: e.target.checked }))} 
+                                                                />
+                                                                Auto-repartir
+                                                            </label>
+                                                            <button onClick={(e) => { e.stopPropagation(); addRubricItem(ex.id); }} className="btn btn-icon" style={{ padding: '2px', height: '20px', width: '20px', color: 'var(--accent)' }}>
+                                                                <Plus size={14} />
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                     
                                                     {(ex.rubric || []).map((item) => (

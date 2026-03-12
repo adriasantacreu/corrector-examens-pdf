@@ -52,6 +52,18 @@ Aquest document detalla totes les millores, correccions i canvis de disseny apli
     - Possibilitat d'afegir o treure pàgines a un exercici de tipus "pàgines".
     - Selector per activar/desactivar la visualització de "Dues pàgines en paral·lel".
 
+## 8. Flux de Treball Ultraràpid per a Plantilles
+- **Enfocament Intel·ligent:** Només dibuixar un retall o afegir una pàgina, el cursor salta automàticament al quadre de text del nom.
+- **Auto-selecció de Text:** El títol s'autogenera de forma intel·ligent (ex. "Exercici de retall 2") i queda completament seleccionat perquè l'usuari pugui sobreescriure'l només escrivint directament.
+- **Navegació amb Teclat:** En prémer `Enter` o `Tab` mentre s'edita el nom, el cursor salta directament al quadre de "Nota Màxima".
+- **Repartiment Automàtic de Rúbriques:**
+    - Nou botó / selector "Auto-repartir" (activat per defecte) a la secció de la rúbrica.
+    - Si està actiu, en afegir nous ítems o canviar la nota màxima de l'exercici, la nota de cada ítem es recalcula i es reparteix equitativament.
+    - S'apaga de forma automàtica si l'usuari toca manualment els punts d'un ítem concret per no desfer la seva configuració manual.
+- **Protecció de Puntuació (Avisos Silenciosos):**
+    - Si la suma dels punts dels ítems d'una rúbrica supera la nota màxima de l'exercici, el sistema emet un únic avís visual informatiu usant el sistema global (`showAlert`).
+    - L'acció no es bloqueja (s'assumeix que l'usuari sap el que fa i busca tenir notes extres), i el missatge no es repeteix de forma pesada si es continuen afegint ítems i se segueix depassant el màxim.
+
 ## 6. Millores de Sessió i Sincronització (Última actualització)
 - **Gestió de l'Última Sessió:**
   - S'ha assegurat que en tornar a l'inici des de la pantalla de configuració (fent servir el botó d'enrere), el botó de continuar l'última sessió activa torni a aparèixer automàticament sense necessitat de recarregar la pàgina (F5).
