@@ -133,6 +133,19 @@ function App() {
     setDialog({ show: true, title, message, type: 'confirm', onConfirm, onCancel: () => setDialog(d => ({ ...d, show: false })) });
   };
 
+  // Global Escape handler to unfocus any input/textarea
+  useEffect(() => {
+    const handleGlobalEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && document.activeElement instanceof HTMLElement) {
+        if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') {
+          document.activeElement.blur();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleGlobalEsc);
+    return () => window.removeEventListener('keydown', handleGlobalEsc);
+  }, []);
+
   // Keyboard support for global dialogs - Maximum priority capture phase
   useEffect(() => {
     if (!dialog.show) return;

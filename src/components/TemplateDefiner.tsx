@@ -57,7 +57,12 @@ const NumericInput = forwardRef<HTMLInputElement, {
             inputMode="decimal"
             placeholder={placeholder}
             value={tempValue}
-            onKeyDown={onKeyDown}
+            onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                    e.currentTarget.blur();
+                }
+                if (onKeyDown) onKeyDown(e);
+            }}
             onChange={(e) => {
                 const val = e.target.value.replace('.', ',');
                 if (val === "" || val === "-" || /^-?\d*,?\d*$/.test(val)) {
