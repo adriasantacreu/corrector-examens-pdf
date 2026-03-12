@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, Check, ChevronLeft, ChevronRight, Sun, Moon, ArrowDown, ArrowUp, LogOut, ChevronsUp, ChevronsDown, RotateCcw, X, FileCheck } from 'lucide-react';
+import { Trash2, Plus, ChevronDown, ChevronUp, GripVertical, Check, ChevronLeft, ChevronRight, Sun, Moon, ArrowDown, ArrowUp, LogOut, ChevronsUp, ChevronsDown, RotateCcw, X, FileCheck, Pencil } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import HandwrittenTitle from './HandwrittenTitle';
@@ -17,6 +17,9 @@ interface Props {
     initialGroups: StudentGroup[];
     initialSolutionPages?: number[];
     pagesPerExam: number;
+    currentFileName: string | null;
+    sessionAlias: string | null;
+    onUpdateSessionAlias: (alias: string | null) => void;
     onConfirm: (groups: StudentGroup[], solutionPages: number[]) => void;
     onBack: () => void;
     theme?: 'light' | 'dark';
@@ -31,7 +34,9 @@ interface Props {
 }
 
 export default function PageOrganizer({ 
-    pdfDoc, solutionPdfDoc, initialGroups, initialSolutionPages = [], pagesPerExam, onConfirm, onBack, theme, onToggleTheme,
+    pdfDoc, solutionPdfDoc, initialGroups, initialSolutionPages = [], pagesPerExam, 
+    currentFileName, sessionAlias, onUpdateSessionAlias,
+    onConfirm, onBack, theme, onToggleTheme,
     accessToken, userEmail, userPicture, onAuthorize, onLogout,
     showConfirm
 }: Props) {
@@ -41,6 +46,7 @@ export default function PageOrganizer({
     const [solutionThumbnails, setSolutionThumbnails] = useState<Record<number, string>>({});
     const [dragState, setDragState] = useState<{ fromGroup: number | 'solution'; fromPage: number } | null>(null);
     const [hoveredThumb, setHoveredThumb] = useState<string | null>(null);
+    const [isEditingHeaderAlias, setIsEditingHeaderAlias] = useState(false);
 
     useEffect(() => {
         if (solutionPdfDoc && solutionPageIndexes.length === 0) {
@@ -259,7 +265,83 @@ export default function PageOrganizer({
     return (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'var(--bg-primary)' }}>
             <header className="header">
-                <div style={{ flex: 1 }}><button className="btn-icon" onClick={onBack} title="Enrere"><ChevronLeft size={28} /></button></div>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 0 }}>
+                    <button className="btn-icon" onClick={onBack} title="Enrere" style={{ color: 'var(--text-primary)', padding: '0.5rem', background: 'transparent', border: 'none', flexShrink: 0 }}>
+                        <ChevronLeft size={28} />
+                    </button>
+                    {currentFileName && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1 }}>
+                            {isEditingHeaderAlias ? (
+                                <input 
+                                    autoFocus
+                                    defaultValue={sessionAlias || currentFileName}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            const val = e.currentTarget.value.trim();
+                                            onUpdateSessionAlias(val || null);
+                                            setIsEditingHeaderAlias(false);
+                                        } else if (e.key === 'Escape') {
+                                            setIsEditingHeaderAlias(false);
+                                        }
+                                    }}
+                                    onBlur={(e) => {
+                                        const val = e.target.value.trim();
+                                        onUpdateSessionAlias(val || null);
+                                        setIsEditingHeaderAlias(false);
+                                    }}
+                                    style={{ 
+                                        background: 'var(--bg-secondary)', 
+                                        color: 'var(--text-primary)', 
+                                        border: '1px solid var(--accent)', 
+                                        borderRadius: '0.4rem',
+                                        padding: '0.2rem 0.6rem',
+                                        fontSize: '1rem',
+                                        fontWeight: 800,
+                                        width: '100%',
+                                        maxWidth: '300px'
+                                    }}
+                                />
+                            ) : (
+                                <div 
+                                    onClick={() => setIsEditingHeaderAlias(true)}
+                                    style={{ 
+                                        cursor: 'pointer', 
+                                        display: 'flex', 
+                                        flexDirection: 'column',
+                                        justifyContent: 'center',
+                                        minWidth: 0,
+                                        padding: '0.2rem 0.5rem',
+                                        borderRadius: '0.4rem',
+                                        transition: 'background 0.2s'
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)50'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                    title="Clic per canviar el nom de la sessió"
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                                        <span style={{ 
+                                            fontSize: '1.1rem', 
+                                            fontWeight: 800, 
+                                            color: 'var(--text-primary)', 
+                                            opacity: 0.8, 
+                                            overflow: 'hidden', 
+                                            textOverflow: 'ellipsis', 
+                                            whiteSpace: 'nowrap'
+                                        }}>
+                                            {sessionAlias || currentFileName}
+                                        </span>
+                                        <Pencil size={12} style={{ opacity: 0.4, flexShrink: 0 }} />
+                                    </div>
+                                    {sessionAlias && (
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '-2px' }}>
+                                            {currentFileName}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}><FlowGradingLogo size="2.2rem" animate={false} /></div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '1.25rem', alignItems: 'center' }}>
                     <button className="btn-icon" onClick={onToggleTheme}>{theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}</button>
@@ -293,7 +375,7 @@ export default function PageOrganizer({
                 <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
                     <div style={{ marginBottom: '3rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
-                            <HandwrittenTitle size="3rem" color="purple">Organitzador de pàgines</HandwrittenTitle>
+                            <HandwrittenTitle size="3rem" color="purple" noMargin={true}>Organitzador de pàgines</HandwrittenTitle>
                             <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem', fontSize: '1.1rem' }}>
                                 Ajusta l'ordre dels exàmens. Utilitza les fletxes per desplaçar pàgines. Les fletxes dobles mouen en cascada.
                                 {inconsistentCount > 0 && <span style={{ color: 'var(--danger)', marginLeft: '1rem', fontWeight: 700 }}>⚠️ {inconsistentCount} alumnes amb error</span>}

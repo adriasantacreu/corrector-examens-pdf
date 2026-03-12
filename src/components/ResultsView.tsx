@@ -148,7 +148,7 @@ export default function ResultsView({
             <main style={{ flex: 1, overflowY: 'auto', padding: '3rem 4rem' }}>
                 <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4rem' }}>
-                        <HandwrittenTitle size="3.5rem" color="green">Resultats i Exportació</HandwrittenTitle>
+                        <HandwrittenTitle size="3.5rem" color="green" noMargin={true}>Resultats i Exportació</HandwrittenTitle>
                         
                         <div style={{ display: 'flex', gap: '1.5rem' }}>
                             <div className="card" style={{ padding: '1.5rem 2.5rem', textAlign: 'center', border: '2px solid var(--accent)', background: 'var(--accent-light)' }}>
@@ -164,7 +164,7 @@ export default function ResultsView({
                     </div>
 
                     <div style={{ marginBottom: '2rem' }}>
-                        <HandwrittenTitle size="2.2rem" color="purple">Llistat de qualificacions</HandwrittenTitle>
+                        <HandwrittenTitle size="2.2rem" color="purple" noMargin={true}>Llistat de qualificacions</HandwrittenTitle>
                     </div>
 
                     <div className="card" style={{ padding: 0, overflow: 'hidden', borderRadius: '1.5rem' }}>

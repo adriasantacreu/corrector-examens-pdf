@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Group, Text, Transformer } from 'react-konva';
-import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, Award, TextSelect, Sun, Moon, LogOut, RefreshCw, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, Award, TextSelect, Sun, Moon, LogOut, RefreshCw, X, Pencil } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import type { ExerciseDef, CropExercise, PagesExercise, RubricItem } from '../types';
@@ -11,6 +11,9 @@ interface Props {
     pdfDoc: PDFDocumentProxy;
     pagesPerExam: number;
     initialExercises: ExerciseDef[];
+    currentFileName: string | null;
+    sessionAlias: string | null;
+    onUpdateSessionAlias: (alias: string | null) => void;
     onComplete: (crops: ExerciseDef[]) => void;
     onBack?: () => void;
     theme: 'light' | 'dark';
@@ -88,7 +91,9 @@ function NumericInput({ value, onChange, style, placeholder = "" }: {
 }
 
 export default function TemplateDefiner({ 
-    pdfDoc, pagesPerExam, initialExercises, onComplete, onBack, theme, onToggleTheme,
+    pdfDoc, pagesPerExam, initialExercises, 
+    currentFileName, sessionAlias, onUpdateSessionAlias,
+    onComplete, onBack, theme, onToggleTheme,
     accessToken, userEmail, userPicture, onAuthorize, onLogout, onRunOCR, ocrCompleted,
     showConfirm
 }: Props) {
@@ -104,6 +109,7 @@ export default function TemplateDefiner({
     const [newCropRef, setNewCropRef] = useState<Partial<CropExercise> | null>(null);
     const [mode, setMode] = useState<'select' | 'draw' | 'draw_qr' | 'draw_ocr' | 'draw_total_score'>('select');
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [isEditingHeaderAlias, setIsEditingHeaderAlias] = useState(false);
 
     const containerRef = useRef<HTMLDivElement>(null);
     const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -324,11 +330,83 @@ export default function TemplateDefiner({
         <div style={{ display: 'flex', width: '100%', flex: 1, flexDirection: 'column', minHeight: 0 }}>
             {/* Unified Header */}
             <header className="header" style={{ flexShrink: 0 }}>
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 0 }}>
                     {onBack && (
-                        <button className="btn-icon" onClick={onBack} title="Enrere">
+                        <button className="btn-icon" onClick={onBack} title="Enrere" style={{ color: 'var(--text-primary)', padding: '0.5rem', background: 'transparent', border: 'none', flexShrink: 0 }}>
                             <ChevronLeft size={28} />
                         </button>
+                    )}
+                    {currentFileName && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1 }}>
+                            {isEditingHeaderAlias ? (
+                                <input 
+                                    autoFocus
+                                    defaultValue={sessionAlias || currentFileName}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            const val = e.currentTarget.value.trim();
+                                            onUpdateSessionAlias(val || null);
+                                            setIsEditingHeaderAlias(false);
+                                        } else if (e.key === 'Escape') {
+                                            setIsEditingHeaderAlias(false);
+                                        }
+                                    }}
+                                    onBlur={(e) => {
+                                        const val = e.target.value.trim();
+                                        onUpdateSessionAlias(val || null);
+                                        setIsEditingHeaderAlias(false);
+                                    }}
+                                    style={{ 
+                                        background: 'var(--bg-secondary)', 
+                                        color: 'var(--text-primary)', 
+                                        border: '1px solid var(--accent)', 
+                                        borderRadius: '0.4rem',
+                                        padding: '0.2rem 0.6rem',
+                                        fontSize: '1rem',
+                                        fontWeight: 800,
+                                        width: '100%',
+                                        maxWidth: '300px'
+                                    }}
+                                />
+                            ) : (
+                                <div 
+                                    onClick={() => setIsEditingHeaderAlias(true)}
+                                    style={{ 
+                                        cursor: 'pointer', 
+                                        display: 'flex', 
+                                        flexDirection: 'column',
+                                        justifyContent: 'center',
+                                        minWidth: 0,
+                                        padding: '0.2rem 0.5rem',
+                                        borderRadius: '0.4rem',
+                                        transition: 'background 0.2s'
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)50'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                    title="Clic per canviar el nom de la sessió"
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                                        <span style={{ 
+                                            fontSize: '1.1rem', 
+                                            fontWeight: 800, 
+                                            color: 'var(--text-primary)', 
+                                            opacity: 0.8, 
+                                            overflow: 'hidden', 
+                                            textOverflow: 'ellipsis', 
+                                            whiteSpace: 'nowrap'
+                                        }}>
+                                            {sessionAlias || currentFileName}
+                                        </span>
+                                        <Pencil size={12} style={{ opacity: 0.4, flexShrink: 0 }} />
+                                    </div>
+                                    {sessionAlias && (
+                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '-2px' }}>
+                                            {currentFileName}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>

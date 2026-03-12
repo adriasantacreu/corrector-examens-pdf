@@ -69,3 +69,27 @@ export async function getPDFLocal(fileName: string): Promise<File | null> {
         return null;
     }
 }
+
+export async function deletePDFLocal(fileName: string): Promise<void> {
+    console.log('[DB] Deleting PDF:', fileName);
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.delete(fileName);
+            request.onsuccess = () => {
+                console.log('[DB] PDF deleted successfully');
+                db.close();
+                resolve();
+            };
+            request.onerror = () => {
+                console.error('[DB] Error deleting PDF:', request.error);
+                db.close();
+                reject(request.error);
+            };
+        });
+    } catch (err) {
+        console.error('[DB] Failed to open DB for deletion:', err);
+    }
+}

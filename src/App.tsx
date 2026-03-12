@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, ArrowDown, FileCheck, Check } from 'lucide-react';
+import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, ArrowDown, FileCheck, Check, Pencil } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from './types';
 import { loadPDF, type PDFDocumentProxy } from './utils/pdfUtils';
 import TemplateDefiner from './components/TemplateDefiner';
@@ -56,7 +56,10 @@ function App() {
   const globalSaved = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
   const [mode, setMode] = useState<AppMode>('upload');
   const [theme, setTheme] = useState<'light' | 'dark'>(globalSaved.theme || 'light');
+  const [cloudSyncPDF, setCloudSyncPDF] = useState<boolean>(globalSaved.cloudSyncPDF ?? true);
+  const [cloudSyncSolution, setCloudSyncSolution] = useState<boolean>(true);
   const [currentFileName, setCurrentFileName] = useState<string | null>(globalSaved.lastActiveFileName || null);
+  const [sessionAlias, setSessionAlias] = useState<string | null>(null);
   const [pendingSession, setPendingSession] = useState<any | null>(null);
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [solutionPdfDoc, setSolutionPdfDoc] = useState<PDFDocumentProxy | null>(null);
@@ -87,6 +90,7 @@ function App() {
   const [studentIdx, setStudentIdx] = useState<number>(0);
   const [exerciseIdx, setExerciseIdx] = useState<number>(0);
   const [recentSessions, setRecentSessions] = useState<any[]>([]);
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('');
   const [accessToken, setAccessToken] = useState<string | null>(globalSaved.accessToken || null);
@@ -99,6 +103,18 @@ function App() {
   const [studentEmailMap, setStudentEmailMap] = useState<Record<string, string>>({});
   const [showPasteArea, setShowPasteArea] = useState(false);
   const [ocrCompleted, setOcrCompleted] = useState(false);
+  const [scrollPos, setScrollPos] = useState(0);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    setIsAtTop(e.currentTarget.scrollTop < 10);
+    setScrollPos(e.currentTarget.scrollTop);
+  };
+
+  const calculateScrollProgress = () => {
+    // We want the highlight to disappear between 0 and 350px of scroll
+    const threshold = 350;
+    return Math.min(1, Math.max(0, scrollPos / threshold));
+  };
 
   const [dialog, setDialog] = useState<DialogState>({ show: false, title: '', message: '', type: 'alert' });
 
@@ -107,13 +123,73 @@ function App() {
     setDialog({ show: true, title, message, type: 'confirm', onConfirm, onCancel: () => setDialog(d => ({ ...d, show: false })) });
   };
 
+  // Keyboard support for global dialogs - Maximum priority capture phase
+  useEffect(() => {
+    if (!dialog.show) return;
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopImmediatePropagation(); // Absolute block of other handlers
+        if (dialog.type === 'confirm' && dialog.onConfirm) {
+          dialog.onConfirm();
+        }
+        setDialog(prev => ({ ...prev, show: false }));
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (dialog.type === 'confirm' && dialog.onCancel) {
+          dialog.onCancel();
+        }
+        setDialog(prev => ({ ...prev, show: false }));
+      }
+    };
+
+    // Attach to window with { capture: true } to intercept before ANY React component gets it
+    window.addEventListener('keydown', handleGlobalKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
+  }, [dialog]);
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    const existing = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
     localStorage.setItem(GLOBAL_KEY, JSON.stringify({ 
         theme, accessToken, userEmail, userPicture, 
-        lastActiveFileName: currentFileName 
+        lastActiveFileName: currentFileName || existing.lastActiveFileName,
+        cloudSyncPDF
     }));
-  }, [theme, accessToken, userEmail, userPicture, currentFileName]);
+  }, [theme, accessToken, userEmail, userPicture, currentFileName, cloudSyncPDF]);
+
+  const findLastSession = async () => {
+    const globalData = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
+    let targetFile = globalData.lastActiveFileName;
+    
+    // If no last active, try to find the newest session from all localStorage
+    if (!targetFile) {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k?.startsWith(SESSION_PREFIX)) keys.push(k);
+      }
+      if (keys.length > 0) {
+        const sessions = keys.map(k => JSON.parse(localStorage.getItem(k) || '{}'));
+        sessions.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
+        targetFile = sessions[0].fileName;
+      }
+    }
+
+    if (targetFile) {
+      const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + targetFile) || 'null');
+      if (saved) {
+        const file = await getPDFLocal(targetFile);
+        if (file) {
+          setPendingSession({ ...saved, file });
+          return;
+        }
+      }
+    }
+    setPendingSession(null);
+  };
 
   const loadSessions = async () => {
     const localSessions = [];
@@ -144,7 +220,7 @@ function App() {
               headers: { 'Authorization': `Bearer ${accessToken}` }
             });
             const content = await contentRes.json();
-            cloudSessions.push({ ...content, isCloud: true, lastModified: file.modifiedTime });
+            cloudSessions.push({ ...content, isCloud: true, lastModified: file.modifiedTime, cloudId: file.id });
           } catch(e) {}
         }
         
@@ -165,37 +241,51 @@ function App() {
     }
   };
 
-  useEffect(() => { loadSessions(); }, [accessToken]);
+  const handleDeleteSession = async (session: any) => {
+    // 1. Optimistic UI update: Remove from local state immediately
+    setRecentSessions(prev => prev.filter(s => s.fileName !== session.fileName));
+    if (pendingSession?.fileName === session.fileName) {
+      setPendingSession(null);
+      const global = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
+      delete global.lastActiveFileName;
+      localStorage.setItem(GLOBAL_KEY, JSON.stringify(global));
+    }
+
+    // 2. Remove from localStorage
+    localStorage.removeItem(SESSION_PREFIX + session.fileName);
+    
+    // 3. Remove PDF from IndexedDB
+    try {
+      const { deletePDFLocal } = await import('./utils/dbUtils');
+      await deletePDFLocal(session.fileName);
+      if (session.solutionFileName) {
+        await deletePDFLocal(`solution_${session.fileName}_${session.solutionFileName}`);
+      }
+    } catch (e) { console.error("Error deleting local files:", e); }
+
+    // 4. Remove from Google Drive if cloud session
+    if (session.isCloud && session.cloudId && accessToken) {
+      try {
+        await fetch(`https://www.googleapis.com/drive/v3/files/${session.cloudId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+      } catch (e) {
+        console.error("Error deleting from Drive:", e);
+      }
+    }
+
+    // 5. Final sync to ensure list is perfect
+    loadSessions();
+  };
 
   useEffect(() => {
-    const findLastSession = async () => {
-      const globalData = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
-      let targetFile = globalData.lastActiveFileName;
-      
-      // If no last active, try to find the newest session from all localStorage
-      if (!targetFile) {
-        const keys = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k?.startsWith(SESSION_PREFIX)) keys.push(k);
-        }
-        if (keys.length > 0) {
-          const sessions = keys.map(k => JSON.parse(localStorage.getItem(k) || '{}'));
-          sessions.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
-          targetFile = sessions[0].fileName;
-        }
-      }
+    if (mode === 'upload') {
+      loadSessions();
+      findLastSession();
+    }
+  }, [mode, accessToken]);
 
-      if (targetFile) {
-        const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + targetFile) || 'null');
-        if (saved) {
-          const file = await getPDFLocal(targetFile);
-          if (file) setPendingSession({ ...saved, file });
-        }
-      }
-    };
-    findLastSession();
-  }, []);
 
   useEffect(() => {
     if (accessToken) {
@@ -227,6 +317,7 @@ function App() {
   const saveToDrive = async (fileName: string, data: any) => {
     if (!accessToken) return;
     try {
+      // Sync JSON Data (always)
       const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${fileName}.json' and parents in 'appDataFolder'&spaces=appDataFolder`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       });
@@ -248,18 +339,18 @@ function App() {
   useEffect(() => {
     if (currentFileName && mode !== 'upload') {
       const state = {
-        fileName: currentFileName, mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, lastStudentIdx: studentIdx, lastExerciseIdx: exerciseIdx, lastModified: new Date().toISOString(), studentEmailMap, progress: calculateProgress(students, exercises, annotations),
+        fileName: currentFileName, sessionAlias, mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, lastStudentIdx: studentIdx, lastExerciseIdx: exerciseIdx, lastModified: new Date().toISOString(), studentEmailMap, progress: calculateProgress(students, exercises, annotations),
         classroomStudents, ocrCompleted, solutionFileName, solutionPageIndexes
       };      localStorage.setItem(SESSION_PREFIX + currentFileName, JSON.stringify(state));
       const timeout = setTimeout(() => saveToDrive(currentFileName, state), 3000);
       return () => clearTimeout(timeout);
     }
-  }, [mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, studentIdx, exerciseIdx, classroomStudents, ocrCompleted, solutionFileName, solutionPageIndexes]);
+  }, [mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, studentIdx, exerciseIdx, classroomStudents, ocrCompleted, solutionFileName, solutionPageIndexes, sessionAlias]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || file.type !== 'application/pdf') return;
-    loadSessionFromFile(file);
+    processUploadedFile(file);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -276,7 +367,7 @@ function App() {
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
     if (file && file.type === 'application/pdf') {
-      loadSessionFromFile(file);
+      processUploadedFile(file);
     } else if (file) {
       showAlert("Fitxer no vàlid", "Només es permeten fitxers PDF.");
     }
@@ -315,9 +406,10 @@ function App() {
     setIsDraggingSolution(false);
   };
 
-  const loadSessionFromFile = async (file: File) => {
+  const loadSessionFromFile = async (file: File, forceReset: boolean = false) => {
     setIsProcessing(true); setProcessingMessage('Carregant PDF...');
-    const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + file.name) || 'null');
+    const saved = forceReset ? null : JSON.parse(localStorage.getItem(SESSION_PREFIX + file.name) || 'null');
+    
     if (saved) {
       setPagesPerExam(saved.pagesPerExam); setExercises(saved.exercises); setStudents(saved.students); setAnnotations(saved.annotations); setRubricCounts(saved.rubricCounts); setTargetMaxScore(saved.targetMaxScore); setStudentList(saved.studentList); setCommentBank(saved.commentBank); setStudentIdx(saved.lastStudentIdx || 0); setExerciseIdx(saved.lastExerciseIdx || 0); setStudentEmailMap(saved.studentEmailMap || {});
       setClassroomStudents(saved.classroomStudents || []);
@@ -325,6 +417,7 @@ function App() {
       setTempPagesPerExam(String(saved.pagesPerExam));
       setSolutionFileName(saved.solutionFileName || null);
       setSolutionPageIndexes(saved.solutionPageIndexes || []);
+      setSessionAlias(saved.sessionAlias || null);
       if (saved.solutionFileName) {
         getPDFLocal(`solution_${file.name}_${saved.solutionFileName}`).then(f => {
           if (f) loadPDF(f).then(setSolutionPdfDoc);
@@ -332,7 +425,21 @@ function App() {
       } else {
         setSolutionPdfDoc(null);
       }
+    } else {
+      // CRITICAL FIX: Reset all state to prevent data-crossing from previous sessions
+      setPagesPerExam(1); setExercises([]); setStudents([]); setAnnotations({}); setRubricCounts({}); setTargetMaxScore(10); setStudentList(''); 
+      setCommentBank([
+        { text: 'Excel·lent!', score: 1, colorMode: 'score' },
+        { text: 'Molt bé', score: 0.5, colorMode: 'score' },
+        { text: 'Revisa aquest concepte', score: -0.5, colorMode: 'neutral' },
+        { text: 'Falta justificar la resposta', score: -1, colorMode: 'neutral' },
+      ]);
+      setStudentIdx(0); setExerciseIdx(0); setStudentEmailMap({});
+      setClassroomStudents([]); setOcrCompleted(false); setTempPagesPerExam('1');
+      setSolutionFileName(null); setSolutionPageIndexes([]); setSolutionPdfDoc(null);
+      setSessionAlias(null);
     }
+
     try {
       const doc = await loadPDF(file); setPdfDoc(doc); setNumPages(doc.numPages);
       const calcStudentsCount = saved ? (saved.students.length || Math.floor(doc.numPages / (saved.pagesPerExam || 1))) : doc.numPages;
@@ -344,13 +451,80 @@ function App() {
     } catch { showAlert("Error", "Error carregant el fitxer PDF."); } finally { setIsProcessing(false); }
   };
 
+  const processUploadedFile = (file: File) => {
+    const existingSession = localStorage.getItem(SESSION_PREFIX + file.name);
+    if (existingSession) {
+      showConfirm(
+        "Sessió existent", 
+        `Hem trobat dades guardades per a '${file.name}'. Vols continuar amb la correcció o començar de zero (s'esborraran les dades anteriors)?`, 
+        () => loadSessionFromFile(file, false)
+      );
+      // Hack to allow "Començar de zero" on cancel
+      setDialog(d => ({
+        ...d,
+        onCancel: () => loadSessionFromFile(file, true)
+      }));
+    } else {
+      if (accessToken) {
+        showConfirm(
+          "Sincronització al núvol",
+          "Vols activar la sincronització al núvol per a aquest fitxer? Això et permetrà continuar la correcció des de qualsevol dispositiu.",
+          () => {
+            setCloudSyncPDF(true);
+            loadSessionFromFile(file, false);
+          }
+        );
+        // Hack to allow "No" (Local only)
+        setDialog(d => ({
+          ...d,
+          onCancel: () => {
+            setCloudSyncPDF(false);
+            loadSessionFromFile(file, false);
+          }
+        }));
+      } else {
+        loadSessionFromFile(file, false);
+      }
+    }
+  };
+
   const handleSelectSession = async (s: any) => {
-    const f = await getPDFLocal(s.fileName);
+    let f = await getPDFLocal(s.fileName);
+    
+    // If not in local IndexedDB, try to get it from Drive
+    if (!f && accessToken) {
+      setIsProcessing(true);
+      setProcessingMessage('Recuperant PDF del núvol...');
+      try {
+        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${s.fileName}.pdf' and parents in 'appDataFolder'&spaces=appDataFolder`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        const searchData = await searchRes.json();
+        const driveFile = searchData.files && searchData.files[0];
+
+        if (driveFile) {
+          const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFile.id}?alt=media`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+          });
+          const blob = await contentRes.blob();
+          f = new File([blob], s.fileName, { type: 'application/pdf' });
+          // Save locally for next time
+          await storePDFLocal(s.fileName, f);
+          setProcessingMessage('PDF recuperat ✅');
+          await new Promise(r => setTimeout(r, 800));
+        }
+      } catch (e) {
+        console.error("Cloud PDF recovery failed:", e);
+      } finally {
+        setIsProcessing(false);
+      }
+    }
+
     if (f) {
       loadSessionFromFile(f);
     } else {
       setCurrentFileName(s.fileName); 
-      showAlert("Fitxer no trobat", "Si us plau, selecciona el fitxer '" + s.fileName + "' de nou per carregar-lo.");
+      showAlert("Fitxer no trobat", "No hem trobat el PDF en aquest ordinador ni al teu Drive. Si us plau, torna'l a carregar.");
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'application/pdf';
@@ -445,8 +619,78 @@ function App() {
     } catch(e) { setIsAuthorizing(false); }
   };
 
-  const startConfiguration = async () => {
-    if (!pdfDoc) return;
+  const performFileSync = async (fileName: string, shouldSync: boolean, prefix: string = '', fileType: string = 'application/pdf') => {
+    if (!accessToken) return;
+    const fullFileName = prefix ? `${prefix}_${currentFileName}_${fileName}` : fileName;
+    const driveName = prefix ? `${prefix}_${currentFileName}_${fileName}.pdf` : `${fileName}.pdf`;
+    
+    try {
+      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${driveName}' and parents in 'appDataFolder'&spaces=appDataFolder`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      const searchData = await searchRes.json();
+      const existingFile = searchData.files && searchData.files[0];
+
+      if (shouldSync && !existingFile) {
+        setIsProcessing(true);
+        setProcessingMessage(`Sincronitzant ${prefix ? 'solucionari' : 'PDF'} al núvol...`);
+        const file = await getPDFLocal(fullFileName);
+        if (file) {
+          const metadata = { name: driveName, parents: ['appDataFolder'] };
+          const boundary = '-------pdf314159265358979323846';
+          const reader = new FileReader();
+          reader.readAsArrayBuffer(file);
+          await new Promise((resolve, reject) => {
+            reader.onload = async () => {
+              try {
+                const arrayBuffer = reader.result as ArrayBuffer;
+                const multipartBody = [
+                  `--${boundary}\r\n`,
+                  `Content-Type: application/json; charset=UTF-8\r\n\r\n`,
+                  `${JSON.stringify(metadata)}\r\n`,
+                  `--${boundary}\r\n`,
+                  `Content-Type: ${fileType}\r\n\r\n`,
+                  new Uint8Array(arrayBuffer),
+                  `\r\n--${boundary}--`
+                ];
+                const blob = new Blob(multipartBody, { type: `multipart/related; boundary=${boundary}` });
+                const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${accessToken}` },
+                  body: blob
+                });
+                if (res.ok) {
+                  setProcessingMessage(`${prefix ? 'Solucionari' : 'PDF'} sincronitzat ✅`);
+                  setTimeout(resolve, 800);
+                } else reject(new Error("Drive upload failed"));
+              } catch (e) { reject(e); }
+            };
+          });
+        }
+      } else if (!shouldSync && existingFile) {
+        setIsProcessing(true);
+        setProcessingMessage(`Alliberant espai al Drive...`);
+        await fetch(`https://www.googleapis.com/drive/v3/files/${existingFile.id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        setProcessingMessage('Espai alliberat ✅');
+        await new Promise(r => setTimeout(r, 800));
+      }
+    } catch (e) {
+      console.error("Cloud sync operation failed:", e);
+      showAlert("Sync fallida", "No s'ha pogut canviar l'estat del fitxer al núvol.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const startConfiguration = async (overrideCloudSync?: boolean) => {
+    if (!pdfDoc || !currentFileName) return;
+    const useCloudSync = overrideCloudSync !== undefined ? overrideCloudSync : cloudSyncPDF;
+    await performFileSync(currentFileName, useCloudSync);
+    if (solutionFileName) await performFileSync(solutionFileName, cloudSyncSolution, 'solution');
+
     const safePages = Number(pagesPerExam) || 1;
     const count = Math.floor(pdfDoc.numPages / safePages);
     if (students.length === 0 || students.length !== count) {
@@ -472,49 +716,125 @@ function App() {
     localStorage.removeItem(GLOBAL_KEY);
   };
 
-  const UnifiedHeader = ({ nextAction, nextLabel }: { nextAction?: () => void, nextLabel?: string }) => (
-    <header className="header">
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-        <button className="btn-icon" onClick={handleBack} title="Enrere" style={{ color: 'var(--text-primary)', padding: '0.5rem', background: 'transparent', border: 'none' }}>
-          <ChevronLeft size={28} />
-        </button>
-      </div>
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-       <FlowGradingLogo size="2.2rem" animate={false} />
-      </div>
+  const UnifiedHeader = ({ nextAction, nextLabel }: { nextAction?: () => void, nextLabel?: string }) => {
+    const [isEditingHeaderAlias, setIsEditingHeaderAlias] = useState(false);
+    
+    return (
+      <header className="header">
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 0 }}>
+          <button className="btn-icon" onClick={handleBack} title="Enrere" style={{ color: 'var(--text-primary)', padding: '0.5rem', background: 'transparent', border: 'none', flexShrink: 0 }}>
+            <ChevronLeft size={28} />
+          </button>
+          {currentFileName && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1 }}>
+              {isEditingHeaderAlias ? (
+                <input 
+                  autoFocus
+                  defaultValue={sessionAlias || currentFileName}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const val = e.currentTarget.value.trim();
+                      setSessionAlias(val || null);
+                      setIsEditingHeaderAlias(false);
+                    } else if (e.key === 'Escape') {
+                      setIsEditingHeaderAlias(false);
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const val = e.target.value.trim();
+                    setSessionAlias(val || null);
+                    setIsEditingHeaderAlias(false);
+                  }}
+                  style={{ 
+                    background: 'var(--bg-secondary)', 
+                    color: 'var(--text-primary)', 
+                    border: '1px solid var(--accent)', 
+                    borderRadius: '0.4rem',
+                    padding: '0.2rem 0.6rem',
+                    fontSize: '1rem',
+                    fontWeight: 800,
+                    width: '100%',
+                    maxWidth: '300px'
+                  }}
+                />
+              ) : (
+                <div 
+                  onClick={() => setIsEditingHeaderAlias(true)}
+                  style={{ 
+                    cursor: 'pointer', 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    minWidth: 0,
+                    padding: '0.2rem 0.5rem',
+                    borderRadius: '0.4rem',
+                    transition: 'background 0.2s'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)50'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  title="Clic per canviar el nom de la sessió"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                    <span style={{ 
+                      fontSize: '1.1rem', 
+                      fontWeight: 800, 
+                      color: 'var(--text-primary)', 
+                      opacity: 0.8, 
+                      overflow: 'hidden', 
+                      textOverflow: 'ellipsis', 
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {sessionAlias || currentFileName}
+                    </span>
+                    <Pencil size={12} style={{ opacity: 0.4, flexShrink: 0 }} />
+                  </div>
+                  {sessionAlias && (
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '-2px' }}>
+                      {currentFileName}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+         <FlowGradingLogo size="2.2rem" animate={false} />
+        </div>
 
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '1.25rem', justifyContent: 'flex-end' }}>
-        <button className="btn-icon" onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}>
-          {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
-        </button>
-        {accessToken ? (
-          <div style={{ 
-            display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.4rem 1rem', 
-            background: 'var(--bg-tertiary)', borderRadius: '2rem', border: '1px solid var(--border)',
-            height: '42px'
-          }}>
-            {userPicture ? (
-              <img src={userPicture} alt="User" style={{ width: '28px', height: '28px', borderRadius: '50%', border: '1px solid var(--accent)', objectFit: 'cover' }} />
-            ) : (
-              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800 }}>{userEmail?.[0].toUpperCase()}</div>
-            )}
-            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>{userEmail?.split('@')[0]}</span>
-            <button onClick={handleLogout} className="btn-icon" style={{ padding: '2px' }}><LogOut size={14} color="var(--danger)" /></button>
-          </div>
-        ) : (
-          <button className="btn-google" onClick={handleAuthorize}>
-            <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="G" style={{ width: '18px' }} />
-            <span style={{ fontWeight: 700 }}>Connecta</span>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '1.25rem', justifyContent: 'flex-end' }}>
+          <button className="btn-icon" onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}>
+            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
           </button>
-        )}
-        {nextAction && (
-          <button className="btn btn-primary" onClick={nextAction}>
-            {nextLabel || 'Continuar'} <ChevronRight size={18} />
-          </button>
-        )}
-      </div>
-    </header>
-  );
+          {accessToken ? (
+            <div style={{ 
+              display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.4rem 1rem', 
+              background: 'var(--bg-tertiary)', borderRadius: '2rem', border: '1px solid var(--border)',
+              height: '42px'
+            }}>
+              {userPicture ? (
+                <img src={userPicture} alt="User" style={{ width: '28px', height: '28px', borderRadius: '50%', border: '1px solid var(--accent)', objectFit: 'cover' }} />
+              ) : (
+                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800 }}>{userEmail?.[0].toUpperCase()}</div>
+              )}
+              <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>{userEmail?.split('@')[0]}</span>
+              <button onClick={handleLogout} className="btn-icon" style={{ padding: '2px' }}><LogOut size={14} color="var(--danger)" /></button>
+            </div>
+          ) : (
+            <button className="btn-google" onClick={handleAuthorize}>
+              <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="G" style={{ width: '18px' }} />
+              <span style={{ fontWeight: 700 }}>Connecta</span>
+            </button>
+          )}
+          {nextAction && (
+            <button className="btn btn-primary" onClick={nextAction}>
+              {nextLabel || 'Continuar'} <ChevronRight size={18} />
+            </button>
+          )}
+        </div>
+      </header>
+    );
+  };
 
   return (
     <div className={`app-container ${mode === 'upload' ? 'home-page' : ''}`} style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -603,7 +923,7 @@ function App() {
       <main className="main-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
         {mode === 'upload' && (
           <div 
-            onScroll={(e: any) => setIsAtTop(e.target.scrollTop < 10)}
+            onScroll={handleScroll}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -660,7 +980,7 @@ function App() {
             {/* Hero Section - Forced to 100vh to keep it clean */}
             <div style={{ minHeight: '100vh', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '25vh 2rem 4rem', flexShrink: 0 }}>
               <div style={{ marginBottom: '14rem', transform: 'rotate(-4.5deg)', flexShrink: 0 }}>
-                <FlowGradingLogo size="13rem" rotation={-7} extraThick={true} />
+                <FlowGradingLogo size="13rem" rotation={-7} extraThick={true} scrollProgress={calculateScrollProgress()} />
               </div>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '3rem', alignItems: 'center', marginBottom: '6rem', flexShrink: 0, width: '100%', maxWidth: '900px' }}>
@@ -707,21 +1027,51 @@ function App() {
                           <div style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--success)' }}>{pendingSession.progress || 0}%</div>
                         </div>
                       </button>
-                      <div style={{ display: 'flex', justifyContent: 'center', gap: '1.25rem', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{pendingSession.students?.length || 0} alumnes detectats</span>
-                        <button 
-                          onClick={(e) => { 
-                            e.stopPropagation(); 
-                            setPendingSession(null); 
-                            setCurrentFileName(null);
-                            const global = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
-                            delete global.lastActiveFileName;
-                            localStorage.setItem(GLOBAL_KEY, JSON.stringify(global));
-                          }}
-                          style={{ background: 'none', border: 'none', color: 'var(--danger)', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                        >
-                          Descarta sessió
-                        </button>
+                        
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                          {accessToken && (
+                            <div 
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const newSync = !cloudSyncPDF;
+                                setCloudSyncPDF(newSync);
+                                const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + pendingSession.fileName) || '{}');
+                                saved.cloudSyncPDF = newSync;
+                                localStorage.setItem(SESSION_PREFIX + pendingSession.fileName, JSON.stringify(saved));
+                                setPendingSession({ ...pendingSession, cloudSyncPDF: newSync });
+                                await performFileSync(pendingSession.fileName, newSync);
+                              }}
+                              style={{ 
+                                display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', 
+                                padding: '0.2rem 0.6rem', background: 'var(--bg-tertiary)70', borderRadius: '1rem', 
+                                border: '1px solid var(--border)'
+                              }}
+                            >
+                              <div style={{ 
+                                width: '24px', height: '12px', background: cloudSyncPDF ? 'var(--success)' : 'var(--text-secondary)', 
+                                borderRadius: '6px', position: 'relative', transition: 'all 0.3s ease' 
+                              }}>
+                                <div style={{ 
+                                  width: '8px', height: '8px', background: 'white', borderRadius: '50%', 
+                                  position: 'absolute', top: '2px', left: cloudSyncPDF ? '14px' : '2px', transition: 'all 0.3s ease'
+                                }} />
+                              </div>
+                              <span style={{ fontSize: '0.65rem', fontWeight: 800 }}>Núvol {cloudSyncPDF ? "Sí" : "No"}</span>
+                            </div>
+                          )}
+
+                          <button 
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              showConfirm("Eliminar sessió", `Vols eliminar la sessió de '${pendingSession.fileName}'?`, () => handleDeleteSession(pendingSession));
+                            }}
+                            style={{ background: 'none', border: 'none', color: 'var(--danger)', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                          >
+                            Descarta sessió
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -736,24 +1086,105 @@ function App() {
                   <HandwrittenTitle size="2.4rem" color="purple">Darreres sessions</HandwrittenTitle>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
-                  {recentSessions.filter(s => s.fileName !== pendingSession?.fileName).map(s => (
-                    <div key={s.fileName} className="card" style={{ padding: '1.5rem', cursor: 'pointer', transition: 'all 0.2s ease', position: 'relative', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '1rem' }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 12px 24px -10px rgba(0,0,0,0.1)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }} onClick={() => handleSelectSession(s)}>
+                  {recentSessions.filter(s => s.fileName !== pendingSession?.fileName).map(s => {
+                    const isEditingAlias = s.isEditingAlias;
+                    return (
+                    <div key={s.fileName} className="card" style={{ padding: '1.5rem', cursor: isEditingAlias ? 'default' : 'pointer', transition: 'all 0.2s ease', position: 'relative', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '1rem' }} onMouseEnter={e => { if(!isEditingAlias) { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 12px 24px -10px rgba(0,0,0,0.1)'; } }} onMouseLeave={e => { if(!isEditingAlias) { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; } }} onClick={() => !isEditingAlias && handleSelectSession(s)}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div style={{ fontWeight: 800, fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden', flex: 1 }}>
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.fileName}</span>
-                          {s.isCloud && <Cloud size={14} color="var(--accent)" />}
+                        <div style={{ fontWeight: 800, fontSize: '1.05rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', overflow: 'hidden', flex: 1, position: 'relative' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
+                            {isEditingAlias ? (
+                              <input 
+                                autoFocus
+                                defaultValue={s.sessionAlias || s.fileName}
+                                onClick={e => e.stopPropagation()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.stopPropagation();
+                                    const val = e.currentTarget.value.trim();
+                                    const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + s.fileName) || '{}');
+                                    saved.sessionAlias = val || null;
+                                    localStorage.setItem(SESSION_PREFIX + s.fileName, JSON.stringify(saved));
+                                    // Update state to remove edit mode
+                                    setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, sessionAlias: val || null, isEditingAlias: false } : rs));
+                                  } else if (e.key === 'Escape') {
+                                    e.stopPropagation();
+                                    setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, isEditingAlias: false } : rs));
+                                  }
+                                }}
+                                onBlur={() => setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, isEditingAlias: false } : rs))}
+                                style={{ width: '100%', padding: '0.2rem 0.5rem', border: '1px solid var(--accent)', borderRadius: '0.25rem', fontSize: '1rem', fontWeight: 800 }}
+                              />
+                            ) : (
+                              <>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  {s.sessionAlias || s.fileName}
+                                  {s.isCloud && <Cloud size={14} color="var(--accent)" />}
+                                </span>
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, isEditingAlias: true } : rs)); }}
+                                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px', display: 'flex', alignItems: 'center', opacity: 0.5 }}
+                                  onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                                  onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}
+                                  title="Canviar nom"
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                          {s.sessionAlias && !isEditingAlias && (
+                            <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {s.fileName}
+                            </span>
+                          )}
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); showConfirm("Eliminar sessió", `Vols eliminar la sessió de '${s.fileName}'?`, () => { localStorage.removeItem(SESSION_PREFIX + s.fileName); loadSessions(); }); }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '4px', opacity: 0.6 }} onMouseEnter={e => e.currentTarget.style.opacity = '1'} onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}><Trash2 size={16} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); showConfirm("Eliminar sessió", `Vols eliminar la sessió de '${s.fileName}'?`, () => handleDeleteSession(s)); }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '4px', opacity: 0.6 }} onMouseEnter={e => e.currentTarget.style.opacity = '1'} onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}><Trash2 size={16} /></button>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}><Clock size={14} /> {new Date(s.lastModified).toLocaleDateString()}</div>
+                      
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 800, marginBottom: '0.2rem' }}>
                         <span style={{ color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Progrés</span>
                         <span style={{ color: 'var(--success)' }}>{s.progress || 0}%</span>
                       </div>
                       <div className="progress-bar-container" style={{ marginTop: 0 }}><div className="progress-bar-fill" style={{ width: `${s.progress || 0}%` }}></div></div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{s.students?.length || 0} alumnes detectats</div>
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{s.students?.length || 0} alumnes detectats</div>
+                        
+                        {accessToken && (
+                          <div 
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              const newSync = !(s.cloudSyncPDF ?? true);
+                              const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + s.fileName) || '{}');
+                              saved.cloudSyncPDF = newSync;
+                              localStorage.setItem(SESSION_PREFIX + s.fileName, JSON.stringify(saved));
+                              setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, cloudSyncPDF: newSync } : rs));
+                              if (currentFileName === s.fileName) setCloudSyncPDF(newSync);
+                              await performFileSync(s.fileName, newSync);
+                            }}
+                            style={{ 
+                              display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', 
+                              padding: '0.2rem 0.5rem', background: 'var(--bg-tertiary)70', borderRadius: '1rem', 
+                              border: '1px solid var(--border)'
+                            }}
+                          >
+                            <div style={{ 
+                              width: '24px', height: '12px', background: (s.cloudSyncPDF ?? true) ? 'var(--success)' : 'var(--text-secondary)', 
+                              borderRadius: '6px', position: 'relative', transition: 'all 0.3s ease' 
+                            }}>
+                              <div style={{ 
+                                width: '8px', height: '8px', background: 'white', borderRadius: '50%', 
+                                position: 'absolute', top: '2px', left: (s.cloudSyncPDF ?? true) ? '14px' : '2px', transition: 'all 0.3s ease'
+                              }} />
+                            </div>
+                            <span style={{ fontSize: '0.6rem', fontWeight: 800 }}>Núvol {(s.cloudSyncPDF ?? true) ? "Sí" : "No"}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               </div>
             )}
@@ -763,7 +1194,7 @@ function App() {
         {mode === 'setup' && (
           <div style={{ flex: 1, overflowY: 'auto', padding: '3rem 4rem' }}>
             <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '3.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '3rem', marginBottom: '3.5rem', flexWrap: 'wrap' }}>
                 <HandwrittenTitle size="3rem" color="green">Configuració de l'examen</HandwrittenTitle>
               </div>
 
@@ -845,15 +1276,43 @@ function App() {
                           <input type="file" accept="application/pdf" onChange={handleSolutionUpload} style={{ display: 'none' }} />
                         </label>
                       ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
-                          <div style={{ width: '32px', height: '32px', background: 'var(--accent-light)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <FileCheck size={18} color="var(--accent)" />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
+                            <div style={{ width: '32px', height: '32px', background: 'var(--accent-light)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <FileCheck size={18} color="var(--accent)" />
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '0.8rem', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{solutionFileName}</div>
+                              <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 600 }}>PDF Solucionari</div>
+                            </div>
+                            <button className="btn-icon" onClick={() => { setSolutionPdfDoc(null); setSolutionFileName(null); }} style={{ color: 'var(--danger)' }}><Trash2 size={16} /></button>
                           </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: '0.8rem', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{solutionFileName}</div>
-                            <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 600 }}>PDF Solucionari</div>
-                          </div>
-                          <button className="btn-icon" onClick={() => { setSolutionPdfDoc(null); setSolutionFileName(null); }} style={{ color: 'var(--danger)' }}><Trash2 size={16} /></button>
+                          
+                          {accessToken && (
+                            <div 
+                              onClick={() => {
+                                const newSync = !cloudSyncSolution;
+                                setCloudSyncSolution(newSync);
+                                if (solutionFileName) performFileSync(solutionFileName, newSync, 'solution');
+                              }}
+                              style={{ 
+                                display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', 
+                                padding: '0.4rem 0.8rem', background: 'var(--bg-secondary)', borderRadius: '1rem', 
+                                border: '1px solid var(--border)', width: 'fit-content', alignSelf: 'center'
+                              }}
+                            >
+                              <div style={{ 
+                                width: '28px', height: '14px', background: cloudSyncSolution ? 'var(--success)' : 'var(--text-secondary)', 
+                                borderRadius: '7px', position: 'relative', transition: 'all 0.3s ease' 
+                              }}>
+                                <div style={{ 
+                                  width: '10px', height: '10px', background: 'white', borderRadius: '50%', 
+                                  position: 'absolute', top: '2px', left: cloudSyncSolution ? '16px' : '2px', transition: 'all 0.3s ease'
+                                }} />
+                              </div>
+                              <span style={{ fontSize: '0.7rem', fontWeight: 800 }}>Núvol {cloudSyncSolution ? "actiu" : "desactivat"}</span>
+                            </div>
+                          )}
                         </div>
                       )}
                       <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', fontWeight: 500 }}>
@@ -986,23 +1445,24 @@ function App() {
           </div>
         )}
 
-        {mode === 'organize_pages' && pdfDoc && <PageOrganizer pdfDoc={pdfDoc} solutionPdfDoc={solutionPdfDoc} initialGroups={students} initialSolutionPages={solutionPageIndexes} pagesPerExam={Number(pagesPerExam) || 1} onBack={handleBack} onConfirm={(g, sp) => { setStudents(g); setSolutionPageIndexes(sp); setMode('configure_crops'); }} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout} showAlert={showAlert} showConfirm={showConfirm} />}
+        {mode === 'organize_pages' && pdfDoc && <PageOrganizer pdfDoc={pdfDoc} solutionPdfDoc={solutionPdfDoc} initialGroups={students} initialSolutionPages={solutionPageIndexes} pagesPerExam={Number(pagesPerExam) || 1} currentFileName={currentFileName} sessionAlias={sessionAlias} onUpdateSessionAlias={setSessionAlias} onBack={handleBack} onConfirm={(g, sp) => { setStudents(g); setSolutionPageIndexes(sp); setMode('configure_crops'); }} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout} showAlert={showAlert} showConfirm={showConfirm} />}
         {mode === 'configure_crops' && pdfDoc && (
-          <TemplateDefiner 
-            pdfDoc={pdfDoc} pagesPerExam={Number(pagesPerExam) || 1} initialExercises={exercises} onBack={handleBack} 
+          <TemplateDefiner
+            pdfDoc={pdfDoc} pagesPerExam={Number(pagesPerExam) || 1} initialExercises={exercises} 
+            currentFileName={currentFileName} sessionAlias={sessionAlias} onUpdateSessionAlias={setSessionAlias}
+            onBack={handleBack}
             onComplete={async (ex) => {
-                setExercises(ex); 
+                setExercises(ex);
                 if (ocrCompleted) { setMode('correction'); return; }
                 await runOCR(ex);
                 setMode('correction');
-            }} 
-            theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} 
-            accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout} 
+            }}
+            theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
+            accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout}
             onRunOCR={() => runOCR()} ocrCompleted={ocrCompleted}
             showAlert={showAlert} showConfirm={showConfirm}
           />
         )}
-        
         {mode === 'correction' && pdfDoc && (
           <CorrectionView 
             pdfDoc={pdfDoc} solutionPdfDoc={solutionPdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} 

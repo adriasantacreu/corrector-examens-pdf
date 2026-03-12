@@ -43,3 +43,18 @@ Aquest document detalla totes les millores, correccions i canvis de disseny apli
 - Refinar la vinculació manual a la pantalla de resultats.
 - Millorar la detecció OCR en condicions de baixa qualitat.
 - Optimitzar la descàrrega de PDFs combinats per a grans volums d'alumnes.
+
+## 6. Millores de Sessió i Sincronització (Última actualització)
+- **Gestió de l'Última Sessió:**
+  - S'ha assegurat que en tornar a l'inici des de la pantalla de configuració (fent servir el botó d'enrere), el botó de continuar l'última sessió activa torni a aparèixer automàticament sense necessitat de recarregar la pàgina (F5).
+- **Control del Nom de Sessió:**
+  - Ara es pot editar el nom de la sessió (l'àlies) directament clicant-lo a la barra superior a les pantalles de configuració, organitzador i plantilla.
+  - Si la sessió té un àlies, el nom original del fitxer es mostra a sota en cursiva per no perdre la referència.
+- **Sincronització al Núvol Per-Fitxer:**
+  - S'ha eliminat el botó global de sincronització al núvol de la pantalla de configuració.
+  - S'ha introduït un quadre de diàleg (prompt) en pujar un PDF nou per preguntar a l'usuari si vol activar la sincronització al núvol per a aquest fitxer en concret.
+  - Els selectors d'activació al núvol ara es troben a la part inferior dreta de cada targeta de sessió (alineats amb el recompte d'alumnes) i executen l'acció de pujar o esborrar de Drive de forma **immediata**.
+  - S'ha afegit també un control independent per a la sincronització al núvol del **solucionari**.
+- **Refinaments Visuals:**
+  - Efecte de scroll animat al logotip de la pantalla d'inici: el subratllat blau es retalla linealment segons la posició del scroll, però manté la forma geomètrica original.
+  - Els títols manuscrits principals (a l'organitzador de pàgines i resultats) ja no tenen un marge negatiu a l'esquerra per evitar que quedin tallats per la vora de la pantalla (`noMargin={true}`).
