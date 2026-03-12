@@ -314,8 +314,10 @@ export default function TemplateDefiner({
             const newExercises = prev.map(ex => {
                 if (ex.id === id) {
                     const updated = { ...ex, ...updates } as ExerciseDef;
-                    if (updates.maxScore !== undefined && autoDistributeMap[id] && updated.rubric && updated.rubric.length > 0) {
-                        const perItem = Math.round((updates.maxScore / updated.rubric.length) * 100) / 100;
+                    if ((updates.maxScore !== undefined || updates.scoringMode !== undefined) && autoDistributeMap[id] && updated.rubric && updated.rubric.length > 0) {
+                        const maxScoreToUse = updated.maxScore ?? 1;
+                        let perItem = Math.round((maxScoreToUse / updated.rubric.length) * 100) / 100;
+                        if ((updated.scoringMode ?? 'from_zero') === 'from_max') perItem = -perItem;
                         updated.rubric = updated.rubric.map(r => ({ ...r, points: perItem }));
                     }
                     return updated;
@@ -333,7 +335,8 @@ export default function TemplateDefiner({
                 const newItems = [...items, { id: `r_${Date.now()}`, label: '', points: 0 }];
                 
                 if (autoDistributeMap[exId] && ex.maxScore !== undefined) {
-                    const perItem = Math.round((ex.maxScore / newItems.length) * 100) / 100;
+                    let perItem = Math.round((ex.maxScore / newItems.length) * 100) / 100;
+                    if ((ex.scoringMode ?? 'from_zero') === 'from_max') perItem = -perItem;
                     return { ...ex, rubric: newItems.map(r => ({ ...r, points: perItem })) };
                 }
                 
@@ -353,7 +356,9 @@ export default function TemplateDefiner({
                 const items = (ex.rubric || []).map(item => item.id === itemId ? { ...item, ...updates } : item);
                 
                 const sum = items.reduce((s, i) => s + (i.points || 0), 0);
-                if (ex.maxScore !== undefined && sum > ex.maxScore && !warnedExceeded[exId] && !suppressMaxScoreWarning) {
+                const isExceeded = (ex.scoringMode ?? 'from_zero') === 'from_max' ? Math.abs(sum) > (ex.maxScore ?? 0) : sum > (ex.maxScore ?? 0);
+                
+                if (ex.maxScore !== undefined && isExceeded && !warnedExceeded[exId] && !suppressMaxScoreWarning) {
                     setWarnedExceeded(prevMap => ({ ...prevMap, [exId]: true }));
                     showAlert(
                         "Atenció", 
@@ -365,7 +370,7 @@ export default function TemplateDefiner({
                         }
                     );
                     setSuppressMaxScoreWarning(true);
-                } else if (ex.maxScore !== undefined && sum <= ex.maxScore) {
+                } else if (ex.maxScore !== undefined && !isExceeded) {
                     setWarnedExceeded(prevMap => ({ ...prevMap, [exId]: false }));
                 }
 
@@ -380,7 +385,8 @@ export default function TemplateDefiner({
             if (ex.id === exId) {
                 const newItems = (ex.rubric || []).filter(i => i.id !== itemId);
                 if (autoDistributeMap[exId] && ex.maxScore !== undefined && newItems.length > 0) {
-                    const perItem = Math.round((ex.maxScore / newItems.length) * 100) / 100;
+                    let perItem = Math.round((ex.maxScore / newItems.length) * 100) / 100;
+                    if ((ex.scoringMode ?? 'from_zero') === 'from_max') perItem = -perItem;
                     return { ...ex, rubric: newItems.map(r => ({ ...r, points: perItem })) };
                 }
                 return { ...ex, rubric: newItems };
@@ -703,23 +709,25 @@ export default function TemplateDefiner({
                                                     <div style={{ flex: 1 }}></div>
                                                     
                                                     {/* Segmented Control / Switch for Scoring Mode */}
-                                                    <div style={{ display: 'flex', background: 'var(--bg-primary)', borderRadius: '0.5rem', padding: '2px', border: '1px solid var(--border)', height: '28px' }}>
+                                                    <div style={{ display: 'flex', background: 'var(--bg-primary)', borderRadius: '0.5rem', padding: '2px', border: '1px solid var(--border)', height: '28px', width: '90px' }}>
                                                         <button 
                                                             onClick={(e) => { e.stopPropagation(); updateExerciseMeta(ex.id, { scoringMode: 'from_zero' }); }}
                                                             style={{ 
-                                                                padding: '0 8px', fontSize: '0.6rem', fontWeight: 800, borderRadius: '0.35rem', border: 'none', cursor: 'pointer',
+                                                                flex: 1, padding: 0, fontSize: '0.6rem', fontWeight: 800, borderRadius: '0.35rem', border: 'none', cursor: 'pointer',
                                                                 background: (ex.scoringMode ?? 'from_max') === 'from_zero' ? 'var(--accent)' : 'transparent',
-                                                                color: (ex.scoringMode ?? 'from_max') === 'from_zero' ? 'white' : 'var(--text-secondary)'
+                                                                color: (ex.scoringMode ?? 'from_max') === 'from_zero' ? 'white' : 'var(--text-secondary)',
+                                                                transition: 'all 0.2s ease'
                                                             }}
-                                                        >0</button>
+                                                        >0 ↑</button>
                                                         <button 
                                                             onClick={(e) => { e.stopPropagation(); updateExerciseMeta(ex.id, { scoringMode: 'from_max' }); }}
                                                             style={{ 
-                                                                padding: '0 8px', fontSize: '0.6rem', fontWeight: 800, borderRadius: '0.35rem', border: 'none', cursor: 'pointer',
+                                                                flex: 1, padding: 0, fontSize: '0.6rem', fontWeight: 800, borderRadius: '0.35rem', border: 'none', cursor: 'pointer',
                                                                 background: (ex.scoringMode ?? 'from_max') === 'from_max' ? 'var(--accent)' : 'transparent',
-                                                                color: (ex.scoringMode ?? 'from_max') === 'from_max' ? 'white' : 'var(--text-secondary)'
+                                                                color: (ex.scoringMode ?? 'from_max') === 'from_max' ? 'white' : 'var(--text-secondary)',
+                                                                transition: 'all 0.2s ease'
                                                             }}
-                                                        >MAX</button>
+                                                        >MAX ↓</button>
                                                     </div>
                                                 </div>
 
@@ -728,19 +736,18 @@ export default function TemplateDefiner({
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'var(--bg-primary)', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                             <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-secondary)' }}>PÀGINES ASSIGNADES</span>
-                                                            <button 
-                                                                onClick={(e) => { 
-                                                                    e.stopPropagation(); 
-                                                                    if (!ex.pageIndexes.includes(currentPageIndex)) {
+                                                            {!ex.pageIndexes.includes(currentPageIndex) && (
+                                                                <button 
+                                                                    onClick={(e) => { 
+                                                                        e.stopPropagation(); 
                                                                         updateExerciseMeta(ex.id, { pageIndexes: [...ex.pageIndexes, currentPageIndex].sort((a,b) => a-b) });
-                                                                    }
-                                                                }}
-                                                                className="btn btn-secondary"
-                                                                style={{ fontSize: '0.6rem', height: '20px', padding: '0 0.4rem' }}
-                                                                disabled={ex.pageIndexes.includes(currentPageIndex)}
-                                                            >
-                                                                + Afegir pàg. {currentPageIndex + 1}
-                                                            </button>
+                                                                    }}
+                                                                    className="btn btn-secondary"
+                                                                    style={{ fontSize: '0.6rem', height: '20px', padding: '0 0.4rem' }}
+                                                                >
+                                                                    + Afegir pàg. {currentPageIndex + 1}
+                                                                </button>
+                                                            )}
                                                         </div>
                                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                                                             {ex.pageIndexes.map(pIdx => (
