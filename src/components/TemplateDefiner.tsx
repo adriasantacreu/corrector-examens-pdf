@@ -860,14 +860,14 @@ export default function TemplateDefiner({
 
                     {bgImage ? (
                         <div className="canvas-container" style={{ width: '100%', height: '100%', cursor: mode !== 'select' ? 'crosshair' : 'grab' }}>
-                            <Stage ref={stageRef} width={containerRef.current?.clientWidth || 800} height={containerRef.current?.clientHeight || 600} scaleX={stageScale} scaleY={stageScale} x={stagePos.x} y={stagePos.y} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onWheel={handleWheel} onTouchStart={handleMouseDown} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} draggable={mode === 'select'} onDragEnd={(e) => setStagePos({ x: e.target.x(), y: e.target.y() })}>
+                            <Stage ref={stageRef} width={containerRef.current?.clientWidth || 800} height={containerRef.current?.clientHeight || 600} scaleX={stageScale} scaleY={stageScale} x={stagePos.x} y={stagePos.y} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onWheel={handleWheel} onTouchStart={handleMouseDown} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} draggable={mode === 'select'} onDragEnd={(e) => { if (e.target === stageRef.current) { setStagePos({ x: e.target.x(), y: e.target.y() }); } }}>
                                 <Layer>
                                     <KonvaImage image={bgImage} x={0} y={0} width={bgImage.width} height={bgImage.height} />
                                     {currentPageRegions.map((region) => {
                                         const { fill, stroke, label } = getRegionStyle(region.type);
                                         const isSelected = region.id === selectedId;
                                         return (
-                                            <Group key={region.id} draggable={mode === 'select'} onClick={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }} onTap={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }} onDragEnd={(e) => { const x = e.target.x(); const y = e.target.y(); setExercises(prev => prev.map(ex => ex.id === region.id ? { ...ex, x, y } : ex)); e.target.x(0); e.target.y(0); }} x={region.x} y={region.y}>
+                                            <Group key={region.id} draggable={mode === 'select'} onClick={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }} onTap={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }} onDragEnd={(e) => { e.cancelBubble = true; const x = e.target.x(); const y = e.target.y(); setExercises(prev => prev.map(ex => ex.id === region.id ? { ...ex, x, y } : ex)); e.target.x(0); e.target.y(0); }} x={region.x} y={region.y}>
                                                 <Rect name="regionRect" x={0} y={0} width={region.width} height={region.height} fill={fill} stroke={stroke} strokeWidth={2 / stageScale} />
                                                 <Rect x={0} y={-(24 / stageScale)} width={Math.max(80, label.length * 8 + 16) / stageScale} height={24 / stageScale} fill={stroke} />
                                                 <Text text={label} fill="white" x={8 / stageScale} y={-(18 / stageScale)} fontSize={12 / stageScale} fontStyle="bold" />
