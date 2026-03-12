@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, forwardRef } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Group, Text, Transformer } from 'react-konva';
-import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, Award, TextSelect, Sun, Moon, LogOut, RefreshCw, X, Pencil, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, Trash2, MousePointer2, Square, Plus, Award, TextSelect, Sun, Moon, LogOut, RefreshCw, X, Pencil, FileText, Minus } from 'lucide-react';
 import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas } from '../utils/pdfUtils';
 import type { ExerciseDef, CropExercise, PagesExercise, RubricItem } from '../types';
@@ -98,6 +98,122 @@ const NumericInput = forwardRef<HTMLInputElement, {
     );
 });
 
+function RegionItem({ 
+    region, fill, stroke, label, mode, isTransforming, baseScale, 
+    setSelectedId, setTransformingId, setExercises, bgImage, stageRef 
+}: any) {
+    const shapeRef = useRef<any>(null);
+    const labelGroupRef = useRef<any>(null);
+    const trRef = useRef<any>(null);
+
+    useEffect(() => {
+        if (isTransforming && trRef.current && shapeRef.current) {
+            trRef.current.nodes([shapeRef.current]);
+            trRef.current.getLayer().batchDraw();
+        }
+    }, [isTransforming]);
+
+    const handleTransform = () => {
+        if (shapeRef.current && labelGroupRef.current) {
+            const node = shapeRef.current;
+            // Make the label follow the rectangle's local x,y during transform
+            labelGroupRef.current.x(node.x());
+            labelGroupRef.current.y(node.y());
+        }
+    };
+
+    const handleTransformEnd = () => {
+        if (shapeRef.current) {
+            const node = shapeRef.current;
+            const sX = node.scaleX();
+            const sY = node.scaleY();
+            
+            // Calculate new absolute coordinates
+            const newX = region.x + node.x();
+            const newY = region.y + node.y();
+            const newW = Math.max(10, node.width() * sX);
+            const newH = Math.max(10, node.height() * sY);
+
+            setExercises((prev: any) => prev.map((ex: any) => 
+                ex.id === region.id ? { ...ex, x: newX, y: newY, width: newW, height: newH } : ex
+            ));
+
+            // Reset local transforms so the Group remains the master of position
+            node.x(0);
+            node.y(0);
+            node.scaleX(1);
+            node.scaleY(1);
+            
+            if (labelGroupRef.current) {
+                labelGroupRef.current.x(0);
+                labelGroupRef.current.y(0);
+            }
+        }
+    };
+
+    return (
+        <Group 
+            draggable={mode === 'select'} 
+            onClick={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }} 
+
+
+            onTap={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }} 
+            onDblClick={(e) => { if (mode === 'select') { e.cancelBubble = true; setTransformingId(region.id); setSelectedId(region.id); } }}
+            onDblTap={(e) => { if (mode === 'select') { e.cancelBubble = true; setTransformingId(region.id); setSelectedId(region.id); } }}
+            onDragEnd={(e) => { e.cancelBubble = true; const x = e.target.x(); const y = e.target.y(); setExercises((prev: any) => prev.map((ex: any) => ex.id === region.id ? { ...ex, x, y } : ex)); e.target.x(0); e.target.y(0); }} 
+            x={region.x} 
+            y={region.y}
+            dragBoundFunc={(pos) => {
+                if (!bgImage || !stageRef.current) return pos;
+                const stage = stageRef.current;
+                const scale = stage.scaleX();
+                let localX = (pos.x - stage.x()) / scale;
+                let localY = (pos.y - stage.y()) / scale;
+                if (localX < 0) localX = 0;
+                if (localY < 0) localY = 0;
+                if (localX + region.width > bgImage.width) localX = bgImage.width - region.width;
+                if (localY + region.height > bgImage.height) localY = bgImage.height - region.height;
+                return { x: localX * scale + stage.x(), y: localY * scale + stage.y() };
+            }}
+        >
+            <Rect 
+                ref={shapeRef}
+                name="regionRect" 
+                x={0} y={0} 
+                width={region.width} height={region.height} 
+                fill={fill} stroke={stroke} 
+                strokeWidth={1 / baseScale} 
+                strokeScaleEnabled={true} 
+            />
+            
+            <Group ref={labelGroupRef}>
+                <Rect x={0} y={-(24 / baseScale)} width={Math.max(80, label.length * 8 + 16) / baseScale} height={24 / baseScale} fill={stroke} />
+                <Text text={label} fill="white" x={8 / baseScale} y={-(18 / baseScale)} fontSize={12 / baseScale} fontStyle="bold" />
+            </Group>
+
+            {isTransforming && mode === 'select' && (
+                <Transformer 
+                    ref={trRef}
+                    rotateEnabled={false} 
+                    keepRatio={false} 
+                    onTransform={handleTransform}
+                    onTransformEnd={handleTransformEnd}
+                    borderStrokeWidth={1 / baseScale}
+                    anchorSize={5 / baseScale}
+                    padding={5 / baseScale}
+                    boundBoxFunc={(oldBox, newBox) => { 
+                        if (!bgImage) return oldBox;
+                        if (newBox.width < 10 || newBox.height < 10) return oldBox;
+                        if (newBox.x < 0 || newBox.y < 0) return oldBox;
+                        if (newBox.x + newBox.width > bgImage.width || newBox.y + newBox.height > bgImage.height) return oldBox;
+                        return newBox; 
+                    }} 
+                />
+            )}
+        </Group>
+    );
+}
+
 export default function TemplateDefiner({ 
     pdfDoc, pagesPerExam, initialExercises, 
     currentFileName, sessionAlias, onUpdateSessionAlias,
@@ -108,6 +224,7 @@ export default function TemplateDefiner({
     const [currentPageIndex, setCurrentPageIndex] = useState(0);
     const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
     const [stageScale, setStageScale] = useState(1);
+    const [baseScale, setBaseScale] = useState(1);
     const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
     const [exercises, setExercises] = useState<ExerciseDef[]>(initialExercises);
     const [lastAddedId, setLastAddedId] = useState<string | null>(null);
@@ -120,6 +237,7 @@ export default function TemplateDefiner({
     const [newCropRef, setNewCropRef] = useState<Partial<CropExercise> | null>(null);
     const [mode, setMode] = useState<'select' | 'draw' | 'draw_pages' | 'draw_ocr' | 'draw_total_score'>('draw');
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [transformingId, setTransformingId] = useState<string | null>(null);
     const [isEditingHeaderAlias, setIsEditingHeaderAlias] = useState(false);
 
     const containerRef = useRef<HTMLDivElement>(null);
@@ -163,6 +281,7 @@ export default function TemplateDefiner({
                         const targetScale = Math.min(targetScaleX, targetScaleY, 1.2);
 
                         setStageScale(targetScale);
+                        setBaseScale(targetScale);
                         setStagePos({
                             x: (containerWidth - (img.width * targetScale)) / 2,
                             y: Math.max(20, (containerHeight - (img.height * targetScale)) / 2)
@@ -190,9 +309,41 @@ export default function TemplateDefiner({
         setLastAddedId(newId);
     };
 
+    const applyZoom = (newScale: number, pointer?: { x: number, y: number }) => {
+        const stage = stageRef.current;
+        if (!stage) return;
+        const oldScale = stage.scaleX();
+        const safeScale = Math.min(10, Math.max(0.1, newScale));
+        
+        let targetPointer = pointer;
+        if (!targetPointer) {
+            if (containerRef.current) {
+                targetPointer = {
+                    x: containerRef.current.clientWidth / 2,
+                    y: containerRef.current.clientHeight / 2
+                };
+            } else {
+                targetPointer = { x: stage.width() / 2, y: stage.height() / 2 };
+            }
+        }
+
+        const mousePointTo = { x: (targetPointer.x - stage.x()) / oldScale, y: (targetPointer.y - stage.y()) / oldScale };
+        setStageScale(safeScale);
+        setStagePos({ x: targetPointer.x - mousePointTo.x * safeScale, y: targetPointer.y - mousePointTo.y * safeScale });
+    };
+
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+            const isInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+            
+            if (e.key === 'Enter' || e.key === 'Escape') {
+                setTransformingId(null);
+                setSelectedId(null);
+                if (isInput) (e.target as HTMLElement).blur();
+                return;
+            }
+
+            if (isInput) return;
             
             const key = e.key.toLowerCase();
             if (key === 'v') setMode('select');
@@ -213,7 +364,7 @@ export default function TemplateDefiner({
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedId, showConfirm]);
+    }, [selectedId, showConfirm, setTransformingId, setSelectedId]);
 
     const handleMouseDown = (e: any) => {
         if (mode === 'select') return;
@@ -711,8 +862,8 @@ export default function TemplateDefiner({
                                                             onKeyDown={(e) => {
                                                                 if (e.key === 'Enter' || e.key === 'Tab') {
                                                                     e.preventDefault();
+                                                                    setTransformingId(null);
                                                                     e.currentTarget.blur();
-                                                                    // Optionally could add a new rubric item here, but sticking to basics
                                                                 }
                                                             }}
                                                             style={{ width: '45px', textAlign: 'center', fontWeight: 800 }} 
@@ -858,57 +1009,130 @@ export default function TemplateDefiner({
                         <button className="btn-icon" style={{ color: 'white' }} disabled={currentPageIndex === pagesPerExam - 1} onClick={() => setCurrentPageIndex(p => Math.min(pagesPerExam - 1, p + 1))}><ChevronRight size={20} /></button>
                     </div>
 
+                    {/* Floating Zoom Controls - Bottom Center */}
+                    <div className="glass-dark" style={{ 
+                        position: 'absolute', bottom: '1.5rem', zIndex: 10, 
+                        display: 'flex', alignItems: 'center', gap: '0.75rem', 
+                        padding: '0.4rem 1.25rem', borderRadius: '2.5rem',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(255,255,255,0.1)'
+                    }}>
+                        <button 
+                            className="btn-icon" 
+                            style={{ color: 'white', padding: '4px', opacity: 0.8 }} 
+                            onClick={() => applyZoom(stageScale / 1.2)}
+                            title="Allunyar (-)"
+                        >
+                            <Minus size={18} />
+                        </button>
+                        
+                        <input 
+                            type="range" 
+                            min="0.1" 
+                            max="5" 
+                            step="0.1" 
+                            value={stageScale} 
+                            onChange={(e) => applyZoom(parseFloat(e.target.value))}
+                            style={{ 
+                                width: '140px', height: '4px', cursor: 'pointer',
+                                accentColor: 'var(--accent)'
+                            }}
+                        />
+
+                        <button 
+                            className="btn-icon" 
+                            style={{ color: 'white', padding: '4px', opacity: 0.8 }} 
+                            onClick={() => applyZoom(stageScale * 1.2)}
+                            title="Apropar (+)"
+                        >
+                            <Plus size={18} />
+                        </button>
+                        
+                        <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', height: '24px', marginLeft: '0.5rem', paddingLeft: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                            <span style={{ color: 'white', fontSize: '0.85rem', fontWeight: 800, minWidth: '45px', textAlign: 'center' }}>
+                                {Math.round(stageScale * 100)}%
+                            </span>
+                            
+                            <button 
+                                className="btn-icon" 
+                                style={{ color: 'white', opacity: 0.7 }} 
+                                title="Ajustar a la pàgina"
+                                onClick={() => {
+                                    if (bgImage && containerRef.current) {
+                                        const containerWidth = containerRef.current.clientWidth;
+                                        const containerHeight = containerRef.current.clientHeight;
+                                        const padding = 40;
+                                        const targetScaleX = (containerWidth - padding) / bgImage.width;
+                                        const targetScaleY = (containerHeight - padding) / bgImage.height;
+                                        const targetScale = Math.min(targetScaleX, targetScaleY, 1.2);
+                                        setStageScale(targetScale);
+                                        setBaseScale(targetScale);
+                                        setStagePos({
+                                            x: (containerWidth - (bgImage.width * targetScale)) / 2,
+                                            y: Math.max(20, (containerHeight - (bgImage.height * targetScale)) / 2)
+                                        });
+                                    }
+                                }}
+                            >
+                                <RefreshCw size={16} />
+                            </button>
+                        </div>
+                    </div>
+
                     {bgImage ? (
                         <div className="canvas-container" style={{ width: '100%', height: '100%', cursor: mode !== 'select' ? 'crosshair' : 'grab' }}>
-                            <Stage ref={stageRef} width={containerRef.current?.clientWidth || 800} height={containerRef.current?.clientHeight || 600} scaleX={stageScale} scaleY={stageScale} x={stagePos.x} y={stagePos.y} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onWheel={handleWheel} onTouchStart={handleMouseDown} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} draggable={mode === 'select'} onDragEnd={(e) => { if (e.target === stageRef.current) { setStagePos({ x: e.target.x(), y: e.target.y() }); } }}>
+                            <Stage 
+                                ref={stageRef} 
+                                width={containerRef.current?.clientWidth || 800} 
+                                height={containerRef.current?.clientHeight || 600} 
+                                scaleX={stageScale} 
+                                scaleY={stageScale} 
+                                x={stagePos.x} 
+                                y={stagePos.y} 
+                                onMouseDown={(e) => {
+                                    // Exit transformation/selection if clicking on stage or background image
+                                    const clickedOnEmpty = e.target === stageRef.current || e.target.name() === 'bgImage';
+                                    if (clickedOnEmpty) {
+                                        setTransformingId(null);
+                                        setSelectedId(null);
+                                    }
+                                    handleMouseDown(e);
+                                }} 
+                                onMouseMove={handleMouseMove} 
+                                onMouseUp={handleMouseUp} 
+                                onWheel={handleWheel} 
+                                onTouchStart={handleMouseDown} 
+                                onTouchMove={handleTouchMove} 
+                                onTouchEnd={handleTouchEnd} 
+                                draggable={mode === 'select' && !transformingId} 
+                                onDragEnd={(e) => { if (e.target === stageRef.current) { setStagePos({ x: e.target.x(), y: e.target.y() }); } }}
+                            >
                                 <Layer>
-                                    <KonvaImage image={bgImage} x={0} y={0} width={bgImage.width} height={bgImage.height} />
+                                    <KonvaImage name="bgImage" image={bgImage} x={0} y={0} width={bgImage.width} height={bgImage.height} />
                                     {currentPageRegions.map((region) => {
                                         const { fill, stroke, label } = getRegionStyle(region.type);
-                                        const isSelected = region.id === selectedId;
+                                        const isTransforming = region.id === transformingId;
                                         return (
-                                            <Group 
-                                                key={region.id} 
-                                                draggable={mode === 'select'} 
-                                                onClick={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }} 
-                                                onTap={(e) => { if (mode === 'select') { e.cancelBubble = true; setSelectedId(region.id); } }} 
-                                                onDragEnd={(e) => { e.cancelBubble = true; const x = e.target.x(); const y = e.target.y(); setExercises(prev => prev.map(ex => ex.id === region.id ? { ...ex, x, y } : ex)); e.target.x(0); e.target.y(0); }} 
-                                                x={region.x} 
-                                                y={region.y}
-                                                dragBoundFunc={(pos) => {
-                                                    if (!bgImage || !stageRef.current) return pos;
-                                                    const stage = stageRef.current;
-                                                    const scale = stage.scaleX();
-                                                    
-                                                    // Convert absolute requested position to local
-                                                    let localX = (pos.x - stage.x()) / scale;
-                                                    let localY = (pos.y - stage.y()) / scale;
-
-                                                    // Constrain local coordinates
-                                                    if (localX < 0) localX = 0;
-                                                    if (localY < 0) localY = 0;
-                                                    if (localX + region.width > bgImage.width) localX = bgImage.width - region.width;
-                                                    if (localY + region.height > bgImage.height) localY = bgImage.height - region.height;
-
-                                                    // Convert back to absolute
-                                                    return {
-                                                        x: localX * scale + stage.x(),
-                                                        y: localY * scale + stage.y()
-                                                    };
-                                                }}
-                                            >
-                                                <Rect name="regionRect" x={0} y={0} width={region.width} height={region.height} fill={fill} stroke={stroke} strokeWidth={2 / stageScale} />
-                                                <Rect x={0} y={-(24 / stageScale)} width={Math.max(80, label.length * 8 + 16) / stageScale} height={24 / stageScale} fill={stroke} />
-                                                <Text text={label} fill="white" x={8 / stageScale} y={-(18 / stageScale)} fontSize={12 / stageScale} fontStyle="bold" />
-                                                {isSelected && mode === 'select' && (
-                                                    <Transformer rotateEnabled={false} keepRatio={false} boundBoxFunc={(oldBox, newBox) => { if (newBox.width < 10 || newBox.height < 10) return oldBox; return newBox; }} onTransformEnd={(e) => { const node = e.target; const sX = node.scaleX(), sY = node.scaleY(); setExercises(prev => prev.map(ex => ex.id === region.id ? { ...ex, width: Math.max(10, node.width() * sX), height: Math.max(10, node.height() * sY) } : ex)); node.scaleX(1); node.scaleY(1); }} />
-                                                )}
-                                            </Group>
+                                            <RegionItem
+                                                key={region.id}
+                                                region={region}
+                                                fill={fill}
+                                                stroke={stroke}
+                                                label={label}
+                                                mode={mode}
+                                                isTransforming={isTransforming}
+                                                baseScale={baseScale}
+                                                setSelectedId={setSelectedId}
+                                                setTransformingId={setTransformingId}
+                                                setExercises={setExercises}
+                                                bgImage={bgImage}
+                                                stageRef={stageRef}
+                                            />
                                         );
                                     })}
                                     {isDrawing && newCropRef && (() => {
                                         const { fill, stroke } = getRegionStyle(mode === 'draw' ? 'crop' : mode === 'draw_ocr' ? 'ocr_name' : 'total_score');
-                                        return <Rect x={newCropRef.x} y={newCropRef.y} width={newCropRef.width} height={newCropRef.height} fill={fill} stroke={stroke} strokeWidth={2 / stageScale} dash={[5, 5]} />;
+                                        return <Rect x={newCropRef.x} y={newCropRef.y} width={newCropRef.width} height={newCropRef.height} fill={fill} stroke={stroke} strokeWidth={2 / baseScale} strokeScaleEnabled={true} dash={[5 / baseScale, 5 / baseScale]} />;
                                     })()}
                                 </Layer>
                             </Stage>

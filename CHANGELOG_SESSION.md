@@ -64,6 +64,23 @@ Aquest document detalla totes les millores, correccions i canvis de disseny apli
     - Si la suma dels punts dels ítems d'una rúbrica supera la nota màxima de l'exercici, el sistema emet un únic avís visual informatiu usant el sistema global (`showAlert`).
     - L'acció no es bloqueja (s'assumeix que l'usuari sap el que fa i busca tenir notes extres), i el missatge no es repeteix de forma pesada si es continuen afegint ítems i se segueix depassant el màxim.
 
+## 9. Sistema de Zoom Unificat i Millores d'Edició
+- **Control de Zoom Global:**
+    - S'ha implementat una barra flotant de zoom (slider + botons +/-) tant al **Definidor de Plantilla** com al **Visor de Correcció**.
+    - Introducció del concepte `baseScale` per normalitzar mides visuals: les línies i textos es defineixen en píxels reals respecte al zoom inicial del document.
+    - Activació de l'escalat de traç (`strokeScaleEnabled`): els dibuixos i marcacions creixen i s'encullen proporcionalment amb el zoom, mantenint la seva posició relativa exacta.
+- **Edició Avançada de Zones:**
+    - **Mode Redimensionar:** En fer doble clic sobre una zona existent (amb l'eina de selecció), s'activen els controladors per canviar-ne la mida.
+    - **Sincronització de Targetes:** Durant l'edició o moviment, la targeta del títol segueix fidelment el marc de la zona sense separar-se.
+    - **Arrossegament en Edició:** Ara es pot moure una zona fins i tot mentre s'està redimensionant (mode dual).
+    - **Sortida Ràpida:** El mode edició/selecció es tanca automàticament en prémer `Enter`, `Esc`, o en fer clic a qualsevol espai buit del document.
+- **Seguretat de Límits:**
+    - S'ha prohibit el moviment o redimensionament de qualsevol zona fora dels marges del paper PDF. El cursor es bloqueja exactament a la vora.
+- **Refinaments Visuals:**
+    - Reducció del gruix dels marcadors i zones a **1px** per a una estètica més neta.
+    - Sortida global de qualsevol camp de text/numèric prement la tecla **Esc**.
+
+
 ## 6. Millores de Sessió i Sincronització (Última actualització)
 - **Gestió de l'Última Sessió:**
   - S'ha assegurat que en tornar a l'inici des de la pantalla de configuració (fent servir el botó d'enrere), el botó de continuar l'última sessió activa torni a aparèixer automàticament sense necessitat de recarregar la pàgina (F5).

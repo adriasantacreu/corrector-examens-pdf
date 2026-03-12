@@ -8,7 +8,7 @@ declare global {
 import { Stage, Layer, Image as KonvaImage, Line, Rect, Group, Text, Transformer } from 'react-konva';
 import {
     ChevronLeft, ChevronRight, PenTool, Highlighter, MousePointer2,
-    Undo, Trash2, Type, Plus, Pencil, Check, X, Download, Loader2, Moon, Sun, AlertTriangle, RefreshCw, Send
+    Undo, Trash2, Type, Plus, Pencil, Check, X, Download, Loader2, Moon, Sun, AlertTriangle, RefreshCw, Send, Minus
 } from 'lucide-react';
 // import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas, type PDFDocumentProxy } from '../utils/pdfUtils';
@@ -176,6 +176,7 @@ export default function CorrectionView({
 
     // Zoom & Pan state
     const [stageScale, setStageScale] = useState(1);
+    const [baseScale, setBaseScale] = useState(1);
     const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
     const [scoreStampSize, setScoreStampSize] = useState(24);
     const [history, setHistory] = useState<Annotation[][]>([]);
@@ -207,7 +208,7 @@ export default function CorrectionView({
     };
 
     const handleEraserAtPos = (actualPos: { x: number, y: number }) => {
-        const eraserRadius = 20 / stageScale;
+        const eraserRadius = 20 / baseScale;
         const newAnnots = currentAnnotations.filter(ann => {
             if (ann.type === 'pen') {
                 for (let i = 0; i < ann.points.length; i += 2) {
@@ -457,6 +458,29 @@ export default function CorrectionView({
     const containerRef = useRef<HTMLDivElement>(null);
     const lastDistRef = useRef<number>(0);
 
+    const applyZoom = (newScale: number, pointer?: { x: number, y: number }) => {
+        const stage = stageRef.current;
+        if (!stage) return;
+        const oldScale = stage.scaleX();
+        const safeScale = Math.min(10, Math.max(0.1, newScale));
+        
+        let targetPointer = pointer;
+        if (!targetPointer) {
+            if (containerRef.current) {
+                targetPointer = {
+                    x: containerRef.current.clientWidth / 2,
+                    y: containerRef.current.clientHeight / 2
+                };
+            } else {
+                targetPointer = { x: stage.width() / 2, y: stage.height() / 2 };
+            }
+        }
+
+        const mousePointTo = { x: (targetPointer.x - stage.x()) / oldScale, y: (targetPointer.y - stage.y()) / oldScale };
+        setStageScale(safeScale);
+        setStagePos({ x: targetPointer.x - mousePointTo.x * safeScale, y: targetPointer.y - mousePointTo.y * safeScale });
+    };
+
     useEffect(() => {
         if (!currentStudent || !currentExercise || !pdfDoc) return;
 
@@ -575,6 +599,7 @@ export default function CorrectionView({
                     const targetScale = Math.min(targetScaleX, targetScaleY, 1.2);
 
                     setStageScale(targetScale);
+                    setBaseScale(targetScale);
                     setStagePos({
                         x: (containerWidth - (totalWidth * targetScale)) / 2,
                         y: Math.max(20, (containerHeight - (totalHeight * targetScale)) / 2)
@@ -1966,8 +1991,9 @@ export default function CorrectionView({
                     {/* Main Workspace */}
                     <div className="workspace" ref={containerRef} style={{ background: 'transparent', display: 'flex', flexDirection: 'column', position: 'relative', flex: 1, overflow: 'hidden', minHeight: 0 }}>
                         {renderedPages.length > 0 ? (
-                            <div
-                                className="canvas-container"
+                            <>
+                                <div
+                                    className="canvas-container"
                                 style={{ width: '100%', flex: 1, minHeight: 0, position: 'relative', margin: 0, boxShadow: 'none', background: 'transparent', cursor: pendingStampComment ? 'crosshair' : (tool === 'select' ? 'default' : 'crosshair') }}
                                 onDragOver={(e) => e.preventDefault()}
                                 onDrop={(e) => {
@@ -2068,9 +2094,8 @@ export default function CorrectionView({
                                                     : renderedPages[0].width}
                                                 height={renderedPages.reduce((max, p) => Math.max(max, p.yOffset + p.height), 0)}
                                                 stroke="#ef4444"
-                                                strokeWidth={2 / stageScale}
-                                                dash={[15 / stageScale, 10 / stageScale]}
-                                                opacity={0.6}
+                                                strokeWidth={1 / baseScale}
+                                                dash={[15 / baseScale, 10 / baseScale]}                                                opacity={0.6}
                                                 listening={false}
                                             />
                                         )}
@@ -2119,18 +2144,19 @@ export default function CorrectionView({
                                                         <Line
                                                             points={ann.points}
                                                             stroke={ann.color}
-                                                            strokeWidth={(ann.strokeWidth || 2) / stageScale}
+                                                            strokeWidth={(ann.strokeWidth || 2) / baseScale}
                                                             lineCap="round"
                                                             lineJoin="round"
                                                             tension={0.5}
                                                             opacity={ann.opacity ?? 1}
-                                                            hitStrokeWidth={10 / stageScale}
+                                                            hitStrokeWidth={10 / baseScale}
                                                         />
                                                         {isSelected && (
                                                             <Rect
-                                                                x={minX - 4} y={minY - 4}
-                                                                width={(maxX - minX) + 8} height={(maxY - minY) + 8}
-                                                                stroke="#6366f1" dash={[4 / stageScale, 4 / stageScale]} strokeWidth={1 / stageScale} fill="transparent"
+                                                                x={minX - 4 / baseScale} y={minY - 4 / baseScale}
+                                                                width={(maxX - minX) + 8 / baseScale} height={(maxY - minY) + 8 / baseScale}
+                                                                stroke="#6366f1" dash={[4 / baseScale, 4 / baseScale]} strokeWidth={1 / baseScale} fill="transparent"
+                                                                listening={false}
                                                             />
                                                         )}
                                                     </Group>
@@ -2165,9 +2191,8 @@ export default function CorrectionView({
                                                             height={ann.height}
                                                             fill={ann.color}
                                                             stroke={isSelected ? 'var(--accent)' : undefined}
-                                                            strokeWidth={isSelected ? 1 / stageScale : 0}
-                                                        />
-                                                        {highlighterLabelMode === 'individual' && (ann.label || ann.points !== undefined) && (
+                                                            strokeWidth={isSelected ? 1 / baseScale : 0}
+                                                        />                                                        {highlighterLabelMode === 'individual' && (ann.label || ann.points !== undefined) && (
                                                             <Text
                                                                 x={labelX}
                                                                 y={labelY}
@@ -2226,13 +2251,12 @@ export default function CorrectionView({
                                                         {/* Clean selection indicator only when selected */}
                                                         {isSelected && (
                                                             <Rect
-                                                                width={250}
-                                                                height={usedPresets.length * itemHeight + padding}
+                                                                width={250 / baseScale}
+                                                                height={(usedPresets.length * itemHeight + padding) / baseScale}
                                                                 stroke="#6366f1"
-                                                                strokeWidth={1 / stageScale}
-                                                                dash={[5, 5]}
-                                                            />
-                                                        )}
+                                                                strokeWidth={1 / baseScale}
+                                                                dash={[5 / baseScale, 5 / baseScale]}
+                                                            />                                                        )}
                                                         {usedPresets.map((p, pi) => (
                                                             <Group key={p.id} y={pi * itemHeight}>
                                                                 <Rect
@@ -2300,7 +2324,7 @@ export default function CorrectionView({
                                                                 x={-4} y={-4}
                                                                 width={(ann.width || (ann.text.length * (currentFontSize * 0.6))) + 8}
                                                                 height={(ann.height || currentFontSize) + 8}
-                                                                stroke="#6366f1" dash={[4 / stageScale, 4 / stageScale]} strokeWidth={1 / stageScale} fill="transparent"
+                                                                stroke="#6366f1" dash={[4, 4]} strokeWidth={1} fill="transparent"
                                                             />
                                                         )}
                                                     </Group>
@@ -2321,7 +2345,7 @@ export default function CorrectionView({
                                                     >
                                                         <KonvaImage image={img} width={ann.width} height={ann.height} />
                                                         {isSelected && (
-                                                            <Rect width={ann.width} height={ann.height} stroke="var(--accent)" dash={[5, 5]} strokeWidth={2} />
+                                                            <Rect width={ann.width} height={ann.height} stroke="var(--accent)" dash={[5 / baseScale, 5 / baseScale]} strokeWidth={1 / baseScale} />
                                                         )}
                                                     </Group>
                                                 );
@@ -2333,15 +2357,16 @@ export default function CorrectionView({
                                                 ref={transformerRef}
                                                 rotateEnabled={false}
                                                 borderStroke="#6366f1"
-                                                borderStrokeWidth={1}
+                                                borderStrokeWidth={1 / baseScale}
                                                 anchorFill="white"
                                                 anchorStroke="#6366f1"
-                                                anchorStrokeWidth={1.5}
-                                                anchorSize={5 / stageScale}
-                                                anchorCornerRadius={1}
-                                                padding={5 / stageScale}
+                                                anchorStrokeWidth={1.5 / baseScale}
+                                                anchorSize={5 / baseScale}
+                                                anchorCornerRadius={1 / baseScale}
+                                                padding={5 / baseScale}
                                                 enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right', 'top-center', 'bottom-center']}
                                             />
+
                                         )}
 
                                         {scoreStampData && (
@@ -2415,7 +2440,7 @@ export default function CorrectionView({
                                                         x={-4} y={-4}
                                                         width={500 + 8}
                                                         height={scoreStampData.height + 8}
-                                                        stroke="#6366f1" dash={[4 / stageScale, 4 / stageScale]} strokeWidth={1 / stageScale} fill="transparent"
+                                                        stroke="#6366f1" dash={[4, 4]} strokeWidth={1} fill="transparent"
                                                     />
                                                 )}
                                             </Group>
@@ -2429,7 +2454,7 @@ export default function CorrectionView({
                                                 height={editingTextNode.height}
                                                 stroke="var(--accent)"
                                                 dash={[5 / stageScale, 5 / stageScale]}
-                                                strokeWidth={2 / stageScale}
+                                                strokeWidth={2}
                                             />
                                         )}
 
@@ -2476,7 +2501,87 @@ export default function CorrectionView({
                                     />
                                 )}
                             </div>
-                        ) : (
+
+                            {/* Floating Zoom Controls - Bottom Center */}
+                            <div className="glass-dark" style={{ 
+                                position: 'absolute', bottom: '1.5rem', left: '50%', transform: 'translateX(-50%)', zIndex: 100, 
+                                display: 'flex', alignItems: 'center', gap: '0.75rem', 
+                                padding: '0.4rem 1.25rem', borderRadius: '2.5rem',
+                                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                pointerEvents: 'auto'
+                            }}>
+                                <button 
+                                    className="btn-icon" 
+                                    style={{ color: 'white', padding: '4px', opacity: 0.8 }} 
+                                    onClick={() => applyZoom(stageScale / 1.2)}
+                                    title="Allunyar (-)"
+                                >
+                                    <Minus size={18} />
+                                </button>
+                                
+                                <input 
+                                    type="range" 
+                                    min="0.1" 
+                                    max="5" 
+                                    step="0.1" 
+                                    value={stageScale} 
+                                    onChange={(e) => applyZoom(parseFloat(e.target.value))}
+                                    style={{ 
+                                        width: '140px', height: '4px', cursor: 'pointer',
+                                        accentColor: 'var(--accent)'
+                                    }}
+                                />
+
+                                <button 
+                                    className="btn-icon" 
+                                    style={{ color: 'white', padding: '4px', opacity: 0.8 }} 
+                                    onClick={() => applyZoom(stageScale * 1.2)}
+                                    title="Apropar (+)"
+                                >
+                                    <Plus size={18} />
+                                </button>
+                                
+                                <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', height: '24px', marginLeft: '0.5rem', paddingLeft: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                    <span style={{ color: 'white', fontSize: '0.85rem', fontWeight: 800, minWidth: '45px', textAlign: 'center' }}>
+                                        {Math.round(stageScale * 100)}%
+                                    </span>
+                                    
+                                    <button 
+                                        className="btn-icon" 
+                                        style={{ color: 'white', opacity: 0.7 }} 
+                                        title="Ajustar a la pàgina"
+                                        onClick={() => {
+                                            if (renderedPages.length > 0 && containerRef.current) {
+                                                const totalWidth = ((currentExercise.type === 'pages' && (currentExercise as any).spansTwoPages && renderedPages.length > 1)
+                                                    ? renderedPages[0].width + (renderedPages[1].width || 0) + 20
+                                                    : Math.max(...renderedPages.map(p => p.width)));
+
+                                                const totalHeight = Math.max(...renderedPages.map(p => p.yOffset + p.height));
+
+                                                const containerWidth = containerRef.current.clientWidth;
+                                                const containerHeight = containerRef.current.clientHeight;
+
+                                                const padding = 40;
+                                                const targetScaleX = (containerWidth - padding) / totalWidth;
+                                                const targetScaleY = (containerHeight - padding) / totalHeight;
+                                                const targetScale = Math.min(targetScaleX, targetScaleY, 1.2);
+
+                                                setStageScale(targetScale);
+                    setBaseScale(targetScale);
+                                                setStagePos({
+                                                    x: (containerWidth - (totalWidth * targetScale)) / 2,
+                                                    y: Math.max(20, (containerHeight - (totalHeight * targetScale)) / 2)
+                                                });
+                                            }
+                                        }}
+                                    >
+                                        <RefreshCw size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '1.5rem', padding: '2rem', textAlign: 'center' }}>
                                 <div style={{ background: 'var(--bg-secondary)', padding: '2rem', borderRadius: '1rem', border: '1px solid var(--border)', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', maxWidth: '400px' }}>
                                     <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
