@@ -1054,10 +1054,10 @@ export default function TemplateDefiner({
                 {/* Editor Main Canvas */}
                 <div className="workspace" ref={containerRef} style={{ background: 'var(--bg-tertiary)', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minHeight: 0, position: 'relative', margin: 0, padding: 0 }}>
                     {/* Floating Pagination controls */}
-                    <div className="glass-dark" style={{ position: 'absolute', top: '1rem', zIndex: 10, display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.5rem 1rem', borderRadius: '2rem' }}>
-                        <button className="btn-icon" style={{ color: 'white' }} disabled={currentPageIndex === 0} onClick={() => setCurrentPageIndex(p => Math.max(0, p - 1))}><ChevronLeft size={20} /></button>
-                        <span style={{ color: 'white', fontWeight: 700 }}>Pàgina {currentPageIndex + 1} / {pagesPerExam}</span>
-                        <button className="btn-icon" style={{ color: 'white' }} disabled={currentPageIndex === pagesPerExam - 1} onClick={() => setCurrentPageIndex(p => Math.min(pagesPerExam - 1, p + 1))}><ChevronRight size={20} /></button>
+                    <div className="glass-zoom" style={{ position: 'absolute', top: '1rem', zIndex: 10, display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.5rem 1rem', borderRadius: '2rem', boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }}>
+                        <button className="btn-icon" disabled={currentPageIndex === 0} onClick={() => setCurrentPageIndex(p => Math.max(0, p - 1))}><ChevronLeft size={20} /></button>
+                        <span style={{ fontWeight: 700 }}>Pàgina {currentPageIndex + 1} / {pagesPerExam}</span>
+                        <button className="btn-icon" disabled={currentPageIndex === pagesPerExam - 1} onClick={() => setCurrentPageIndex(p => Math.min(pagesPerExam - 1, p + 1))}><ChevronRight size={20} /></button>
                     </div>
 
                     {/* Floating Zoom Controls - Bottom Center */}
@@ -1091,7 +1091,7 @@ export default function TemplateDefiner({
 
                         <button
                             className="btn-icon"
-                            style={{ color: 'white', padding: '4px', opacity: 0.8 }}
+                            style={{ padding: '4px', opacity: 0.8 }}
                             onClick={() => applyZoom(stageScale * 1.2)}
                             title="Apropar (+)"
                         >

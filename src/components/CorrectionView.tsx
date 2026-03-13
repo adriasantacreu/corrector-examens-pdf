@@ -8,11 +8,10 @@ declare global {
 import { Stage, Layer, Image as KonvaImage, Line, Rect, Group, Text, Transformer } from 'react-konva';
 import {
     ChevronLeft, ChevronRight, PenTool, Highlighter, MousePointer2,
-    Undo, Trash2, Type, Plus, Pencil, Check, X, Download, Loader2, Moon, Sun, AlertTriangle, RefreshCw, Send, Minus, ChevronDown, ChevronUp
+    Undo, Trash2, Type, Plus, Pencil, Check, X, Loader2, Moon, Sun, AlertTriangle, RefreshCw, Send, Minus, ChevronDown, ChevronUp
 } from 'lucide-react';
 // import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas, type PDFDocumentProxy } from '../utils/pdfUtils';
-import { exportAnnotatedPDF, exportOriginalLayoutPDF } from '../utils/pdfExport';
 import type { Student, ExerciseDef, AnnotationStore, Annotation, PenAnnotation, HighlighterAnnotation, ImageAnnotation, TextAnnotation, ToolType, PresetHighlighter, PenColor, RubricCountStore, AnnotationComment, HighlighterLegendAnnotation } from '../types';
 
 interface Props {
@@ -141,8 +140,6 @@ export default function CorrectionView({
     useEffect(() => { localStorage.setItem('correction-last-h-color', highlighterColor); }, [highlighterColor]);
     useEffect(() => { localStorage.setItem('correction-last-pen-width', String(penWidth)); }, [penWidth]);
     useEffect(() => { localStorage.setItem('correction-last-pen-opacity', String(penOpacity)); }, [penOpacity]);
-    const [isExporting, setIsExporting] = useState(false);
-    const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
 
     // Comment bank states
     const [newComment, setNewComment] = useState('');
@@ -1743,138 +1740,6 @@ export default function CorrectionView({
                     </div>
 
                     <div style={{ display: 'flex', gap: '0.4rem', borderLeft: '1px solid var(--border)', paddingLeft: '1rem' }}>
-                        <button
-                            disabled={isExporting}
-                            onClick={async () => {
-                                setIsExporting(true);
-                                setExportProgress({ done: 0, total: exercises.length });
-                                const totalPossible = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
-                                const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
-                                try {
-                                    await exportAnnotatedPDF({
-                                        pdfDoc, students, exercises, annotations, rubricCounts,
-                                        scope: 'current',
-                                        currentStudentIdx: studentIdx,
-                                        scaleFactor: currentFactor,
-                                        onProgress: (d: number, t: number) => setExportProgress({ done: d, total: t })
-                                    } as any);
-                                } finally {
-                                    setIsExporting(false);
-                                    setExportProgress(null);
-                                }
-                            }}
-                            style={{
-                                display: 'flex', alignItems: 'center', gap: '0.4rem',
-                                padding: '0.4rem 0.75rem', borderRadius: '0.5rem',
-                                background: isExporting ? 'var(--bg-tertiary)' : 'var(--accent)',
-                                color: 'white', border: 'none', cursor: isExporting ? 'wait' : 'pointer',
-                                fontSize: '0.8rem', fontWeight: 600
-                            }}
-                            title="Exportar alumne actual"
-                        >
-                            {isExporting ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={14} />}
-                            {isExporting && exportProgress ? `${exportProgress.done}/${exportProgress.total}` : 'PDF'}
-                        </button>
-                        <button
-                            disabled={isExporting}
-                            onClick={async () => {
-                                setIsExporting(true);
-                                setExportProgress({ done: 0, total: students.length * exercises.length });
-                                const totalPossible = gradableExercises.reduce((acc: number, ex: ExerciseDef) => acc + (ex.maxScore ?? 10), 0);
-                                const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
-                                try {
-                                    await exportAnnotatedPDF({
-                                        pdfDoc, students, exercises, annotations, rubricCounts,
-                                        scope: 'all',
-                                        currentStudentIdx: studentIdx,
-                                        scaleFactor: currentFactor,
-                                        onProgress: (d: number, t: number) => setExportProgress({ done: d, total: t })
-                                    });
-                                } finally {
-                                    setIsExporting(false);
-                                    setExportProgress(null);
-                                }
-                            }}
-                            style={{
-                                display: 'flex', alignItems: 'center', gap: '0.4rem',
-                                padding: '0.4rem 0.75rem', borderRadius: '0.5rem',
-                                background: isExporting ? 'var(--bg-tertiary)' : 'var(--bg-secondary)',
-                                color: 'var(--text-primary)', border: '1px solid var(--border)',
-                                cursor: isExporting ? 'wait' : 'pointer',
-                                fontSize: '0.8rem', fontWeight: 600
-                            }}
-                            title="Exportar tots els alumnes"
-                        >
-                            <Download size={14} />
-                            Tots
-                        </button>
-                        <button
-                            disabled={isExporting}
-                            onClick={async () => {
-                                setIsExporting(true);
-                                setExportProgress({ done: 0, total: exercises.length });
-                                const totalPossible = gradableExercises.reduce((acc: number, ex: ExerciseDef) => acc + (ex.maxScore ?? 10), 0);
-                                const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
-                                try {
-                                    await exportOriginalLayoutPDF({
-                                        pdfDoc, students, exercises, annotations, rubricCounts,
-                                        scope: 'current',
-                                        currentStudentIdx: studentIdx,
-                                        scaleFactor: currentFactor,
-                                        onProgress: (d: number, t: number) => setExportProgress({ done: d, total: t })
-                                    });
-                                } finally {
-                                    setIsExporting(false);
-                                    setExportProgress(null);
-                                }
-                            }}
-                            style={{
-                                display: 'flex', alignItems: 'center', gap: '0.4rem',
-                                padding: '0.4rem 0.75rem', borderRadius: '0.5rem',
-                                background: isExporting ? 'var(--bg-tertiary)' : 'var(--bg-secondary)',
-                                color: 'var(--text-primary)', border: '1px solid var(--border)',
-                                cursor: isExporting ? 'wait' : 'pointer',
-                                fontSize: '0.8rem', fontWeight: 600
-                            }}
-                            title="Exportar alumne actual en layout original"
-                        >
-                            <Download size={14} />
-                            Layout (Alumne)
-                        </button>
-                        <button
-                            disabled={isExporting}
-                            onClick={async () => {
-                                setIsExporting(true);
-                                setExportProgress({ done: 0, total: students.length * exercises.length });
-                                const totalPossible = gradableExercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
-                                const currentFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
-                                try {
-                                    await exportOriginalLayoutPDF({
-                                        pdfDoc, students, exercises, annotations, rubricCounts,
-                                        scope: 'all',
-                                        currentStudentIdx: studentIdx,
-                                        scaleFactor: currentFactor,
-                                        onProgress: (d: number, t: number) => setExportProgress({ done: d, total: t })
-                                    });
-                                } finally {
-                                    setIsExporting(false);
-                                    setExportProgress(null);
-                                }
-                            }}
-                            style={{
-                                display: 'flex', alignItems: 'center', gap: '0.4rem',
-                                padding: '0.4rem 0.75rem', borderRadius: '0.5rem',
-                                background: isExporting ? 'var(--bg-tertiary)' : 'var(--bg-secondary)',
-                                color: 'var(--text-primary)', border: '1px solid var(--border)',
-                                cursor: isExporting ? 'wait' : 'pointer',
-                                fontSize: '0.8rem', fontWeight: 600
-                            }}
-                            title="Exportar tot en layout original"
-                        >
-                            <Download size={14} />
-                            Layout (Tots)
-                        </button>
-
                         {onFinish && (
                             <button
                                 onClick={onFinish}
@@ -2653,7 +2518,7 @@ export default function CorrectionView({
 
                                     <button
                                         className="btn-icon"
-                                        style={{ color: 'white', padding: '4px', opacity: 0.8 }}
+                                        style={{ padding: '4px', opacity: 0.8 }}
                                         onClick={() => applyZoom(stageScale * 1.2)}
                                         title="Apropar (+)"
                                     >
@@ -3398,22 +3263,6 @@ export default function CorrectionView({
                                     })()}
                                 </div>
                             )}
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.8rem', marginTop: '1.5rem' }}>
-                            <button
-                                className="btn btn-secondary"
-                                onClick={() => exportOriginalLayoutPDF({ pdfDoc, students, exercises, annotations, rubricCounts, scope: 'current', currentStudentIdx: studentIdx, targetMaxScore })}
-                                style={{ flex: 1, padding: '0.5rem', fontSize: '0.75rem' }}
-                            >
-                                <Download size={14} /> PDF ORIGINAL
-                            </button>
-                            <button
-                                className="btn btn-primary"
-                                onClick={() => exportAnnotatedPDF({ pdfDoc, students, exercises, annotations, rubricCounts, scope: 'current', currentStudentIdx: studentIdx, targetMaxScore })}
-                                style={{ flex: 1, padding: '0.5rem', fontSize: '0.75rem' }}
-                            >
-                                <Download size={14} /> PDF RETALLS
-                            </button>
                         </div>
                         <div style={{ marginTop: '2rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
