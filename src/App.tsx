@@ -634,7 +634,7 @@ function App() {
     if (!ocr || !pdfDoc) return;
 
     const known = studentList.split('\n').map(n => n.trim()).filter(n => n.length > 0);
-    const hasToken = !!import.meta.env.VITE_GROQ_API_KEY;
+    const hasToken = true; // clau gestionada pel proxy /api/groq al servidor
 
     console.log('[OCR DEBUG] useBatchOcr check:', {
       skipOcr: ocr.skipOcr,

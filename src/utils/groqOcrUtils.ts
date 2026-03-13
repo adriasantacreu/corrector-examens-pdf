@@ -1,7 +1,5 @@
 import { MosaicGenerator } from './mosaicGenerator';
 
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || '';
-
 /**
  * Funció auxiliar per convertir el Blob de la imatge a Base64
  */
@@ -45,11 +43,10 @@ export async function processBatchOCR(
 
         console.log("[OCR DEBUG] Enviant petició a Groq (Llama 4 Scout)...");
 
-        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        const response = await fetch("/api/groq", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${GROQ_API_KEY}`
             },
             body: JSON.stringify({
                 model: "meta-llama/llama-4-scout-17b-16e-instruct",
