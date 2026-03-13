@@ -738,7 +738,7 @@ function App() {
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     const clientId = isLocal
       ? "89755629853-3i114l0ocgkpv5cla6d86n8ufuammvii.apps.googleusercontent.com"
-      : "89755629853-lplrdbb6oh5vb2j169minkt8nh5nreog.apps.googleusercontent.com";
+      : "89755629853-b6o9a5052s8t84bu3nahath37itesf3l.apps.googleusercontent.com";
 
     try {
       const client = (window as any).google.accounts.oauth2.initTokenClient({
