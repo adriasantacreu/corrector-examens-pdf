@@ -359,3 +359,30 @@ body {
 [data-theme='dark'] .modern-table tr:hover td {
   background: #1e293b50;
 }
+
+/* CorrectionViewB */
+.correction-sidebar-section {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.correction-sidebar-label {
+  font-size: 0.6rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.grade-top-card {
+  background: var(--bg-tertiary);
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.student-section {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
