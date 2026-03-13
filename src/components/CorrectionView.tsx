@@ -2622,17 +2622,16 @@ export default function CorrectionView({
                                 </div>
 
                                 {/* Floating Zoom Controls - Bottom Center */}
-                                <div className="glass-dark" style={{
+                                <div className="glass-zoom" style={{
                                     position: 'absolute', bottom: '1.5rem', left: '50%', transform: 'translateX(-50%)', zIndex: 100,
                                     display: 'flex', alignItems: 'center', gap: '0.75rem',
                                     padding: '0.4rem 1.25rem', borderRadius: '2.5rem',
-                                    boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
                                     pointerEvents: 'auto'
                                 }}>
                                     <button
                                         className="btn-icon"
-                                        style={{ color: 'white', padding: '4px', opacity: 0.8 }}
+                                        style={{ padding: '4px', opacity: 0.8 }}
                                         onClick={() => applyZoom(stageScale / 1.2)}
                                         title="Allunyar (-)"
                                     >
@@ -2661,14 +2660,14 @@ export default function CorrectionView({
                                         <Plus size={18} />
                                     </button>
 
-                                    <div style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', height: '24px', marginLeft: '0.5rem', paddingLeft: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                        <span style={{ color: 'white', fontSize: '0.85rem', fontWeight: 800, minWidth: '45px', textAlign: 'center' }}>
+                                    <div style={{ borderLeft: '1px solid var(--border)', height: '24px', marginLeft: '0.5rem', paddingLeft: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                        <span style={{ fontSize: '0.85rem', fontWeight: 800, minWidth: '45px', textAlign: 'center' }}>
                                             {Math.round(stageScale * 100)}%
                                         </span>
 
                                         <button
                                             className="btn-icon"
-                                            style={{ color: 'white', opacity: 0.7 }}
+                                            style={{ opacity: 0.7 }}
                                             title="Ajustar a la pàgina"
                                             onClick={() => {
                                                 if (renderedPages.length > 0 && containerRef.current) {
