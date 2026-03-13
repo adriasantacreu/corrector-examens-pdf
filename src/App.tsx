@@ -3,7 +3,7 @@ import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2,
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from './types';
 import { loadPDF, type PDFDocumentProxy } from './utils/pdfUtils';
 import TemplateDefiner from './components/TemplateDefiner';
-import CorrectionView from './components/CorrectionView';
+import CorrectionView from './components/CorrectionViewB';
 import PageOrganizer from './components/PageOrganizer';
 import ResultsView from './components/ResultsView';
 import FlowGradingLogo from './components/FlowGradingLogo';
@@ -1685,6 +1685,7 @@ function App() {
             onUpdateExercise={ux => setExercises(prev => prev.map(ex => ex.id === ux.id ? ux : ex))}
             studentIdx={studentIdx} exerciseIdx={exerciseIdx} onUpdateStudentIdx={setStudentIdx} onUpdateExerciseIdx={setExerciseIdx}
             theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
+            accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout}
             showConfirm={showConfirm}
           />
         )}
