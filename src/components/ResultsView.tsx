@@ -472,28 +472,28 @@ export default function ResultsView({
             {actionState && !sendingState && (
                 <div className="card" style={{
                     position: 'fixed', bottom: '2rem', right: '2rem', zIndex: 9999,
-                    width: '380px', padding: '2rem 2.5rem',
-                    boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.3)',
+                    width: '320px', padding: '1.25rem 1.5rem',
+                    boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.25)',
                     border: '1px solid var(--border)',
                     textAlign: 'center',
-                    display: 'flex', flexDirection: 'column', gap: '1.5rem',
+                    display: 'flex', flexDirection: 'column', gap: '0.75rem',
                     overflow: 'hidden'
                 }}>
                     <div style={{
-                        position: 'absolute', top: 0, left: 0, right: 0, height: '8px',
+                        position: 'absolute', top: 0, left: 0, right: 0, height: '6px',
                         background: actionState.type === 'success' ? 'var(--hl-green)' : actionState.type === 'error' ? 'var(--hl-red)' : 'var(--hl-purple)'
                     }} />
                     
                     <div style={{ display: 'flex', justifyContent: 'center' }}>
                         <div style={{ transform: 'rotate(-2deg)' }}>
-                            <HandwrittenTitle size="2.5rem" color={actionState.type === 'success' ? 'green' : actionState.type === 'error' ? 'red' : 'purple'} noMargin={true}>
+                            <HandwrittenTitle size="1.8rem" color={actionState.type === 'success' ? 'green' : actionState.type === 'error' ? 'red' : 'purple'} noMargin={true}>
                                 {actionState.title}
                             </HandwrittenTitle>
                         </div>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', color: 'var(--text-primary)', fontSize: '1.05rem', fontWeight: 600 }}>
-                        {actionState.type === 'success' ? <CheckCircle size={20} color="var(--success)" /> : actionState.type === 'error' ? <XCircle size={20} color="var(--danger)" /> : <RefreshCw size={20} className="spin" color="var(--accent)" />}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: 600 }}>
+                        {actionState.type === 'success' ? <CheckCircle size={16} color="var(--success)" /> : actionState.type === 'error' ? <XCircle size={16} color="var(--danger)" /> : <RefreshCw size={16} className="spin" color="var(--accent)" />}
                         {actionState.text}
                     </div>
                 </div>
@@ -502,52 +502,52 @@ export default function ResultsView({
             {sendingState && (
                 <div className="card" style={{
                     position: 'fixed', bottom: '2rem', right: '2rem', zIndex: 9999,
-                    width: '400px', padding: '2rem 2.5rem',
-                    boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.3)',
+                    width: '340px', padding: '1.25rem 1.5rem',
+                    boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.25)',
                     border: '1px solid var(--border)',
                     textAlign: 'center',
-                    display: 'flex', flexDirection: 'column', gap: '1.5rem',
+                    display: 'flex', flexDirection: 'column', gap: '1rem',
                     overflow: 'hidden'
                 }}>
                     <div style={{
-                        position: 'absolute', top: 0, left: 0, right: 0, height: '8px',
+                        position: 'absolute', top: 0, left: 0, right: 0, height: '6px',
                         background: 'var(--hl-blue)'
                     }} />
 
                     <div style={{ display: 'flex', justifyContent: 'center' }}>
                         <div style={{ transform: 'rotate(-2deg)' }}>
-                            <HandwrittenTitle size="2.5rem" color="blue" noMargin={true}>
+                            <HandwrittenTitle size="1.8rem" color="blue" noMargin={true}>
                                 Enviant correus
                             </HandwrittenTitle>
                         </div>
                     </div>
 
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '1rem', fontWeight: 600, marginTop: '-0.5rem' }}>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600, marginTop: '-0.5rem' }}>
                         {sendingState.done} de {sendingState.total} completats
                     </div>
 
                     <div style={{ 
                         background: 'var(--bg-secondary)', 
-                        padding: '1rem', 
-                        borderRadius: '0.75rem',
-                        fontSize: '0.95rem',
+                        padding: '0.75rem', 
+                        borderRadius: '0.5rem',
+                        fontSize: '0.85rem',
                         color: 'var(--text-primary)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: '0.75rem',
+                        gap: '0.5rem',
                         border: '1px solid var(--border)'
                     }}>
-                        <RefreshCw size={16} className="spin" color="var(--accent)" />
+                        <RefreshCw size={14} className="spin" color="var(--accent)" />
                         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}>
                             {sendingState.current ? `Enviant a ${sendingState.current}...` : 'Preparant...'}
                         </span>
                     </div>
 
                     <div style={{ 
-                        height: '6px', 
+                        height: '4px', 
                         background: 'var(--bg-secondary)', 
-                        borderRadius: '3px',
+                        borderRadius: '2px',
                         overflow: 'hidden',
                         border: '1px solid var(--border)'
                     }}>
