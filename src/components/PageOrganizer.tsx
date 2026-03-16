@@ -287,7 +287,7 @@ export default function PageOrganizer({
     const inconsistentCount = groups.filter(g => g.pageIndexes.length !== pagesPerExam).length;
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'var(--bg-primary)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'var(--bg-primary)', overflowY: 'auto' }}>
             <header className="header">
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 0 }}>
                     <button className="btn-icon" onClick={onBack} title="Enrere" style={{ color: 'var(--text-primary)', padding: '0.5rem', background: 'transparent', border: 'none', flexShrink: 0 }}>
@@ -395,7 +395,7 @@ export default function PageOrganizer({
                 </div>
             </header>
 
-            <main style={{ flex: 1, overflow: 'auto', padding: '2.5rem' }}>
+            <main style={{ flex: 1, padding: '2.5rem' }}>
                 <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
                     <div style={{ marginBottom: '3rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>

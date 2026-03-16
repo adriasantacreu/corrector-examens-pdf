@@ -6,6 +6,7 @@ import { calculateStudentScore } from '../utils/scoreUtils';
 import HandwrittenTitle from './HandwrittenTitle';
 import FlowGradingLogo from './FlowGradingLogo';
 
+const DEFAULT_EMAIL_SUBJECT = `Correcció - FlowGrading: {nom}`;
 const DEFAULT_EMAIL_TEMPLATE = `Hola {nom},
 
 Adjuntem la teva correcció de l'examen.
@@ -47,6 +48,8 @@ export default function ResultsView({
     const [exportProgress, setExportProgress] = useState(0);
     const [isSendingTest, setIsSendingTest] = useState(false);
     const [sendingState, setSendingState] = useState<{ current: string, done: number, total: number } | null>(null);
+    const [actionState, setActionState] = useState<{ title: string, text: string } | null>(null);
+    const [emailSubjectTemplate, setEmailSubjectTemplate] = useState(DEFAULT_EMAIL_SUBJECT);
     const [emailTemplate, setEmailTemplate] = useState(DEFAULT_EMAIL_TEMPLATE);
     const [isEditingTemplate, setIsEditingTemplate] = useState(false);
 
@@ -73,12 +76,14 @@ export default function ResultsView({
 
     const handleDownloadStudent = async (student: Student) => {
         setIsProcessing(true);
+        setActionState({ title: 'Generant PDF', text: `Preparant la descàrrega per a ${student.name}...` });
         try {
             await exportStudentPDF(pdfDoc, student, exercises, annotations as any, rubricCounts, targetMaxScore);
         } catch (err) {
             showAlert("Error", "Error generant el PDF individual.");
         } finally {
             setIsProcessing(false);
+            setActionState(null);
         }
     };
 
@@ -102,7 +107,13 @@ export default function ResultsView({
             reader.readAsDataURL(pdfBlob);
         });
 
-        const subject = `Correcció - FlowGrading: ${student.name}${isTest ? ' (Prova)' : ''}`;
+        let subject = emailSubjectTemplate
+            .replace(/{nom}/g, student.name)
+            .replace(/{nota}/g, scoreData.normalized.toFixed(2))
+            .replace(/{nota_maxima}/g, targetMaxScore.toString())
+            .replace(/{estat}/g, isPass ? 'Aprovat' : 'Suspès');
+            
+        if (isTest) subject += ' (Prova)';
         
         let body = emailTemplate
             .replace(/{nom}/g, student.name)
@@ -166,6 +177,7 @@ export default function ResultsView({
         }
 
         setIsSendingTest(true);
+        setActionState({ title: 'Enviant Test', text: `Generant i enviant correu de prova de ${student.name}...` });
         try {
             await sendEmailForStudent(student, true);
             showAlert("Test enviat", `S'ha enviat el correu de prova del format de l'alumne ${student.name} a la teva bústia.`);
@@ -173,6 +185,7 @@ export default function ResultsView({
             showAlert("Error d'enviament", `No s'ha pogut enviar el correu: ${err.message}`);
         } finally {
             setIsSendingTest(false);
+            setActionState(null);
         }
     };
 
@@ -181,6 +194,7 @@ export default function ResultsView({
         
         showConfirm("Enviar correu", `Vols enviar definitivament la correcció a ${student.name} (${student.email})?`, async () => {
             setIsSendingTest(true);
+            setActionState({ title: 'Enviant Correu', text: `Generant i enviant correu a ${student.name}...` });
             try {
                 await sendEmailForStudent(student, false);
                 showAlert("Enviat", `S'ha enviat la correcció a ${student.name} amb èxit.`);
@@ -188,6 +202,7 @@ export default function ResultsView({
                 showAlert("Error", `No s'ha pogut enviar: ${err.message}`);
             } finally {
                 setIsSendingTest(false);
+                setActionState(null);
             }
         });
     };
@@ -223,7 +238,7 @@ export default function ResultsView({
         });
     };
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'var(--bg-primary)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'var(--bg-primary)', overflowY: 'auto' }}>
             <header className="header">
                 <div style={{ flex: 1 }}><button className="btn-icon" onClick={onBack} title="Enrere"><ChevronLeft size={28} /></button></div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}><FlowGradingLogo size="2.2rem" animate={false} /></div>
@@ -256,7 +271,7 @@ export default function ResultsView({
                 </div>
             </header>
 
-            <main style={{ flex: 1, overflowY: 'auto', padding: '3rem 4rem' }}>
+            <main style={{ flex: 1, padding: '3rem 4rem' }}>
                 <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4rem' }}>
                         <HandwrittenTitle size="3.5rem" color="green" noMargin={true}>Resultats i Exportació</HandwrittenTitle>
@@ -406,25 +421,63 @@ export default function ResultsView({
                             <code style={{ background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem' }}>{'{nom}'}</code>, <code style={{ background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem' }}>{'{nota}'}</code>, <code style={{ background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem' }}>{'{nota_maxima}'}</code>, <code style={{ background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem' }}>{'{estat}'}</code>
                         </p>
                         
-                        <textarea
-                            value={emailTemplate}
-                            onChange={(e) => setEmailTemplate(e.target.value)}
-                            style={{
-                                width: '100%', height: '250px',
-                                background: 'var(--bg-secondary)',
-                                color: 'var(--text-primary)',
-                                border: '1px solid var(--border)',
-                                borderRadius: '0.75rem',
-                                padding: '1rem',
-                                fontSize: '0.95rem',
-                                resize: 'none',
-                                fontFamily: 'inherit'
-                            }}
-                        />
+                        <div style={{ marginBottom: '1rem' }}>
+                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 700, fontSize: '0.9rem' }}>Assumpte</label>
+                            <input 
+                                value={emailSubjectTemplate}
+                                onChange={(e) => setEmailSubjectTemplate(e.target.value)}
+                                style={{
+                                    width: '100%',
+                                    background: 'var(--bg-secondary)',
+                                    color: 'var(--text-primary)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: '0.5rem',
+                                    padding: '0.75rem 1rem',
+                                    fontSize: '0.95rem',
+                                    fontFamily: 'inherit'
+                                }}
+                            />
+                        </div>
+
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 700, fontSize: '0.9rem' }}>Cos del missatge</label>
+                            <textarea
+                                value={emailTemplate}
+                                onChange={(e) => setEmailTemplate(e.target.value)}
+                                style={{
+                                    width: '100%', height: '200px',
+                                    background: 'var(--bg-secondary)',
+                                    color: 'var(--text-primary)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: '0.75rem',
+                                    padding: '1rem',
+                                    fontSize: '0.95rem',
+                                    resize: 'none',
+                                    fontFamily: 'inherit'
+                                }}
+                            />
+                        </div>
 
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1.5rem' }}>
-                            <button className="btn btn-secondary" onClick={() => setEmailTemplate(DEFAULT_EMAIL_TEMPLATE)}>Restaurar defecte</button>
+                            <button className="btn btn-secondary" onClick={() => { setEmailTemplate(DEFAULT_EMAIL_TEMPLATE); setEmailSubjectTemplate(DEFAULT_EMAIL_SUBJECT); }}>Restaurar defecte</button>
                             <button className="btn btn-primary" onClick={() => setIsEditingTemplate(false)}>Desar i Tancar</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {actionState && !sendingState && (
+                <div className="card" style={{
+                    position: 'fixed', bottom: '2rem', right: '2rem', zIndex: 9999,
+                    width: '320px', padding: '1.5rem',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
+                    border: '1px solid var(--border)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <RefreshCw size={24} className="spin" color="var(--accent)" />
+                        <div>
+                            <div style={{ fontWeight: 800, fontSize: '1.1rem', color: 'var(--text-primary)' }}>{actionState.title}</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{actionState.text}</div>
                         </div>
                     </div>
                 </div>

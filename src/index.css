@@ -12,6 +12,7 @@
   --success: #10b981;
   --slider-thumb: #3b82f6;
   --slider-track: #d1d5db;
+  --glass-bg: rgba(253, 253, 253, 0.75);
 
   /* Holi / Fluor Palette (Light Mode) - Soft Pastel Update */
   --hl-blue: rgba(186, 230, 253, 0.6); /* Soft Pastel Blue (Sky 200) */
@@ -34,6 +35,7 @@
   --border: #334155;
   --slider-thumb: #7dd3fc;
   --slider-track: #1e293b;
+  --glass-bg: rgba(2, 6, 23, 0.75);
 
   --hl-blue: rgba(125, 211, 252, 0.5);
   --hl-green: rgba(134, 239, 172, 0.5);
@@ -235,7 +237,12 @@ body {
   border-bottom: 1px solid var(--border);
   justify-content: space-between;
   flex-shrink: 0;
-  background: var(--bg-secondary);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
 .card {
