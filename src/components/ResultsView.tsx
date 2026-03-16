@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ChevronLeft, Download, Sun, Moon, UserCheck, RefreshCw, FileDown, XCircle, MailCheck, MessageSquareText, Send as SendIcon } from 'lucide-react';
+import { ChevronLeft, Download, Sun, Moon, UserCheck, RefreshCw, FileDown, XCircle, MailCheck, MessageSquareText, Send as SendIcon, CheckCircle } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from '../types';
 import { exportCombinedPDF, exportStudentPDF, generateStudentPDF } from '../utils/pdfExport';
 import { calculateStudentScore } from '../utils/scoreUtils';
@@ -48,7 +48,7 @@ export default function ResultsView({
     const [exportProgress, setExportProgress] = useState(0);
     const [isSendingTest, setIsSendingTest] = useState(false);
     const [sendingState, setSendingState] = useState<{ current: string, done: number, total: number } | null>(null);
-    const [actionState, setActionState] = useState<{ title: string, text: string } | null>(null);
+    const [actionState, setActionState] = useState<{ title: string, text: string, type?: 'loading' | 'success' | 'error' } | null>(null);
     const [emailSubjectTemplate, setEmailSubjectTemplate] = useState(DEFAULT_EMAIL_SUBJECT);
     const [emailTemplate, setEmailTemplate] = useState(DEFAULT_EMAIL_TEMPLATE);
     const [isEditingTemplate, setIsEditingTemplate] = useState(false);
@@ -76,14 +76,15 @@ export default function ResultsView({
 
     const handleDownloadStudent = async (student: Student) => {
         setIsProcessing(true);
-        setActionState({ title: 'Generant PDF', text: `Preparant la descàrrega per a ${student.name}...` });
+        setActionState({ title: 'Generant PDF', text: `Preparant la descàrrega per a ${student.name}...`, type: 'loading' });
         try {
             await exportStudentPDF(pdfDoc, student, exercises, annotations as any, rubricCounts, targetMaxScore);
+            setActionState(null);
         } catch (err) {
-            showAlert("Error", "Error generant el PDF individual.");
+            setActionState({ title: 'Error', text: `Error generant el PDF individual.`, type: 'error' });
+            setTimeout(() => setActionState(null), 4000);
         } finally {
             setIsProcessing(false);
-            setActionState(null);
         }
     };
 
@@ -177,15 +178,16 @@ export default function ResultsView({
         }
 
         setIsSendingTest(true);
-        setActionState({ title: 'Enviant Test', text: `Generant i enviant correu de prova de ${student.name}...` });
+        setActionState({ title: 'Enviant Test', text: `Generant i enviant correu de prova de ${student.name}...`, type: 'loading' });
         try {
             await sendEmailForStudent(student, true);
-            showAlert("Test enviat", `S'ha enviat el correu de prova del format de l'alumne ${student.name} a la teva bústia.`);
+            setActionState({ title: 'Test enviat', text: `S'ha enviat el correu de prova a la teva bústia.`, type: 'success' });
+            setTimeout(() => setActionState(null), 3000);
         } catch (err: any) {
-            showAlert("Error d'enviament", `No s'ha pogut enviar el correu: ${err.message}`);
+            setActionState({ title: 'Error', text: `No s'ha pogut enviar: ${err.message}`, type: 'error' });
+            setTimeout(() => setActionState(null), 4000);
         } finally {
             setIsSendingTest(false);
-            setActionState(null);
         }
     };
 
@@ -194,15 +196,16 @@ export default function ResultsView({
         
         showConfirm("Enviar correu", `Vols enviar definitivament la correcció a ${student.name} (${student.email})?`, async () => {
             setIsSendingTest(true);
-            setActionState({ title: 'Enviant Correu', text: `Generant i enviant correu a ${student.name}...` });
+            setActionState({ title: 'Enviant Correu', text: `Generant i enviant correu a ${student.name}...`, type: 'loading' });
             try {
                 await sendEmailForStudent(student, false);
-                showAlert("Enviat", `S'ha enviat la correcció a ${student.name} amb èxit.`);
+                setActionState({ title: 'Enviat', text: `S'ha enviat la correcció a ${student.name} amb èxit.`, type: 'success' });
+                setTimeout(() => setActionState(null), 3000);
             } catch (err: any) {
-                showAlert("Error", `No s'ha pogut enviar: ${err.message}`);
+                setActionState({ title: 'Error', text: `No s'ha pogut enviar: ${err.message}`, type: 'error' });
+                setTimeout(() => setActionState(null), 4000);
             } finally {
                 setIsSendingTest(false);
-                setActionState(null);
             }
         });
     };
@@ -478,19 +481,19 @@ export default function ResultsView({
                 }}>
                     <div style={{
                         position: 'absolute', top: 0, left: 0, right: 0, height: '8px',
-                        background: 'var(--hl-purple)'
+                        background: actionState.type === 'success' ? 'var(--hl-green)' : actionState.type === 'error' ? 'var(--hl-red)' : 'var(--hl-purple)'
                     }} />
                     
                     <div style={{ display: 'flex', justifyContent: 'center' }}>
                         <div style={{ transform: 'rotate(-2deg)' }}>
-                            <HandwrittenTitle size="2.5rem" color="purple" noMargin={true}>
+                            <HandwrittenTitle size="2.5rem" color={actionState.type === 'success' ? 'green' : actionState.type === 'error' ? 'red' : 'purple'} noMargin={true}>
                                 {actionState.title}
                             </HandwrittenTitle>
                         </div>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', color: 'var(--text-primary)', fontSize: '1.05rem', fontWeight: 600 }}>
-                        <RefreshCw size={20} className="spin" color="var(--accent)" />
+                        {actionState.type === 'success' ? <CheckCircle size={20} color="var(--success)" /> : actionState.type === 'error' ? <XCircle size={20} color="var(--danger)" /> : <RefreshCw size={20} className="spin" color="var(--accent)" />}
                         {actionState.text}
                     </div>
                 </div>
