@@ -1532,7 +1532,7 @@ export default function CorrectionView({
             )}
 
             {/* Header Toolbar */}
-            <div className="header" style={{ height: '70px', padding: '0 2rem', background: 'var(--bg-secondary)', borderBottom: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10, flexShrink: 0 }}>
+            <div className="header" style={{ height: '70px', padding: '0 2rem', borderBottom: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10, flexShrink: 0 }}>
                 {/* Left: Exercise Navigation */}
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     {onBack && (

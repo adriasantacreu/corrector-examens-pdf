@@ -477,7 +477,10 @@ export default function ResultsView({
                     border: '1px solid var(--border)',
                     textAlign: 'center',
                     display: 'flex', flexDirection: 'column', gap: '0.75rem',
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    background: 'var(--glass-bg)',
+                    backdropFilter: 'blur(12px)',
+                    WebkitBackdropFilter: 'blur(12px)'
                 }}>
                     <div style={{
                         position: 'absolute', top: 0, left: 0, right: 0, height: '6px',
@@ -507,7 +510,10 @@ export default function ResultsView({
                     border: '1px solid var(--border)',
                     textAlign: 'center',
                     display: 'flex', flexDirection: 'column', gap: '1rem',
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    background: 'var(--glass-bg)',
+                    backdropFilter: 'blur(12px)',
+                    WebkitBackdropFilter: 'blur(12px)'
                 }}>
                     <div style={{
                         position: 'absolute', top: 0, left: 0, right: 0, height: '6px',

@@ -1573,7 +1573,7 @@ export default function CorrectionViewB({
             )}
 
             {/* Header Toolbar */}
-            <div className="header" style={{ height: '70px', padding: '0 1.5rem', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10, flexShrink: 0 }}>
+            <div className="header" style={{ height: '70px', padding: '0 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10, flexShrink: 0 }}>
                 {/* Left: Exercise Navigation */}
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     {onBack && (
