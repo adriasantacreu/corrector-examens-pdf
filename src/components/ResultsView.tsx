@@ -469,16 +469,29 @@ export default function ResultsView({
             {actionState && !sendingState && (
                 <div className="card" style={{
                     position: 'fixed', bottom: '2rem', right: '2rem', zIndex: 9999,
-                    width: '320px', padding: '1.5rem',
-                    boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
-                    border: '1px solid var(--border)'
+                    width: '380px', padding: '2rem 2.5rem',
+                    boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.3)',
+                    border: '1px solid var(--border)',
+                    textAlign: 'center',
+                    display: 'flex', flexDirection: 'column', gap: '1.5rem',
+                    overflow: 'hidden'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <RefreshCw size={24} className="spin" color="var(--accent)" />
-                        <div>
-                            <div style={{ fontWeight: 800, fontSize: '1.1rem', color: 'var(--text-primary)' }}>{actionState.title}</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{actionState.text}</div>
+                    <div style={{
+                        position: 'absolute', top: 0, left: 0, right: 0, height: '8px',
+                        background: 'var(--hl-purple)'
+                    }} />
+                    
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                        <div style={{ transform: 'rotate(-2deg)' }}>
+                            <HandwrittenTitle size="2.5rem" color="purple" noMargin={true}>
+                                {actionState.title}
+                            </HandwrittenTitle>
                         </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', color: 'var(--text-primary)', fontSize: '1.05rem', fontWeight: 600 }}>
+                        <RefreshCw size={20} className="spin" color="var(--accent)" />
+                        {actionState.text}
                     </div>
                 </div>
             )}
@@ -486,38 +499,54 @@ export default function ResultsView({
             {sendingState && (
                 <div className="card" style={{
                     position: 'fixed', bottom: '2rem', right: '2rem', zIndex: 9999,
-                    width: '320px', padding: '1.5rem',
-                    boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
-                    border: '1px solid var(--border)'
+                    width: '400px', padding: '2rem 2.5rem',
+                    boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.3)',
+                    border: '1px solid var(--border)',
+                    textAlign: 'center',
+                    display: 'flex', flexDirection: 'column', gap: '1.5rem',
+                    overflow: 'hidden'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                        <RefreshCw size={24} className="spin" color="var(--accent)" />
-                        <div>
-                            <div style={{ fontWeight: 800, fontSize: '1.1rem', color: 'var(--text-primary)' }}>Enviant correus</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{sendingState.done} de {sendingState.total} completats</div>
+                    <div style={{
+                        position: 'absolute', top: 0, left: 0, right: 0, height: '8px',
+                        background: 'var(--hl-blue)'
+                    }} />
+
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                        <div style={{ transform: 'rotate(-2deg)' }}>
+                            <HandwrittenTitle size="2.5rem" color="blue" noMargin={true}>
+                                Enviant correus
+                            </HandwrittenTitle>
                         </div>
                     </div>
+
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '1rem', fontWeight: 600, marginTop: '-0.5rem' }}>
+                        {sendingState.done} de {sendingState.total} completats
+                    </div>
+
                     <div style={{ 
                         background: 'var(--bg-secondary)', 
-                        padding: '0.75rem', 
-                        borderRadius: '0.5rem',
-                        fontSize: '0.85rem',
+                        padding: '1rem', 
+                        borderRadius: '0.75rem',
+                        fontSize: '0.95rem',
                         color: 'var(--text-primary)',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '0.5rem'
+                        justifyContent: 'center',
+                        gap: '0.75rem',
+                        border: '1px solid var(--border)'
                     }}>
-                        <SendIcon size={14} opacity={0.5} />
-                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <RefreshCw size={16} className="spin" color="var(--accent)" />
+                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}>
                             {sendingState.current ? `Enviant a ${sendingState.current}...` : 'Preparant...'}
                         </span>
                     </div>
+
                     <div style={{ 
-                        marginTop: '1rem', 
-                        height: '4px', 
+                        height: '6px', 
                         background: 'var(--bg-secondary)', 
-                        borderRadius: '2px',
-                        overflow: 'hidden'
+                        borderRadius: '3px',
+                        overflow: 'hidden',
+                        border: '1px solid var(--border)'
                     }}>
                         <div style={{ 
                             height: '100%', 
