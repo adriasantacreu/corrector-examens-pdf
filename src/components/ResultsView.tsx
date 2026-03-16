@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ChevronLeft, Send, Download, Sun, Moon, UserCheck, RefreshCw, FileDown, XCircle, MailCheck, MessageSquareText } from 'lucide-react';
+import { ChevronLeft, Download, Sun, Moon, UserCheck, RefreshCw, FileDown, XCircle, MailCheck, MessageSquareText, Send as SendIcon } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from '../types';
 import { exportCombinedPDF, exportStudentPDF, generateStudentPDF } from '../utils/pdfExport';
 import { calculateStudentScore } from '../utils/scoreUtils';
@@ -46,6 +46,7 @@ export default function ResultsView({
     const [isExporting, setIsProcessing] = useState(false);
     const [exportProgress, setExportProgress] = useState(0);
     const [isSendingTest, setIsSendingTest] = useState(false);
+    const [sendingState, setSendingState] = useState<{ current: string, done: number, total: number } | null>(null);
     const [emailTemplate, setEmailTemplate] = useState(DEFAULT_EMAIL_TEMPLATE);
     const [isEditingTemplate, setIsEditingTemplate] = useState(false);
 
@@ -86,98 +87,140 @@ export default function ResultsView({
         onUpdateStudents(updated);
     };
 
-    const handleSendTestEmail = async () => {
+    const sendEmailForStudent = async (student: Student, isTest: boolean = false) => {
+        const scoreData = calculateStudentScore(student.id, exercises, annotations, rubricCounts, targetMaxScore);
+        const isPass = scoreData.normalized >= targetMaxScore / 2;
+
+        const totalPossible = exercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+        const scaleFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
+        const pdfBlob = await generateStudentPDF(pdfDoc, student, exercises, annotations as any, rubricCounts, scaleFactor);
+
+        const base64Pdf = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(pdfBlob);
+        });
+
+        const subject = `Correcció - FlowGrading: ${student.name}${isTest ? ' (Prova)' : ''}`;
+        
+        let body = emailTemplate
+            .replace(/{nom}/g, student.name)
+            .replace(/{nota}/g, scoreData.normalized.toFixed(2))
+            .replace(/{nota_maxima}/g, targetMaxScore.toString())
+            .replace(/{estat}/g, isPass ? 'Aprovat' : 'Suspès');
+
+        if (isTest) {
+            body += "\n\n---\n(Aquest és un correu de prova del sistema per verificar el format.)";
+        }
+
+        const boundary = `flowgrading-boundary-${Date.now()}`;
+        const safeFileName = `correccio_${student.name.replace(/\s+/g, '_')}.pdf`;
+        const utf8ToBase64 = (str: string) => btoa(unescape(encodeURIComponent(str)));
+        const targetEmail = isTest ? userEmail : student.email;
+
+        const messageParts = [
+            `To: ${targetEmail}`,
+            `Subject: =?UTF-8?B?${utf8ToBase64(subject)}?=`,
+            `Content-Type: multipart/mixed; boundary="${boundary}"`,
+            '',
+            `--${boundary}`,
+            'Content-Type: text/plain; charset="UTF-8"',
+            '',
+            body,
+            '',
+            `--${boundary}`,
+            `Content-Type: application/pdf; name="${safeFileName}"`,
+            `Content-Disposition: attachment; filename="${safeFileName}"`,
+            'Content-Transfer-Encoding: base64',
+            '',
+            base64Pdf,
+            '',
+            `--${boundary}--`
+        ].join('\r\n');
+
+        const encodedMessage = btoa(unescape(encodeURIComponent(messageParts)))
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+
+        const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ raw: encodedMessage })
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error?.message || "Error desconegut");
+        }
+    };
+
+    const handleSendTestEmail = async (student: Student) => {
         if (!accessToken || !userEmail) {
             showAlert("Error", "Has d'estar connectat per enviar un correu de prova.");
             return;
         }
 
-        if (students.length === 0) {
-            showAlert("Error", "No hi ha cap alumne per generar el correu de prova.");
-            return;
-        }
-
         setIsSendingTest(true);
         try {
-            const testStudent = students[0];
-            const scoreData = calculateStudentScore(testStudent.id, exercises, annotations, rubricCounts, targetMaxScore);
-            const isPass = scoreData.normalized >= targetMaxScore / 2;
-
-            // 1. Generate PDF Blob
-            const totalPossible = exercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
-            const scaleFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
-            const pdfBlob = await generateStudentPDF(pdfDoc, testStudent, exercises, annotations as any, rubricCounts, scaleFactor);
-
-            // 2. Convert Blob to Base64
-            const base64Pdf = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-                reader.onerror = reject;
-                reader.readAsDataURL(pdfBlob);
-            });
-
-            // 3. Construct Email
-            const subject = `Correcció - FlowGrading: ${testStudent.name} (Prova)`;
-            
-            const body = emailTemplate
-                .replace(/{nom}/g, testStudent.name)
-                .replace(/{nota}/g, scoreData.normalized.toFixed(2))
-                .replace(/{nota_maxima}/g, targetMaxScore.toString())
-                .replace(/{estat}/g, isPass ? 'Aprovat' : 'Suspès');
-
-            const finalBody = body + "\n\n---\n(Aquest és un correu de prova del sistema per verificar el format.)";
-            const boundary = `flowgrading-boundary-${Date.now()}`;
-            const safeFileName = `correccio_${testStudent.name.replace(/\s+/g, '_')}.pdf`;
-
-            // Function to safely base64 encode utf-8 strings for email headers (RFC 1342)
-            const utf8ToBase64 = (str: string) => btoa(unescape(encodeURIComponent(str)));
-
-            const messageParts = [
-                `To: ${userEmail}`,
-                `Subject: =?UTF-8?B?${utf8ToBase64(subject)}?=`,
-                `Content-Type: multipart/mixed; boundary="${boundary}"`,
-                '',
-                `--${boundary}`,
-                'Content-Type: text/plain; charset="UTF-8"',
-                '',
-                finalBody,
-                '',
-                `--${boundary}`,
-                `Content-Type: application/pdf; name="${safeFileName}"`,
-                `Content-Disposition: attachment; filename="${safeFileName}"`,
-                'Content-Transfer-Encoding: base64',
-                '',
-                base64Pdf,
-                '',
-                `--${boundary}--`
-            ].join('\r\n');
-
-            // 4. Encode full message for Gmail API
-            const encodedMessage = btoa(unescape(encodeURIComponent(messageParts)))
-                .replace(/\+/g, '-')
-                .replace(/\//g, '_')
-                .replace(/=+$/, '');
-
-            const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ raw: encodedMessage })
-            });
-
-            if (response.ok) {
-                showAlert("Test enviat", `S'ha enviat el correu amb el PDF adjunt a ${userEmail}. Revisa la teva bústia.`);
-            } else {
-                const err = await response.json();
-                throw new Error(err.error?.message || "Error desconegut");
-            }
+            await sendEmailForStudent(student, true);
+            showAlert("Test enviat", `S'ha enviat el correu de prova del format de l'alumne ${student.name} a la teva bústia.`);
         } catch (err: any) {
             showAlert("Error d'enviament", `No s'ha pogut enviar el correu: ${err.message}`);
         } finally {
             setIsSendingTest(false);
         }
+    };
+
+    const handleSendIndividualEmail = async (student: Student) => {
+        if (!accessToken || !student.email) return;
+        
+        showConfirm("Enviar correu", `Vols enviar definitivament la correcció a ${student.name} (${student.email})?`, async () => {
+            setIsSendingTest(true);
+            try {
+                await sendEmailForStudent(student, false);
+                showAlert("Enviat", `S'ha enviat la correcció a ${student.name} amb èxit.`);
+            } catch (err: any) {
+                showAlert("Error", `No s'ha pogut enviar: ${err.message}`);
+            } finally {
+                setIsSendingTest(false);
+            }
+        });
+    };
+
+    const handleMassSend = async () => {
+        if (!accessToken) {
+            showAlert("Error", "Has d'estar connectat per enviar correus.");
+            return;
+        }
+        const studentsWithEmail = students.filter(s => s.email);
+        if (studentsWithEmail.length === 0) {
+            showAlert("Error", "Cap alumne té un correu vinculat.");
+            return;
+        }
+
+        showConfirm("Enviament Massiu", `S'enviaran ${studentsWithEmail.length} correus a tots els alumnes vinculats. Vols continuar?`, async () => {
+            setSendingState({ current: '', done: 0, total: studentsWithEmail.length });
+            let successCount = 0;
+
+            for (let i = 0; i < studentsWithEmail.length; i++) {
+                const student = studentsWithEmail[i];
+                setSendingState({ current: student.name, done: i, total: studentsWithEmail.length });
+                try {
+                    await sendEmailForStudent(student, false);
+                    successCount++;
+                } catch (err) {
+                    console.error(`Error enviant a ${student.name}`, err);
+                }
+            }
+            
+            setSendingState(null);
+            showAlert("Enviament completat", `S'han enviat ${successCount} de ${studentsWithEmail.length} correus correctament.`);
+        });
     };
     return (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'var(--bg-primary)' }}>
@@ -198,12 +241,12 @@ export default function ResultsView({
                     
                     <button 
                         className="btn btn-secondary" 
-                        onClick={handleSendTestEmail} 
-                        disabled={isSendingTest || !accessToken}
+                        onClick={handleMassSend} 
+                        disabled={!!sendingState || !accessToken}
                         style={{ height: '42px', fontSize: '0.85rem' }}
                     >
-                        {isSendingTest ? <RefreshCw size={16} className="spin" /> : <MailCheck size={16} />}
-                        Enviar-me test
+                        {sendingState ? <RefreshCw size={16} className="spin" /> : <SendIcon size={16} />}
+                        Enviament Massiu
                     </button>
 
                     <button className="btn btn-primary" onClick={handleDownloadAll} disabled={isExporting} style={{ height: '42px' }}>
@@ -322,13 +365,19 @@ export default function ResultsView({
                                                     </button>
                                                     <button 
                                                         className="btn-icon" 
-                                                        title="Enviar per correu" 
-                                                        disabled={!s.email || !accessToken}
-                                                        onClick={() => showConfirm("Enviar correu", `Vols enviar la correcció a ${s.name} (${s.email})?`, () => {
-                                                            showAlert("Properament", "Aquesta funcionalitat s'implementarà aviat.");
-                                                        })}
+                                                        title="Rebre correu de prova (format real)" 
+                                                        disabled={!accessToken || isSendingTest}
+                                                        onClick={() => handleSendTestEmail(s)}
                                                     >
-                                                        <Send size={18} />
+                                                        <MailCheck size={18} />
+                                                    </button>
+                                                    <button 
+                                                        className="btn-icon" 
+                                                        title="Enviar correu a l'alumne" 
+                                                        disabled={!s.email || !accessToken || isSendingTest}
+                                                        onClick={() => handleSendIndividualEmail(s)}
+                                                    >
+                                                        <SendIcon size={18} />
                                                     </button>
                                                 </div>
                                             </td>
@@ -377,6 +426,52 @@ export default function ResultsView({
                             <button className="btn btn-secondary" onClick={() => setEmailTemplate(DEFAULT_EMAIL_TEMPLATE)}>Restaurar defecte</button>
                             <button className="btn btn-primary" onClick={() => setIsEditingTemplate(false)}>Desar i Tancar</button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {sendingState && (
+                <div className="card" style={{
+                    position: 'fixed', bottom: '2rem', right: '2rem', zIndex: 9999,
+                    width: '320px', padding: '1.5rem',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
+                    border: '1px solid var(--border)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                        <RefreshCw size={24} className="spin" color="var(--accent)" />
+                        <div>
+                            <div style={{ fontWeight: 800, fontSize: '1.1rem', color: 'var(--text-primary)' }}>Enviant correus</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{sendingState.done} de {sendingState.total} completats</div>
+                        </div>
+                    </div>
+                    <div style={{ 
+                        background: 'var(--bg-secondary)', 
+                        padding: '0.75rem', 
+                        borderRadius: '0.5rem',
+                        fontSize: '0.85rem',
+                        color: 'var(--text-primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem'
+                    }}>
+                        <SendIcon size={14} opacity={0.5} />
+                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {sendingState.current ? `Enviant a ${sendingState.current}...` : 'Preparant...'}
+                        </span>
+                    </div>
+                    <div style={{ 
+                        marginTop: '1rem', 
+                        height: '4px', 
+                        background: 'var(--bg-secondary)', 
+                        borderRadius: '2px',
+                        overflow: 'hidden'
+                    }}>
+                        <div style={{ 
+                            height: '100%', 
+                            background: 'var(--accent)', 
+                            width: `${(sendingState.done / sendingState.total) * 100}%`,
+                            transition: 'width 0.3s ease'
+                        }} />
                     </div>
                 </div>
             )}
