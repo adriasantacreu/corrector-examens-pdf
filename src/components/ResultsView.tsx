@@ -1,10 +1,20 @@
 import { useState, useMemo } from 'react';
-import { ChevronLeft, Send, Download, Sun, Moon, UserCheck, RefreshCw, FileDown, XCircle, MailCheck } from 'lucide-react';
+import { ChevronLeft, Send, Download, Sun, Moon, UserCheck, RefreshCw, FileDown, XCircle, MailCheck, MessageSquareText } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from '../types';
-import { exportCombinedPDF, exportStudentPDF } from '../utils/pdfExport';
+import { exportCombinedPDF, exportStudentPDF, generateStudentPDF } from '../utils/pdfExport';
 import { calculateStudentScore } from '../utils/scoreUtils';
 import HandwrittenTitle from './HandwrittenTitle';
 import FlowGradingLogo from './FlowGradingLogo';
+
+const DEFAULT_EMAIL_TEMPLATE = `Hola {nom},
+
+Adjuntem la teva correcció de l'examen.
+
+Nota final: {nota} / {nota_maxima}
+Estat: {estat}
+
+Salutacions,
+FlowGrading.`;
 
 interface Props {
     pdfDoc: any;
@@ -36,6 +46,8 @@ export default function ResultsView({
     const [isExporting, setIsProcessing] = useState(false);
     const [exportProgress, setExportProgress] = useState(0);
     const [isSendingTest, setIsSendingTest] = useState(false);
+    const [emailTemplate, setEmailTemplate] = useState(DEFAULT_EMAIL_TEMPLATE);
+    const [isEditingTemplate, setIsEditingTemplate] = useState(false);
 
     const stats = useMemo(() => {
         const scores = students.map(s => calculateStudentScore(s.id, exercises, annotations, rubricCounts, targetMaxScore).normalized);
@@ -80,20 +92,68 @@ export default function ResultsView({
             return;
         }
 
+        if (students.length === 0) {
+            showAlert("Error", "No hi ha cap alumne per generar el correu de prova.");
+            return;
+        }
+
         setIsSendingTest(true);
         try {
-            const subject = "Prova d'enviament - FlowGrading";
-            const body = `Hola!\n\nAixò és un correu de prova de FlowGrading per verificar que la integració amb Gmail funciona correctament.\n\nSi reps aquest correu, ja pots enviar les correccions als teus alumnes.`;
+            const testStudent = students[0];
+            const scoreData = calculateStudentScore(testStudent.id, exercises, annotations, rubricCounts, targetMaxScore);
+            const isPass = scoreData.normalized >= targetMaxScore / 2;
+
+            // 1. Generate PDF Blob
+            const totalPossible = exercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
+            const scaleFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
+            const pdfBlob = await generateStudentPDF(pdfDoc, testStudent, exercises, annotations as any, rubricCounts, scaleFactor);
+
+            // 2. Convert Blob to Base64
+            const base64Pdf = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(pdfBlob);
+            });
+
+            // 3. Construct Email
+            const subject = `Correcció - FlowGrading: ${testStudent.name} (Prova)`;
             
-            const message = [
+            const body = emailTemplate
+                .replace(/{nom}/g, testStudent.name)
+                .replace(/{nota}/g, scoreData.normalized.toFixed(2))
+                .replace(/{nota_maxima}/g, targetMaxScore.toString())
+                .replace(/{estat}/g, isPass ? 'Aprovat' : 'Suspès');
+
+            const finalBody = body + "\n\n---\n(Aquest és un correu de prova del sistema per verificar el format.)";
+            const boundary = `flowgrading-boundary-${Date.now()}`;
+            const safeFileName = `correccio_${testStudent.name.replace(/\s+/g, '_')}.pdf`;
+
+            // Function to safely base64 encode utf-8 strings for email headers (RFC 1342)
+            const utf8ToBase64 = (str: string) => btoa(unescape(encodeURIComponent(str)));
+
+            const messageParts = [
                 `To: ${userEmail}`,
-                `Subject: ${subject}`,
+                `Subject: =?UTF-8?B?${utf8ToBase64(subject)}?=`,
+                `Content-Type: multipart/mixed; boundary="${boundary}"`,
+                '',
+                `--${boundary}`,
                 'Content-Type: text/plain; charset="UTF-8"',
                 '',
-                body
+                finalBody,
+                '',
+                `--${boundary}`,
+                `Content-Type: application/pdf; name="${safeFileName}"`,
+                `Content-Disposition: attachment; filename="${safeFileName}"`,
+                'Content-Transfer-Encoding: base64',
+                '',
+                base64Pdf,
+                '',
+                `--${boundary}--`
             ].join('\r\n');
 
-            const encodedMessage = btoa(unescape(encodeURIComponent(message)))
+            // 4. Encode full message for Gmail API
+            const encodedMessage = btoa(unescape(encodeURIComponent(messageParts)))
                 .replace(/\+/g, '-')
                 .replace(/\//g, '_')
                 .replace(/=+$/, '');
@@ -108,7 +168,7 @@ export default function ResultsView({
             });
 
             if (response.ok) {
-                showAlert("Test enviat", `S'ha enviat un correu de prova a ${userEmail}. Revisa la teva bústia.`);
+                showAlert("Test enviat", `S'ha enviat el correu amb el PDF adjunt a ${userEmail}. Revisa la teva bústia.`);
             } else {
                 const err = await response.json();
                 throw new Error(err.error?.message || "Error desconegut");
@@ -119,7 +179,6 @@ export default function ResultsView({
             setIsSendingTest(false);
         }
     };
-
     return (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'var(--bg-primary)' }}>
             <header className="header">
@@ -127,6 +186,15 @@ export default function ResultsView({
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}><FlowGradingLogo size="2.2rem" animate={false} /></div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: '1rem', alignItems: 'center' }}>
                     <button className="btn-icon" onClick={onToggleTheme}>{theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}</button>
+                    
+                    <button 
+                        className="btn btn-secondary" 
+                        onClick={() => setIsEditingTemplate(true)}
+                        style={{ height: '42px', fontSize: '0.85rem' }}
+                        title="Configurar plantilla del missatge"
+                    >
+                        <MessageSquareText size={16} />
+                    </button>
                     
                     <button 
                         className="btn btn-secondary" 
@@ -272,6 +340,46 @@ export default function ResultsView({
                     </div>
                 </div>
             </main>
+
+            {isEditingTemplate && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    backdropFilter: 'blur(4px)'
+                }}>
+                    <div className="card" style={{ width: '600px', maxWidth: '90vw', padding: '2rem' }}>
+                        <HandwrittenTitle size="2rem" color="purple" noMargin>Plantilla de Correu</HandwrittenTitle>
+                        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', marginTop: '0.5rem', fontSize: '0.9rem' }}>
+                            Aquest és el text que acompanyarà el PDF amb la correcció.
+                            <br/><br/>
+                            Variables disponibles:<br/>
+                            <code style={{ background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem' }}>{'{nom}'}</code>, <code style={{ background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem' }}>{'{nota}'}</code>, <code style={{ background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem' }}>{'{nota_maxima}'}</code>, <code style={{ background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem' }}>{'{estat}'}</code>
+                        </p>
+                        
+                        <textarea
+                            value={emailTemplate}
+                            onChange={(e) => setEmailTemplate(e.target.value)}
+                            style={{
+                                width: '100%', height: '250px',
+                                background: 'var(--bg-secondary)',
+                                color: 'var(--text-primary)',
+                                border: '1px solid var(--border)',
+                                borderRadius: '0.75rem',
+                                padding: '1rem',
+                                fontSize: '0.95rem',
+                                resize: 'none',
+                                fontFamily: 'inherit'
+                            }}
+                        />
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1.5rem' }}>
+                            <button className="btn btn-secondary" onClick={() => setEmailTemplate(DEFAULT_EMAIL_TEMPLATE)}>Restaurar defecte</button>
+                            <button className="btn btn-primary" onClick={() => setIsEditingTemplate(false)}>Desar i Tancar</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

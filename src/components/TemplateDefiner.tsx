@@ -276,6 +276,7 @@ export default function TemplateDefiner({
     const maxScoreRefs = useRef<Record<string, HTMLInputElement | null>>({});
     const stageRef = useRef<any>(null);
     const lastDistRef = useRef<number>(0);
+    const layoutResetKeyRef = useRef<number>(-1);
 
     const isDarkMode = theme === 'dark';
 
@@ -311,12 +312,15 @@ export default function TemplateDefiner({
                         const targetScaleY = (containerHeight - padding) / img.height;
                         const targetScale = Math.min(targetScaleX, targetScaleY, 1.2);
 
-                        setStageScale(targetScale);
-                        setBaseScale(targetScale);
-                        setStagePos({
-                            x: (containerWidth - (img.width * targetScale)) / 2,
-                            y: Math.max(20, (containerHeight - (img.height * targetScale)) / 2)
-                        });
+                        if (layoutResetKeyRef.current !== currentPageIndex) {
+                            setStageScale(targetScale);
+                            setBaseScale(targetScale);
+                            setStagePos({
+                                x: (containerWidth - (img.width * targetScale)) / 2,
+                                y: Math.max(20, (containerHeight - (img.height * targetScale)) / 2)
+                            });
+                            layoutResetKeyRef.current = currentPageIndex;
+                        }
                     }
                 };
             }

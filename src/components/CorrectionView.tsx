@@ -294,6 +294,7 @@ export default function CorrectionView({
     const transformerRef = useRef<any>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const isErasingSessionRef = useRef(false);
+    const layoutResetKeyRef = useRef<string>('');
 
     const updateAnnotationsWithHistory = (newAnns: Annotation[]) => {
         setHistory(prev => [...prev.slice(-19), currentAnnotations]); // Limit history to 20 steps
@@ -713,12 +714,17 @@ export default function CorrectionView({
                     const targetScaleY = (containerHeight - padding) / totalHeight;
                     const targetScale = Math.min(targetScaleX, targetScaleY, 1.2);
 
-                    setStageScale(targetScale);
-                    setBaseScale(targetScale);
-                    setStagePos({
-                        x: (containerWidth - (totalWidth * targetScale)) / 2,
-                        y: Math.max(20, (containerHeight - (totalHeight * targetScale)) / 2)
-                    });
+                    const contentHash = `${studentIdx}-${exerciseIdx}-${(currentExercise as any)?.spansTwoPages ? '2p' : '1p'}`;
+                    
+                    if (layoutResetKeyRef.current !== contentHash) {
+                        setStageScale(targetScale);
+                        setBaseScale(targetScale);
+                        setStagePos({
+                            x: (containerWidth - (totalWidth * targetScale)) / 2,
+                            y: Math.max(20, (containerHeight - (totalHeight * targetScale)) / 2)
+                        });
+                        layoutResetKeyRef.current = contentHash;
+                    }
                 }
 
                 setRenderedPages(images);

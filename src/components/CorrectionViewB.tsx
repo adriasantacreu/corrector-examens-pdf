@@ -305,6 +305,7 @@ export default function CorrectionViewB({
     const transformerRef = useRef<any>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const isErasingSessionRef = useRef(false);
+    const layoutLastStateRef = useRef({ studentIdx: -1, exerciseIdx: -1, spansTwoPages: false });
 
     const updateAnnotationsWithHistory = (newAnns: Annotation[]) => {
         setHistory(prev => [...prev.slice(-19), currentAnnotations]); // Limit history to 20 steps
@@ -729,14 +730,28 @@ export default function CorrectionViewB({
                         ? Math.min(targetScaleX, targetScaleY, 1.2)
                         : Math.min(targetScaleX, 1.2);
 
-                    setStageScale(targetScale);
-                    setBaseScale(targetScale);
-                    setStagePos({
-                        x: (containerWidth - (totalWidth * targetScale)) / 2,
-                        y: spansTwoPages
-                            ? Math.max(20, (containerHeight - (totalHeight * targetScale)) / 2)
-                            : 20
-                    });
+                    const lastState = layoutLastStateRef.current;
+                    const hasChangedStructure = 
+                        lastState.studentIdx !== studentIdx ||
+                        lastState.exerciseIdx !== exerciseIdx ||
+                        lastState.spansTwoPages !== spansTwoPages;
+
+                    if (hasChangedStructure) {
+                        setStageScale(targetScale);
+                        setBaseScale(targetScale);
+                        setStagePos({
+                            x: (containerWidth - (totalWidth * targetScale)) / 2,
+                            y: spansTwoPages
+                                ? Math.max(20, (containerHeight - (totalHeight * targetScale)) / 2)
+                                : 20
+                        });
+                        
+                        layoutLastStateRef.current = {
+                            studentIdx,
+                            exerciseIdx,
+                            spansTwoPages
+                        };
+                    }
                 }
 
                 setRenderedPages(images);
