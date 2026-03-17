@@ -3128,7 +3128,7 @@ export default function CorrectionViewB({
 
                     <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                            <span className="correction-sidebar-label">Exercici {exerciseIdx + 1}{currentExercise.name ? ` — ${currentExercise.name}` : ''}</span>
+                            <HandwrittenTitle size="1rem" color="blue" noMargin={true}>Exercici {exerciseIdx + 1}{currentExercise.name ? ` — ${currentExercise.name}` : ''}</HandwrittenTitle>
                         </div>
                         {computedScore !== null ? (
                             <span style={{ fontSize: '1.1rem', fontWeight: 800, color: computedScore < 0 ? 'var(--danger)' : 'var(--accent)' }}>
@@ -3141,10 +3141,9 @@ export default function CorrectionViewB({
 
                     <div style={{ padding: '1rem', flex: 1, overflowY: 'auto' }}>
                         {/* Rubric panel — always shown if available, or with 'define' button if empty */}
+                        <HandwrittenTitle size="1rem" color="purple">Rúbrica</HandwrittenTitle>
                         <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
-                                <HandwrittenTitle size="1rem" color="purple" noMargin={true}>Rúbrica</HandwrittenTitle>
-                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.6rem' }}>
                                     {(!currentExercise.rubric || currentExercise.rubric.length === 0) && (
                                         <button
                                             onClick={() => setIsEditingRubric(true)}
@@ -3167,7 +3166,6 @@ export default function CorrectionViewB({
                                     >
                                         {isEditingRubric ? <Check size={14} /> : <Pencil size={14} />}
                                     </button>
-                                </div>
                             </div>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
