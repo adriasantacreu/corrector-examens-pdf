@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 
 declare global {
     interface Window {
@@ -8,11 +8,12 @@ declare global {
 import { Stage, Layer, Image as KonvaImage, Line, Rect, Group, Text, Transformer } from 'react-konva';
 import {
     ChevronLeft, ChevronRight, PenTool, Highlighter, MousePointer2,
-    Undo, Trash2, Type, Plus, Pencil, Check, X, Loader2, Moon, Sun, AlertTriangle, RefreshCw, Send, Minus, ChevronDown, ChevronUp, LogOut, Columns2
+    Undo, Trash2, Type, Plus, Pencil, Check, X, Loader2, Moon, Sun, AlertTriangle, RefreshCw, Send, Minus, ChevronDown, ChevronUp, LogOut, Maximize2, AlignJustify
 } from 'lucide-react';
 // import type { PDFDocumentProxy } from '../utils/pdfUtils';
 import { renderPDFPageToCanvas, type PDFDocumentProxy } from '../utils/pdfUtils';
 import FlowGradingLogo from './FlowGradingLogo';
+import HandwrittenTitle from './HandwrittenTitle';
 import type { Student, ExerciseDef, AnnotationStore, Annotation, PenAnnotation, HighlighterAnnotation, ImageAnnotation, TextAnnotation, ToolType, PresetHighlighter, PenColor, RubricCountStore, AnnotationComment, HighlighterLegendAnnotation } from '../types';
 
 interface Props {
@@ -596,6 +597,32 @@ export default function CorrectionViewB({
         setStageScale(safeScale);
         setStagePos({ x: targetPointer.x - mousePointTo.x * safeScale, y: targetPointer.y - mousePointTo.y * safeScale });
     };
+
+    const resetZoomToDefault = useCallback((fullView: boolean) => {
+        if (renderedPages.length === 0 || !containerRef.current) return;
+        const isMultiPage = currentExercise?.type === 'pages' && renderedPages.length > 1;
+        const isSideBySide = fullView && isMultiPage;
+        const totalWidth = isSideBySide
+            ? renderedPages[0].width + (renderedPages[1]?.width || 0) + 20
+            : Math.max(...renderedPages.map(p => p.width));
+        const totalHeight = isSideBySide
+            ? Math.max(...renderedPages.map(p => p.height))
+            : Math.max(...renderedPages.map(p => p.yOffset + p.height));
+        const containerWidth = containerRef.current.clientWidth;
+        const containerHeight = containerRef.current.clientHeight;
+        const padding = 40;
+        const targetScaleX = (containerWidth - padding) / totalWidth;
+        const targetScaleY = (containerHeight - padding) / totalHeight;
+        const targetScale = fullView
+            ? Math.min(targetScaleX, targetScaleY, 1.2)
+            : Math.min(targetScaleX, 1.2);
+        setStageScale(targetScale);
+        setBaseScale(targetScale);
+        setStagePos({
+            x: (containerWidth - (totalWidth * targetScale)) / 2,
+            y: fullView ? Math.max(20, (containerHeight - (totalHeight * targetScale)) / 2) : 20
+        });
+    }, [renderedPages, currentExercise?.type]);
 
     useEffect(() => {
         if (!currentStudent || !currentExercise || !pdfDoc) return;
@@ -1614,10 +1641,10 @@ export default function CorrectionViewB({
                             <ChevronRight />
                         </button>
                     </div>
-                    {currentExercise.type === 'pages' && (
+                    {(
                         <button
                             className={`btn-icon ${(currentExercise as any).spansTwoPages ? 'active' : ''}`}
-                            title="Vista 2 pàgines costat a costat"
+                            title={(currentExercise as any).spansTwoPages ? "Vista completa — clic per a mode scroll" : "Mode scroll — clic per a vista completa"}
                             style={{ gap: '0.3rem', paddingLeft: '0.6rem', paddingRight: '0.6rem', fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.04em' }}
                             onClick={() => {
                                 const newVal = !((currentExercise as any).spansTwoPages || false);
@@ -1694,10 +1721,11 @@ export default function CorrectionViewB({
                                             }
                                         }
                                         onUpdateExercise(updatedExercise as any);
+                                        resetZoomToDefault(newVal);
                             }}
                         >
-                            <Columns2 size={14} />
-                            2 PÀGS
+                            {(currentExercise as any).spansTwoPages ? <Maximize2 size={14} /> : <AlignJustify size={14} />}
+                            {(currentExercise as any).spansTwoPages ? 'COMPLET' : 'SCROLL'}
                         </button>
                     )}
                 </div>
@@ -2630,9 +2658,8 @@ export default function CorrectionViewB({
                         <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: '1rem', overflowY: 'hidden', paddingRight: '0.5rem' }}>
                             {/* Generals */}
                             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', overflowY: 'auto' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 5, paddingBottom: '2px' }}>
-                                    <div style={{ width: '3px', height: '9px', background: 'var(--accent)', borderRadius: '1px' }} />
-                                    <span style={{ fontSize: '0.55rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Generals</span>
+                                <div style={{ position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 5, paddingBottom: '2px' }}>
+                                    <HandwrittenTitle size="1.1rem" color="blue" noMargin={true}>Generals</HandwrittenTitle>
                                 </div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', paddingBottom: '0.5rem' }}>
                                     {commentBank.map((comment, idx) => {
@@ -2707,9 +2734,8 @@ export default function CorrectionViewB({
 
                             {/* Per Exercici */}
                             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', overflowY: 'auto' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 5, paddingBottom: '2px' }}>
-                                    <div style={{ width: '3px', height: '9px', background: '#f59e0b', borderRadius: '1px' }} />
-                                    <span style={{ fontSize: '0.55rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Ex. {exerciseIdx + 1}</span>
+                                <div style={{ position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 5, paddingBottom: '2px' }}>
+                                    <HandwrittenTitle size="1.1rem" color="yellow" noMargin={true}>{`Ex. ${exerciseIdx + 1}`}</HandwrittenTitle>
                                 </div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', paddingBottom: '0.5rem' }}>
                                     {commentBank.map((comment, idx) => {
@@ -3117,9 +3143,7 @@ export default function CorrectionViewB({
                         {/* Rubric panel — always shown if available, or with 'define' button if empty */}
                         <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
-                                <h4 style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.05em', margin: 0 }}>
-                                    Rúbrica
-                                </h4>
+                                <HandwrittenTitle size="1rem" color="purple" noMargin={true}>Rúbrica</HandwrittenTitle>
                                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                                     {(!currentExercise.rubric || currentExercise.rubric.length === 0) && (
                                         <button
@@ -3307,9 +3331,8 @@ export default function CorrectionViewB({
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                                 {/* Generals */}
                                 <div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.5rem' }}>
-                                        <div style={{ width: '3px', height: '9px', background: 'var(--accent)', borderRadius: '1px' }} />
-                                        <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Generals</span>
+                                    <div style={{ marginBottom: '0.5rem' }}>
+                                        <HandwrittenTitle size="1.1rem" color="blue" noMargin={true}>Generals</HandwrittenTitle>
                                     </div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
                                         {presets.filter(p => !p.exerciseId).map((preset, i) => renderPresetHighlighter(preset, String(i + 1)))}
@@ -3330,9 +3353,8 @@ export default function CorrectionViewB({
 
                                 {/* Per Exercici */}
                                 <div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.5rem' }}>
-                                        <div style={{ width: '3px', height: '9px', background: '#f59e0b', borderRadius: '1px' }} />
-                                        <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Ex. {exerciseIdx + 1}</span>
+                                    <div style={{ marginBottom: '0.5rem' }}>
+                                        <HandwrittenTitle size="1.1rem" color="yellow" noMargin={true}>{`Ex. ${exerciseIdx + 1}`}</HandwrittenTitle>
                                     </div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
                                         {presets.filter(p => p.exerciseId === currentExercise.id).map((preset, i) => renderPresetHighlighter(preset, String(presets.filter(p => !p.exerciseId).length + i + 1)))}

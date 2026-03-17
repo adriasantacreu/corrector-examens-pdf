@@ -36,13 +36,14 @@ interface Props {
     classroomStudents: any[];
     showAlert: (title: string, message: string) => void;
     showConfirm: (title: string, message: string, onConfirm: () => void) => void;
+    showToast: (title: string, text: string, type: 'loading' | 'success' | 'error') => void;
 }
 
 export default function ResultsView({
     pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore,
     onUpdateStudents, onBack, theme, onToggleTheme,
     accessToken, userEmail, classroomStudents,
-    showAlert, showConfirm
+    showAlert, showConfirm, showToast
 }: Props) {
     const [isExporting, setIsProcessing] = useState(false);
     const [exportProgress, setExportProgress] = useState(0);
@@ -63,14 +64,21 @@ export default function ResultsView({
     const handleDownloadAll = async () => {
         setIsProcessing(true);
         setExportProgress(0);
+        setActionState({ title: 'Generant PDFs', text: 'Preparant el document sencer...', type: 'loading' });
         try {
-            await exportCombinedPDF(pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore, (p) => setExportProgress(p));
-            showAlert("Èxit", "PDF combinat generat correctament.");
+            await exportCombinedPDF(pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore, (p) => {
+                setExportProgress(p);
+                setActionState({ title: 'Generant PDFs', text: `Processant... ${p}%`, type: 'loading' });
+            });
+            setActionState({ title: 'Èxit', text: 'PDF combinat generat correctament.', type: 'success' });
+            setTimeout(() => setActionState(null), 3000);
         } catch (err) {
             console.error(err);
-            showAlert("Error", "Error exportant el PDF complet.");
+            setActionState({ title: 'Error', text: 'Error exportant el PDF complet.', type: 'error' });
+            setTimeout(() => setActionState(null), 4000);
         } finally {
             setIsProcessing(false);
+            setExportProgress(0);
         }
     };
 
@@ -173,7 +181,7 @@ export default function ResultsView({
 
     const handleSendTestEmail = async (student: Student) => {
         if (!accessToken || !userEmail) {
-            showAlert("Error", "Has d'estar connectat per enviar un correu de prova.");
+            showToast("Error", "Has d'estar connectat per enviar un correu de prova.", "error");
             return;
         }
 
@@ -212,12 +220,12 @@ export default function ResultsView({
 
     const handleMassSend = async () => {
         if (!accessToken) {
-            showAlert("Error", "Has d'estar connectat per enviar correus.");
+            showToast("Error", "Has d'estar connectat per enviar correus.", "error");
             return;
         }
         const studentsWithEmail = students.filter(s => s.email);
         if (studentsWithEmail.length === 0) {
-            showAlert("Error", "Cap alumne té un correu vinculat.");
+            showToast("Error", "Cap alumne té un correu vinculat.", "error");
             return;
         }
 
@@ -237,7 +245,7 @@ export default function ResultsView({
             }
             
             setSendingState(null);
-            showAlert("Enviament completat", `S'han enviat ${successCount} de ${studentsWithEmail.length} correus correctament.`);
+            showToast("Enviament completat", `S'han enviat ${successCount} de ${studentsWithEmail.length} correus correctament.`, "success");
         });
     };
     return (

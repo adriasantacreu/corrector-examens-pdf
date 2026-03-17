@@ -28,6 +28,7 @@ interface Props {
     ocrCompleted: boolean;
     showAlert: (title: string, message: string, options?: { checkboxLabel?: string, initialCheckboxState?: boolean, onCheckboxChange?: (checked: boolean) => void }) => void;
     showConfirm: (title: string, message: string, onConfirm: () => void) => void;
+    showToast: (title: string, text: string, type: 'loading' | 'success' | 'error') => void;
 }
 
 // Helper for natural number input (handles commas, dots, negative signs, etc)
@@ -250,7 +251,7 @@ export default function TemplateDefiner({
     currentFileName, sessionAlias, onUpdateSessionAlias,
     onComplete, onBack, theme, onToggleTheme,
     accessToken, userEmail, userPicture, onAuthorize, onLogout, onRunOCR, onResetOCR, ocrCompleted,
-    showAlert, showConfirm
+    showAlert, showConfirm, showToast
 }: Props) {
     const [currentPageIndex, setCurrentPageIndex] = useState(0);
     const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
@@ -570,16 +571,11 @@ export default function TemplateDefiner({
 
                 if (ex.maxScore !== undefined && isExceeded && !warnedExceeded[exId] && !suppressMaxScoreWarning) {
                     setWarnedExceeded(prevMap => ({ ...prevMap, [exId]: true }));
-                    showAlert(
-                        "Atenció",
-                        "La suma dels criteris de la rúbrica supera la nota màxima de l'exercici.",
-                        {
-                            checkboxLabel: "No tornis a mostrar en aquesta sessió",
-                            initialCheckboxState: true,
-                            onCheckboxChange: (checked) => setSuppressMaxScoreWarning(checked)
-                        }
+                    showToast(
+                        "Atenció rúbrica",
+                        "La suma de criteris supera la nota màxima de l'exercici.",
+                        "error"
                     );
-                    setSuppressMaxScoreWarning(true);
                 } else if (ex.maxScore !== undefined && !isExceeded) {
                     setWarnedExceeded(prevMap => ({ ...prevMap, [exId]: false }));
                 }
@@ -978,7 +974,7 @@ export default function TemplateDefiner({
                                                                             if (ex.pageIndexes.length > 1) {
                                                                                 updateExerciseMeta(ex.id, { pageIndexes: ex.pageIndexes.filter(p => p !== pIdx) });
                                                                             } else {
-                                                                                showAlert("Error", "Un exercici de pàgina ha de tenir almenys una pàgina.");
+                                                                                showToast("Error", "Un exercici de pàgina ha de tenir almenys una pàgina.", "error");
                                                                             }
                                                                         }}
                                                                         style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}

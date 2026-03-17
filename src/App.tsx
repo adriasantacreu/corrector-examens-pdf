@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, ArrowDown, FileCheck, Check, Pencil } from 'lucide-react';
+import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, ArrowDown, FileCheck, Check, Pencil, CheckCircle, XCircle } from 'lucide-react';
 import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from './types';
 import { loadPDF, type PDFDocumentProxy } from './utils/pdfUtils';
 import TemplateDefiner from './components/TemplateDefiner';
@@ -10,7 +10,6 @@ import FlowGradingLogo from './components/FlowGradingLogo';
 import HandwrittenTitle from './components/HandwrittenTitle';
 import { fetchClassroomStudents, matchClassroomStudents } from './utils/classroomUtils';
 import { storePDFLocal, getPDFLocal } from './utils/dbUtils';
-
 type AppMode = 'upload' | 'setup' | 'organize_pages' | 'configure_crops' | 'correction' | 'results';
 
 const SESSION_PREFIX = 'flowgrading_session_';
@@ -26,6 +25,13 @@ interface DialogState {
   checkboxLabel?: string;
   checkboxChecked?: boolean;
   onCheckboxChange?: (checked: boolean) => void;
+}
+
+interface ToastState {
+  show: boolean;
+  title: string;
+  text: string;
+  type: 'loading' | 'success' | 'error';
 }
 
 function getLevenshteinDistance(a: string, b: string): number {
@@ -131,6 +137,14 @@ function App() {
   };
 
   const [dialog, setDialog] = useState<DialogState>({ show: false, title: '', message: '', type: 'alert' });
+  const [toast, setToast] = useState<ToastState>({ show: false, title: '', text: '', type: 'loading' });
+
+  const showToast = (title: string, text: string, type: 'loading' | 'success' | 'error') => {
+    setToast({ show: true, title, text, type });
+    if (type === 'success' || type === 'error') {
+      setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
+    }
+  };
 
   const showAlert = (title: string, message: string, options?: { checkboxLabel?: string, initialCheckboxState?: boolean, onCheckboxChange?: (checked: boolean) => void }) => {
     setDialog({
@@ -426,20 +440,25 @@ function App() {
     if (file && file.type === 'application/pdf') {
       processUploadedFile(file);
     } else if (file) {
-      showAlert("Fitxer no vàlid", "Només es permeten fitxers PDF.");
+      showToast("Fitxer no vàlid", "Només es permeten fitxers PDF.", "error");
     }
   };
 
   const handleSolutionUpload = async (e: React.ChangeEvent<HTMLInputElement> | File) => {
     const file = (e instanceof File) ? e : e.target.files?.[0];
-    if (!file || file.type !== 'application/pdf') return;
+    if (!file || file.type !== 'application/pdf') {
+      if (file) showToast("Fitxer no vàlid", "Només es permeten fitxers PDF per al solucionari.", "error");
+      return;
+    }
+    showToast("Carregant", "Llegint el document solucionari...", "loading");
     try {
       const doc = await loadPDF(file);
       setSolutionPdfDoc(doc);
       setSolutionFileName(file.name);
       await storePDFLocal(`solution_${currentFileName}_${file.name}`, file);
+      showToast("Èxit", "Solucionari carregat", "success");
     } catch {
-      showAlert("Error", "Error carregant el solucionari.");
+      showToast("Error", "Error carregant el solucionari.", "error");
     }
   };
 
@@ -450,7 +469,7 @@ function App() {
     if (file && file.type === 'application/pdf') {
       handleSolutionUpload(file);
     } else if (file) {
-      showAlert("Fitxer no vàlid", "Només es permeten fitxers PDF per al solucionari.");
+      showToast("Fitxer no vàlid", "Només es permeten fitxers PDF per al solucionari.", "error");
     }
   };
 
@@ -508,7 +527,7 @@ function App() {
 
       setMode(saved?.mode || 'setup'); setCurrentFileName(file.name);
       storePDFLocal(file.name, file).catch(console.error);
-    } catch { showAlert("Error", "Error carregant el fitxer PDF."); } finally { setIsProcessing(false); }
+    } catch { showToast("Error", "Error carregant el fitxer PDF.", "error"); } finally { setIsProcessing(false); }
   };
 
   const processUploadedFile = (file: File) => {
@@ -584,14 +603,14 @@ function App() {
       loadSessionFromFile(f);
     } else {
       setCurrentFileName(s.fileName);
-      showAlert("Fitxer no trobat", "No hem trobat el PDF en aquest ordinador ni al teu Drive. Si us plau, torna'l a carregar.");
+      showToast("Fitxer no trobat", "Carrega el PDF manualment per continuar.", "error");
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'application/pdf';
       input.onchange = (e: any) => {
         const file = e.target.files?.[0];
         if (file && file.name === s.fileName) loadSessionFromFile(file);
-        else if (file) showAlert("Fitxer incorrecte", "El fitxer seleccionat no coincideix amb el nom de la sessió.");
+        else if (file) showToast("Fitxer incorrecte", "El fitxer no coincideix.", "error");
       };
       input.click();
     }
@@ -599,7 +618,8 @@ function App() {
 
   const importClassroom = async () => {
     if (!accessToken || !selectedCourseId) return;
-    setIsProcessing(true); setProcessingMessage('Sincronitzant amb Classroom...');
+    setIsProcessing(true);
+    showToast("Classroom", "Sincronitzant amb Classroom...", "loading");
     try {
       const cs = await fetchClassroomStudents(accessToken, selectedCourseId);
       if (!cs) {
@@ -619,9 +639,10 @@ function App() {
         const { updatedStudents } = matchClassroomStudents(students, cs);
         setStudents(updatedStudents);
       }
+      showToast("Èxit", "Alumnes importats correctament", "success");
     } catch (err) {
       console.error(err);
-      showAlert("Error Classroom", "Error sincronitzant amb Classroom. Revisa els permisos.");
+      showToast("Error Classroom", "Error sincronitzant amb Classroom.", "error");
     } finally { setIsProcessing(false); }
   };
 
@@ -643,6 +664,7 @@ function App() {
     });
 
     setIsBackgroundOcrRunning(true);
+    showToast("Identificant", "Llegint els noms automàticament...", "loading");
     const { extractTextFromRegion, extractImageFromRegion } = await import('./utils/ocrUtils');
 
     const useBatchOcr = !ocr.skipOcr && hasToken; // known.length > 0 removed, it's optional now!
@@ -660,6 +682,7 @@ function App() {
           crops.push(crop);
           updatedWithCrops[i] = { ...updatedWithCrops[i], nameCropUrl: crop };
           setOcrProgress({ current: i + 1, total: updatedWithCrops.length });
+          showToast("OCR", `Retallant noms... ${i + 1}/${updatedWithCrops.length}`, "loading");
         } catch {
           crops.push('');
         }
@@ -669,10 +692,12 @@ function App() {
 
       (async () => {
         try {
+          showToast("Identificant", "Processant noms amb IA...", "loading");
           const { processBatchOCR } = await import('./utils/groqOcrUtils');
           const results = await processBatchOCR(crops.filter(c => c !== ''), known);
           console.log('[OCR DEBUG] Batch OCR results received:', results);
           
+          let identifiedCount = 0;
           setStudents(prev => {
             const next = [...prev];
             let cropIdx = 0;
@@ -682,6 +707,7 @@ function App() {
                 if (identifiedName && identifiedName !== 'Desconegut') {
                   next[i] = { ...next[i], name: identifiedName };
                   if (studentEmailMap[identifiedName]) next[i].email = studentEmailMap[identifiedName];
+                  identifiedCount++;
                 }
                 cropIdx++;
               }
@@ -689,8 +715,10 @@ function App() {
             return next;
           });
           setOcrCompleted(true);
+          showToast("Èxit OCR", `S'han identificat ${identifiedCount} noms correctament.`, "success");
         } catch (err) {
           console.error('[OCR DEBUG] Batch OCR background failed:', err);
+          showToast("Error OCR", "No s'ha pogut completar la identificació per IA.", "error");
         } finally {
           setIsBackgroundOcrRunning(false);
           setOcrProgress(null);
@@ -699,10 +727,12 @@ function App() {
 
     } else {
       console.log('[OCR DEBUG] Starting INDIVIDUAL OCR mode (Tesseract Fallback)');
+      showToast("Identificant", "Processant noms un a un...", "loading");
       (async () => {
         const updated = [...students];
         for (let i = 0; i < updated.length; i++) {
           setOcrProgress({ current: i + 1, total: updated.length });
+          showToast("OCR", `Llegint alumne ${i + 1}/${updated.length}`, "loading");
           try {
             const pIdx = updated[i].pageIndexes[Math.min(ocr.pageIndex, updated[i].pageIndexes.length - 1)] || updated[i].pageIndexes[0];
             const crop = await extractImageFromRegion(pdfDoc, pIdx, ocr);
@@ -729,6 +759,7 @@ function App() {
         setOcrCompleted(true);
         setIsBackgroundOcrRunning(false);
         setOcrProgress(null);
+        showToast("Èxit OCR", "S'ha completat la lectura de noms.", "success");
       })();
     }
   };
@@ -810,7 +841,7 @@ function App() {
       }
     } catch (e) {
       console.error("Cloud sync operation failed:", e);
-      showAlert("Sync fallida", "No s'ha pogut canviar l'estat del fitxer al núvol.");
+      showToast("Sync fallida", "No s'ha pogut canviar l'estat del fitxer al núvol.", "error");
     } finally {
       setIsProcessing(false);
     }
@@ -831,6 +862,7 @@ function App() {
     }
     setMode('organize_pages');
   };
+
 
   const handleBack = () => {
     if (mode === 'setup') { setMode('upload'); setCurrentFileName(null); setPdfDoc(null); }
@@ -990,6 +1022,39 @@ function App() {
               <HandwrittenTitle size="2.2rem" color="blue" noMargin={true}>{processingMessage}</HandwrittenTitle>
             </div>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Això pot trigar uns segons...</p>
+          </div>
+        </div>
+      )}
+
+      {toast.show && (
+        <div className="card" style={{
+          position: 'fixed', bottom: '2rem', right: '2rem', zIndex: 10001,
+          width: '320px', padding: '1.25rem 1.5rem',
+          boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.25)',
+          border: '1px solid var(--border)',
+          textAlign: 'center',
+          display: 'flex', flexDirection: 'column', gap: '0.75rem',
+          overflow: 'hidden',
+          background: 'var(--glass-bg)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)'
+        }}>
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: '6px',
+            background: toast.type === 'success' ? 'var(--hl-green)' : toast.type === 'error' ? 'var(--hl-red)' : 'var(--hl-purple)'
+          }} />
+          
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <div style={{ transform: 'rotate(-2deg)' }}>
+              <HandwrittenTitle size="1.8rem" color={toast.type === 'success' ? 'green' : toast.type === 'error' ? 'red' : 'purple'} noMargin={true}>
+                {toast.title}
+              </HandwrittenTitle>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: 600 }}>
+            {toast.type === 'success' ? <CheckCircle size={16} color="var(--success)" /> : toast.type === 'error' ? <XCircle size={16} color="var(--danger)" /> : <RefreshCw size={16} className="spin" color="var(--accent)" />}
+            {toast.text}
           </div>
         </div>
       )}
@@ -1669,7 +1734,7 @@ function App() {
               setOcrCompleted(false);
             }}
             ocrCompleted={ocrCompleted}
-            showAlert={showAlert} showConfirm={showConfirm}
+            showAlert={showAlert} showConfirm={showConfirm} showToast={showToast}
           />
         )}
         {mode === 'correction' && pdfDoc && (
@@ -1690,7 +1755,7 @@ function App() {
           />
         )}
 
-        {mode === 'results' && pdfDoc && <ResultsView pdfDoc={pdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} targetMaxScore={targetMaxScore} onUpdateStudents={setStudents} onBack={() => setMode('correction')} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} onAuthorize={handleAuthorize} courses={courses} isAuthorizing={isAuthorizing} classroomStudents={classroomStudents} showAlert={showAlert} showConfirm={showConfirm} />}
+        {mode === 'results' && pdfDoc && <ResultsView pdfDoc={pdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} targetMaxScore={targetMaxScore} onUpdateStudents={setStudents} onBack={() => setMode('correction')} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} onAuthorize={handleAuthorize} courses={courses} isAuthorizing={isAuthorizing} classroomStudents={classroomStudents} showAlert={showAlert} showConfirm={showConfirm} showToast={showToast} />}
       </main>
     </div>
   );
