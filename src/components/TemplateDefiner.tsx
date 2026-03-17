@@ -251,7 +251,7 @@ export default function TemplateDefiner({
     currentFileName, sessionAlias, onUpdateSessionAlias,
     onComplete, onBack, theme, onToggleTheme,
     accessToken, userEmail, userPicture, onAuthorize, onLogout, onRunOCR, onResetOCR, ocrCompleted,
-    showAlert, showConfirm, showToast
+    showConfirm, showToast
 }: Props) {
     const [currentPageIndex, setCurrentPageIndex] = useState(0);
     const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
@@ -262,7 +262,7 @@ export default function TemplateDefiner({
     const [lastAddedId, setLastAddedId] = useState<string | null>(null);
     const [autoDistributeMap, setAutoDistributeMap] = useState<Record<string, boolean>>({});
     const [warnedExceeded, setWarnedExceeded] = useState<Record<string, boolean>>({});
-    const [suppressMaxScoreWarning, setSuppressMaxScoreWarning] = useState(false);
+    const [suppressMaxScoreWarning] = useState(false);
 
     // Drawing state
     const [isDrawing, setIsDrawing] = useState(false);

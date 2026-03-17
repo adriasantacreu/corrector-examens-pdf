@@ -43,7 +43,7 @@ export default function ResultsView({
     pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore,
     onUpdateStudents, onBack, theme, onToggleTheme,
     accessToken, userEmail, classroomStudents,
-    showAlert, showConfirm, showToast
+    showConfirm, showToast
 }: Props) {
     const [isExporting, setIsProcessing] = useState(false);
     const [exportProgress, setExportProgress] = useState(0);
