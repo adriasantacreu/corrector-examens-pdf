@@ -360,12 +360,24 @@ export default function CorrectionViewB({
         ? (rubricCounts?.[currentStudent.id]?.[currentExercise.id] ?? {})
         : {};
 
+    // Retorna els punts efectius d'una anotació highlighter:
+    // si té presetId, usa el valor ACTUAL del preset (no el copiat en crear l'anotació)
+    const getHlPoints = (ann: any): number | undefined => {
+        if (ann.type !== 'highlighter') return undefined;
+        if (ann.presetId) {
+            const preset = presets.find((p: any) => p.id === ann.presetId);
+            if (preset && typeof preset.points === 'number') return preset.points;
+        }
+        return typeof ann.points === 'number' ? ann.points : undefined;
+    };
+
     const rubricAdjustment = (currentExercise?.rubric ?? []).reduce((sum: number, item: any) => {
         return sum + item.points * (currentExRubricCounts[item.id] ?? 0);
     }, 0);
 
     const highlightAdjustment = currentAnnotations.reduce((sum: number, ann: any) => {
-        if (ann.type === 'highlighter' && typeof ann.points === 'number') return sum + ann.points;
+        const hlPts = getHlPoints(ann);
+        if (hlPts !== undefined) return sum + hlPts;
         if (ann.type === 'text' && typeof ann.score === 'number') return sum + ann.score;
         return sum;
     }, 0);
@@ -468,7 +480,12 @@ export default function CorrectionViewB({
         const exAnns = annotations[currentStudent.id]?.[ex.id] || [];
         const exRubric = rubricCounts[currentStudent.id]?.[ex.id] || {};
         const exAdjustment = exAnns.reduce((sum: number, ann: any) => {
-            if (ann.type === 'highlighter' && typeof ann.points === 'number') return sum + ann.points;
+            if (ann.type === 'highlighter') {
+                const pts = ann.presetId
+                    ? (presets.find((p: any) => p.id === ann.presetId)?.points ?? ann.points)
+                    : ann.points;
+                if (typeof pts === 'number') return sum + pts;
+            }
             if (ann.type === 'text' && typeof ann.score === 'number') return sum + ann.score;
             return sum;
         }, 0);
@@ -3284,7 +3301,13 @@ export default function CorrectionViewB({
                                         );
                                     })}
                                     {(() => {
-                                        const colorPoints = currentAnnotations.reduce((sum, ann) => (ann.type === 'highlighter' && typeof ann.points === 'number') ? sum + ann.points : sum, 0);
+                                        const colorPoints = currentAnnotations.reduce((sum, ann: any) => {
+                                            if (ann.type !== 'highlighter') return sum;
+                                            const pts = ann.presetId
+                                                ? (presets.find((p: any) => p.id === ann.presetId)?.points ?? ann.points)
+                                                : ann.points;
+                                            return typeof pts === 'number' ? sum + pts : sum;
+                                        }, 0);
                                         const textPoints = currentAnnotations.reduce((sum, ann) => (ann.type === 'text' && typeof ann.score === 'number') ? sum + ann.score : sum, 0);
 
                                         return (
