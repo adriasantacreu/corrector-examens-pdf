@@ -3128,7 +3128,7 @@ export default function CorrectionViewB({
 
                     <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                            <HandwrittenTitle size="1rem" color="blue" noMargin={true}>Exercici {exerciseIdx + 1}{currentExercise.name ? ` — ${currentExercise.name}` : ''}</HandwrittenTitle>
+                            <HandwrittenTitle size="1rem" color="blue" noMargin={true}>{`Exercici ${exerciseIdx + 1}${currentExercise.name ? ` — ${currentExercise.name}` : ''}`}</HandwrittenTitle>
                         </div>
                         {computedScore !== null ? (
                             <span style={{ fontSize: '1.1rem', fontWeight: 800, color: computedScore < 0 ? 'var(--danger)' : 'var(--accent)' }}>
