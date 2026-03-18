@@ -29,7 +29,7 @@ export default function NumericInput({ value, onChange, style, placeholder = "",
             inputMode="decimal"
             placeholder={placeholder}
             value={tempValue}
-            className={className}
+            className={`field-input${className ? ' ' + className : ''}`}
             onChange={(e) => {
                 const val = e.target.value.replace('.', ',');
                 if (val === "" || val === "-" || /^-?\d*,?\d*$/.test(val)) {
@@ -52,15 +52,7 @@ export default function NumericInput({ value, onChange, style, placeholder = "",
                     onChange(parsed);
                 }
             }}
-            style={{
-                background: 'var(--bg-primary)',
-                border: '1px solid var(--border)',
-                borderRadius: '4px',
-                color: 'var(--text-primary)',
-                padding: '0.2rem 0.3rem',
-                fontSize: '0.75rem',
-                ...style
-            }}
+            style={{ textAlign: 'center', ...style }}
         />
     );
 }

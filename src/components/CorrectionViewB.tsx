@@ -109,15 +109,8 @@ function NumericInput({ value, onChange, style, placeholder = "" }: {
                     onChange(parsed);
                 }
             }}
-            style={{
-                background: 'var(--bg-primary)',
-                border: '1px solid var(--border)',
-                borderRadius: '4px',
-                color: 'var(--text-primary)',
-                padding: '0.2rem 0.3rem',
-                fontSize: '0.75rem',
-                ...style
-            }}
+            className="field-input"
+            style={{ textAlign: 'center', ...style }}
         />
     );
 }
@@ -173,13 +166,14 @@ export default function CorrectionViewB({
 
         if (isEditing) {
             return (
-                <div key={preset.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.3rem', background: 'var(--bg-secondary)', borderRadius: '0.3rem', border: '1px solid var(--accent)' }}>
+                <div key={preset.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', padding: '0.5rem', background: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--accent)', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
                     <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
                         <input
                             type="text"
                             value={presetForm.label || ''}
                             onChange={e => setPresetForm({ ...presetForm, label: e.target.value })}
-                            style={{ flex: 1, background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '2px', padding: '0.1rem 0.2rem', fontSize: '0.7rem' }}
+                            className="field-input"
+                            style={{ flex: 1 }}
                             placeholder="Label"
                         />
                     </div>
@@ -2583,10 +2577,8 @@ export default function CorrectionViewB({
                                         step="0.1"
                                         value={stageScale}
                                         onChange={(e) => applyZoom(parseFloat(e.target.value))}
-                                        style={{
-                                            width: '140px', height: '4px', cursor: 'pointer',
-                                            accentColor: 'var(--accent)'
-                                        }}
+                                        className="custom-slider"
+                                        style={{ width: '140px' }}
                                     />
 
                                     <button
@@ -2947,7 +2939,7 @@ export default function CorrectionViewB({
                                                         a.id === selectedId ? (a.type === 'text' ? { ...a, text: e.target.value } : { ...a, label: e.target.value }) : a
                                                     ));
                                                 }}
-                                                style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text-primary)', padding: '0.2rem 0.3rem', fontSize: '0.65rem' }}
+                                                className="field-input"
                                             />
                                             <div style={{ display: 'flex', gap: '0.3rem' }}>
                                                 <NumericInput
@@ -3034,14 +3026,15 @@ export default function CorrectionViewB({
                                                     setNewComment(''); setNewCommentScore(''); setNewCommentCapEnabled(false); setNewCommentCapTotal('');
                                                 }
                                             }}
-                                            style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text-primary)', padding: '0.2rem 0.3rem', fontSize: '0.65rem' }}
+                                            className="field-input"
                                         />
                                         <div style={{ display: 'flex', gap: '0.3rem' }}>
                                             <input
                                                 type="number" step="0.1" placeholder="Pts"
                                                 value={newCommentScore}
                                                 onChange={e => setNewCommentScore(e.target.value)}
-                                                style={{ width: '40px', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text-primary)', padding: '0.2rem 0.3rem', fontSize: '0.65rem' }}
+                                                className="field-input"
+                                                style={{ width: '40px' }}
                                             />
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
                                                 <input
@@ -3057,14 +3050,16 @@ export default function CorrectionViewB({
                                                         type="number" step="0.1" placeholder="Cap"
                                                         value={newCommentCapTotal}
                                                         onChange={e => setNewCommentCapTotal(e.target.value)}
-                                                        style={{ width: '40px', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text-primary)', padding: '0.2rem 0.3rem', fontSize: '0.65rem' }}
+                                                        className="field-input"
+                                                        style={{ width: '40px' }}
                                                     />
                                                 )}
                                             </div>
                                             <select
                                                 value={newCommentColorMode}
                                                 onChange={e => setNewCommentColorMode(e.target.value as any)}
-                                                style={{ flex: 1, background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text-secondary)', padding: '0.2rem 0.3rem', fontSize: '0.65rem', cursor: 'pointer' }}
+                                                className="field-input"
+                                                style={{ flex: 1 }}
                                             >
                                                 <option value="neutral">Neutral</option>
                                                 <option value="score">Nota</option>
