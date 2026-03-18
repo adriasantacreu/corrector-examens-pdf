@@ -2939,6 +2939,7 @@ export default function CorrectionView({
                                                         setEditingBankComment(null);
                                                     } else {
                                                         onUpdateCommentBank([...commentBank, {
+                                                            id: `cb_${Math.random().toString(36).slice(2, 9)}`,
                                                             text: newComment.trim(),
                                                             score,
                                                             colorMode: newCommentColorMode,
@@ -2986,6 +2987,7 @@ export default function CorrectionView({
                                                             setEditingBankComment(null);
                                                         } else {
                                                             onUpdateCommentBank([...commentBank, {
+                                                                id: `cb_${Math.random().toString(36).slice(2, 9)}`,
                                                                 text: newComment.trim(),
                                                                 score,
                                                                 colorMode: newCommentColorMode,
