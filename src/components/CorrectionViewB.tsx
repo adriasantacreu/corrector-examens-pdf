@@ -242,6 +242,7 @@ export default function CorrectionViewB({
                         setActivePresetId(preset.id);
                         setSelectedId(null);
                     }}
+                    title={`${preset.label} · ${formatScaledPoints(preset.points)}pt${preset.capEnabled && preset.capTotal !== undefined ? ` · Límit: ${formatScaledPoints(preset.capTotal)}pt` : ''}`}
                     style={{
                         flex: 1,
                         display: 'flex',
@@ -264,9 +265,14 @@ export default function CorrectionViewB({
                         )}
                         <span style={{ color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: isSelected ? 700 : 400, fontSize: '0.7rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{preset.label}</span>
                     </div>
-                    <span style={{ fontSize: '0.7rem', fontWeight: 800, color: preset.points > 0 ? 'var(--success)' : (preset.points < 0 ? 'var(--danger)' : 'var(--text-secondary)'), marginLeft: '4px', flexShrink: 0 }}>
-                        {formatScaledPoints(preset.points)}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0, marginLeft: '4px' }}>
+                        {preset.capEnabled && preset.capTotal !== undefined && (
+                            <span title={`Límit: ${formatScaledPoints(preset.capTotal)}`} style={{ fontSize: '0.5rem', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '2px', padding: '0 2px', color: 'var(--text-secondary)', fontWeight: 800, lineHeight: 1.4 }}>⌀</span>
+                        )}
+                        <span style={{ fontSize: '0.7rem', fontWeight: 800, color: preset.points > 0 ? 'var(--success)' : (preset.points < 0 ? 'var(--danger)' : 'var(--text-secondary)') }}>
+                            {formatScaledPoints(preset.points)}
+                        </span>
+                    </div>
                 </button>
                 <div style={{ display: 'flex', gap: '0.05rem' }}>
                     <button
@@ -369,6 +375,19 @@ export default function CorrectionViewB({
     };
 
     const gradableExercises = useMemo(() => exercises.filter((ex: ExerciseDef) => ex.type === 'crop' || ex.type === 'pages'), [exercises]);
+
+    // Progrés: un alumne es considera "corregit" si té anotacions o rubricCounts en algun exercici
+    const correctedStudentIds = useMemo(() => new Set(
+        students.filter(st =>
+            gradableExercises.some(ex =>
+                (annotations[st.id]?.[ex.id]?.length ?? 0) > 0 ||
+                Object.keys(rubricCounts[st.id]?.[ex.id] ?? {}).some(k => (rubricCounts[st.id][ex.id][k] ?? 0) > 0)
+            )
+        ).map(st => st.id)
+    ), [students, gradableExercises, annotations, rubricCounts]);
+    const correctedCount = correctedStudentIds.size;
+    const progressPct = students.length > 0 ? Math.round((correctedCount / students.length) * 100) : 0;
+
     const currentStudent = students[studentIdx];
     const currentExercise = gradableExercises[exerciseIdx];
     const currentAnnotations = (currentStudent && currentExercise)
@@ -2785,6 +2804,9 @@ export default function CorrectionViewB({
                                             >
                                                 <span>{comment.text}</span>
                                                 {comment.score !== undefined && <span style={{ fontWeight: 800, opacity: 0.8, background: isDarkMode ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.4)', padding: '0.05rem 0.25rem', borderRadius: '3px', fontSize: '0.65rem' }}>{comment.score > 0 ? '+' : ''}{comment.score}</span>}
+                                                {comment.capEnabled && comment.capTotal !== undefined && (
+                                                    <span title={`Límit: ${comment.capTotal > 0 ? '+' : ''}${comment.capTotal}pt`} style={{ fontSize: '0.5rem', opacity: 0.6, fontWeight: 800 }}>⌀</span>
+                                                )}
                                                 <button onClick={(e) => { e.stopPropagation(); onUpdateCommentBank(commentBank.filter((_, i) => i !== idx)); if (isEditing) setEditingBankComment(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.4, fontSize: '1rem', marginLeft: '4px' }}>×</button>
                                             </div>
                                         );
@@ -2877,6 +2899,9 @@ export default function CorrectionViewB({
                                             >
                                                 <span>{comment.text}</span>
                                                 {comment.score !== undefined && <span style={{ fontWeight: 800, opacity: 0.8, background: isDarkMode ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.4)', padding: '0.05rem 0.25rem', borderRadius: '3px', fontSize: '0.65rem' }}>{comment.score > 0 ? '+' : ''}{comment.score}</span>}
+                                                {comment.capEnabled && comment.capTotal !== undefined && (
+                                                    <span title={`Límit: ${comment.capTotal > 0 ? '+' : ''}${comment.capTotal}pt`} style={{ fontSize: '0.5rem', opacity: 0.6, fontWeight: 800 }}>⌀</span>
+                                                )}
                                                 <button onClick={(e) => { e.stopPropagation(); onUpdateCommentBank(commentBank.filter((_, i) => i !== idx)); if (isEditing) setEditingBankComment(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', opacity: 0.4, fontSize: '1rem', marginLeft: '4px' }}>×</button>
                                             </div>
                                         );
@@ -3149,12 +3174,23 @@ export default function CorrectionViewB({
                             >
                                 {students.map((st, i) => {
                                     const cleanName = st.name.split(' (')[0] || `Alumne ${i + 1}`;
-                                    return <option key={st.id} value={i}>{cleanName}</option>;
+                                    const isDone = correctedStudentIds.has(st.id);
+                                    return <option key={st.id} value={i}>{isDone ? '✓ ' : '○ '}{cleanName}</option>;
                                 })}
                             </select>
                             <button className="btn-icon" onClick={() => onUpdateStudentIdx(Math.min(students.length - 1, studentIdx + 1))} disabled={studentIdx === students.length - 1} style={{ padding: '4px', flexShrink: 0 }}>
                                 <ChevronRight size={14} />
                             </button>
+                        </div>
+                        {/* Barra de progrés */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Progrés</span>
+                                <span style={{ fontSize: '0.65rem', fontWeight: 800, color: progressPct === 100 ? 'var(--success)' : 'var(--text-secondary)' }}>{correctedCount}/{students.length} · {progressPct}%</span>
+                            </div>
+                            <div style={{ height: '5px', background: 'var(--bg-tertiary)', borderRadius: '3px', overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: `${progressPct}%`, borderRadius: '3px', background: progressPct === 100 ? 'var(--success)' : 'var(--accent)', transition: 'width 0.4s ease' }} />
+                            </div>
                         </div>
                         <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textAlign: 'center' }}>Alumne {studentIdx + 1} de {students.length}</span>
                     </div>
