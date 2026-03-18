@@ -92,6 +92,8 @@ export interface PresetHighlighter {
   color: string;
   points: number;
   exerciseId?: string; // If present, only shows up for this specific exercise
+  capEnabled?: boolean; // If true, total contribution from this preset is capped
+  capTotal?: number;    // Cap value (negative = max penalty, positive = max bonus)
 }
 
 export interface HighlighterAnnotation {
@@ -144,6 +146,7 @@ export interface TextAnnotation {
   fontWeight?: string; // used for PDF layout summary text weight
   align?: 'left' | 'center' | 'right';
   baseline?: 'top' | 'middle' | 'bottom';
+  commentBankId?: string; // If set, links this annotation to an AnnotationComment.id (for cap grouping)
 }
 
 export type Annotation = PenAnnotation | HighlighterAnnotation | ImageAnnotation | TextAnnotation | HighlighterLegendAnnotation;
@@ -151,11 +154,14 @@ export type Annotation = PenAnnotation | HighlighterAnnotation | ImageAnnotation
 export type AnnotationStore = Record<string, Record<string, Annotation[]>>;
 
 export interface AnnotationComment {
+  id: string;           // Stable identifier for grouping linked TextAnnotations
   text: string;
   score?: number;
   colorMode?: 'neutral' | 'score' | 'custom';
   customColor?: string;
   exerciseId?: string; // If present, only shows up for this specific exercise
+  capEnabled?: boolean; // If true, total contribution from this comment type is capped
+  capTotal?: number;    // Cap value (negative = max penalty, positive = max bonus)
 }
 
 // [studentId][exerciseId][rubricItemId] = count applied

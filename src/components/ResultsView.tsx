@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { ChevronLeft, Download, Sun, Moon, UserCheck, RefreshCw, FileDown, XCircle, MailCheck, MessageSquareText, Send as SendIcon, CheckCircle } from 'lucide-react';
-import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from '../types';
+import type { Student, ExerciseDef, AnnotationStore, RubricCountStore, PresetHighlighter, AnnotationComment } from '../types';
 import { exportCombinedPDF, exportStudentPDF, generateStudentPDF } from '../utils/pdfExport';
 import { calculateStudentScore } from '../utils/scoreUtils';
 import HandwrittenTitle from './HandwrittenTitle';
@@ -24,6 +24,8 @@ interface Props {
     annotations: AnnotationStore;
     rubricCounts: RubricCountStore;
     targetMaxScore: number;
+    presets: PresetHighlighter[];
+    commentBank: AnnotationComment[];
     onUpdateStudents: (s: Student[]) => void;
     onBack: () => void;
     theme: 'light' | 'dark';
@@ -41,6 +43,7 @@ interface Props {
 
 export default function ResultsView({
     pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore,
+    presets, commentBank,
     onUpdateStudents, onBack, theme, onToggleTheme,
     accessToken, userEmail, classroomStudents,
     showConfirm, showToast
@@ -55,7 +58,7 @@ export default function ResultsView({
     const [isEditingTemplate, setIsEditingTemplate] = useState(false);
 
     const stats = useMemo(() => {
-        const scores = students.map(s => calculateStudentScore(s.id, exercises, annotations, rubricCounts, targetMaxScore).normalized);
+        const scores = students.map(s => calculateStudentScore(s.id, exercises, annotations, rubricCounts, targetMaxScore, presets, commentBank).normalized);
         const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
         const pass = scores.filter(s => s >= targetMaxScore / 2).length;
         return { avg: avg.toFixed(2), passRate: scores.length ? Math.round((pass / scores.length) * 100) : 0, passCount: pass, total: scores.length };
@@ -102,7 +105,7 @@ export default function ResultsView({
     };
 
     const sendEmailForStudent = async (student: Student, isTest: boolean = false) => {
-        const scoreData = calculateStudentScore(student.id, exercises, annotations, rubricCounts, targetMaxScore);
+        const scoreData = calculateStudentScore(student.id, exercises, annotations, rubricCounts, targetMaxScore, presets, commentBank);
         const isPass = scoreData.normalized >= targetMaxScore / 2;
 
         const totalPossible = exercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
@@ -317,7 +320,7 @@ export default function ResultsView({
                             </thead>
                             <tbody>
                                 {students.map((s, i) => {
-                                    const scoreData = calculateStudentScore(s.id, exercises, annotations, rubricCounts, targetMaxScore);
+                                    const scoreData = calculateStudentScore(s.id, exercises, annotations, rubricCounts, targetMaxScore, presets, commentBank);
                                     const isPass = scoreData.normalized >= targetMaxScore / 2;
 
                                     return (

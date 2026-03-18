@@ -155,6 +155,8 @@ export default function CorrectionViewB({
     const [newCommentScore, setNewCommentScore] = useState<string>('');
     const [newCommentColorMode, setNewCommentColorMode] = useState<'neutral' | 'score' | 'custom'>('neutral');
     const [newCommentCustomColor, setNewCommentCustomColor] = useState('#6366f1');
+    const [newCommentCapEnabled, setNewCommentCapEnabled] = useState(false);
+    const [newCommentCapTotal, setNewCommentCapTotal] = useState<string>('');
     const [commentDefaultSize, setCommentDefaultSize] = useState(18);
     const [commentBankHeight, setCommentBankHeight] = useState(160);
     const [isCommentBankExpanded, setIsCommentBankExpanded] = useState(true);
@@ -210,6 +212,23 @@ export default function CorrectionViewB({
                                 className="btn-icon" style={{ padding: '0.1rem', color: 'var(--success)' }}
                             ><Check size={10} /></button>
                         </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.15rem' }}>
+                        <input
+                            type="checkbox"
+                            id={`cap-${preset.id}`}
+                            checked={!!presetForm.capEnabled}
+                            onChange={e => setPresetForm({ ...presetForm, capEnabled: e.target.checked })}
+                            style={{ width: '10px', height: '10px', cursor: 'pointer' }}
+                        />
+                        <label htmlFor={`cap-${preset.id}`} style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>Límit</label>
+                        {presetForm.capEnabled && (
+                            <NumericInput
+                                value={presetForm.capTotal ?? 0}
+                                onChange={val => setPresetForm({ ...presetForm, capTotal: val })}
+                                style={{ width: '40px' }}
+                            />
+                        )}
                     </div>
                 </div>
             );
@@ -360,27 +379,57 @@ export default function CorrectionViewB({
         ? (rubricCounts?.[currentStudent.id]?.[currentExercise.id] ?? {})
         : {};
 
-    // Retorna els punts efectius d'una anotació highlighter:
-    // si té presetId, usa el valor ACTUAL del preset (no el copiat en crear l'anotació)
-    const getHlPoints = (ann: any): number | undefined => {
-        if (ann.type !== 'highlighter') return undefined;
-        if (ann.presetId) {
-            const preset = presets.find((p: any) => p.id === ann.presetId);
-            if (preset && typeof preset.points === 'number') return preset.points;
+    // Aplica el cap a una suma (negatiu → max penalització, positiu → max bonus)
+    const applyCap = (sum: number, capEnabled?: boolean, capTotal?: number): number => {
+        if (!capEnabled || capTotal === undefined) return sum;
+        return capTotal >= 0 ? Math.min(sum, capTotal) : Math.max(sum, capTotal);
+    };
+
+    // Contribució total dels highlights agrupada per preset (usa valor ACTUAL del preset + cap)
+    const computeHighlightAdj = (anns: Annotation[]): number => {
+        const groups = new Map<string, { sum: number; preset?: PresetHighlighter }>();
+        for (const ann of anns) {
+            if (ann.type !== 'highlighter') continue;
+            const preset = (ann as any).presetId ? presets.find((p: PresetHighlighter) => p.id === (ann as any).presetId) : undefined;
+            const pts = preset ? preset.points : (ann as any).points;
+            if (typeof pts !== 'number') continue;
+            const key = (ann as any).presetId || `free_${pts}`;
+            const g = groups.get(key);
+            if (g) g.sum += pts; else groups.set(key, { sum: pts, preset });
         }
-        return typeof ann.points === 'number' ? ann.points : undefined;
+        let total = 0;
+        for (const { sum, preset } of groups.values())
+            total += applyCap(sum, preset?.capEnabled, preset?.capTotal);
+        return total;
+    };
+
+    // Contribució total dels comentaris puntuats agrupada per bank entry (amb cap per grup)
+    const computeCommentAdj = (anns: Annotation[], bank: AnnotationComment[]): number => {
+        const groups = new Map<string, { sum: number; entry?: AnnotationComment }>();
+        let free = 0;
+        for (const ann of anns) {
+            if (ann.type !== 'text') continue;
+            const ta = ann as TextAnnotation;
+            if (typeof ta.score !== 'number') continue;
+            if (ta.commentBankId) {
+                const entry = bank.find(c => c.id === ta.commentBankId);
+                const g = groups.get(ta.commentBankId);
+                if (g) g.sum += ta.score; else groups.set(ta.commentBankId, { sum: ta.score, entry });
+            } else {
+                free += ta.score;
+            }
+        }
+        let total = free;
+        for (const { sum, entry } of groups.values())
+            total += applyCap(sum, entry?.capEnabled, entry?.capTotal);
+        return total;
     };
 
     const rubricAdjustment = (currentExercise?.rubric ?? []).reduce((sum: number, item: any) => {
         return sum + item.points * (currentExRubricCounts[item.id] ?? 0);
     }, 0);
 
-    const highlightAdjustment = currentAnnotations.reduce((sum: number, ann: any) => {
-        const hlPts = getHlPoints(ann);
-        if (hlPts !== undefined) return sum + hlPts;
-        if (ann.type === 'text' && typeof ann.score === 'number') return sum + ann.score;
-        return sum;
-    }, 0);
+    const highlightAdjustment = computeHighlightAdj(currentAnnotations) + computeCommentAdj(currentAnnotations, commentBank);
 
     const computedScore = currentExercise
         ? Math.max(0, (currentExercise.scoringMode === 'from_zero' ? 0 : (currentExercise.maxScore || 0)) + rubricAdjustment + highlightAdjustment)
@@ -479,16 +528,7 @@ export default function CorrectionViewB({
     const totalStudentScore = currentStudent ? gradableExercises.reduce((acc: number, ex: ExerciseDef) => {
         const exAnns = annotations[currentStudent.id]?.[ex.id] || [];
         const exRubric = rubricCounts[currentStudent.id]?.[ex.id] || {};
-        const exAdjustment = exAnns.reduce((sum: number, ann: any) => {
-            if (ann.type === 'highlighter') {
-                const pts = ann.presetId
-                    ? (presets.find((p: any) => p.id === ann.presetId)?.points ?? ann.points)
-                    : ann.points;
-                if (typeof pts === 'number') return sum + pts;
-            }
-            if (ann.type === 'text' && typeof ann.score === 'number') return sum + ann.score;
-            return sum;
-        }, 0);
+        const exAdjustment = computeHighlightAdj(exAnns) + computeCommentAdj(exAnns, commentBank);
 
         let exScore = 0;
         if (ex.scoringMode === 'from_zero' && ex.rubric) {
@@ -1035,7 +1075,8 @@ export default function CorrectionViewB({
                 color: textColor || defaultTextColor, // Fallback safety
                 bgFill,
                 fontSize: commentDefaultSize,
-                score: pendingStampComment.score
+                score: pendingStampComment.score,
+                commentBankId: pendingStampComment.id,
             };
 
             const newAnnots = [...currentAnnotations, newAnn];
@@ -1997,10 +2038,12 @@ export default function CorrectionViewB({
                                         if (!payload || !stageRef.current) return;
                                         let commentText = payload;
                                         let commentScore: number | undefined = undefined;
+                                        let commentBankId: string | undefined = undefined;
                                         try {
                                             const parsed = JSON.parse(payload);
                                             commentText = parsed.text;
                                             commentScore = parsed.score;
+                                            commentBankId = parsed.id;
                                         } catch { }
                                         const rect = (e.target as HTMLElement).closest('.canvas-container')?.getBoundingClientRect();
                                         if (!rect) return;
@@ -2030,6 +2073,7 @@ export default function CorrectionViewB({
                                             color: resolvedColor,
                                             fontSize: commentDefaultSize,
                                             score: commentScore,
+                                            commentBankId,
                                         };
                                         updateAnnotationsWithHistory([...currentAnnotations, newAnnotation] as Annotation[]);
                                         setDraggingComment(null);
@@ -2735,6 +2779,8 @@ export default function CorrectionViewB({
                                                     setNewCommentScore(comment.score?.toString() || '');
                                                     setNewCommentColorMode(comment.colorMode || 'neutral');
                                                     if (comment.customColor) setNewCommentCustomColor(comment.customColor);
+                                                    setNewCommentCapEnabled(comment.capEnabled || false);
+                                                    setNewCommentCapTotal(comment.capTotal?.toString() || '');
                                                 }}
                                             >
                                                 <span>{comment.text}</span>
@@ -2825,6 +2871,8 @@ export default function CorrectionViewB({
                                                     setNewCommentScore(comment.score?.toString() || '');
                                                     setNewCommentColorMode(comment.colorMode || 'neutral');
                                                     if (comment.customColor) setNewCommentCustomColor(comment.customColor);
+                                                    setNewCommentCapEnabled(comment.capEnabled || false);
+                                                    setNewCommentCapTotal(comment.capTotal?.toString() || '');
                                                 }}
                                             >
                                                 <span>{comment.text}</span>
@@ -2929,7 +2977,7 @@ export default function CorrectionViewB({
                                                 </span>
                                             </div>
                                             {editingBankComment !== null && (
-                                                <button onClick={() => { setEditingBankComment(null); setNewComment(''); setNewCommentScore(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#92400e', padding: 0, display: 'flex' }}><X size={12} /></button>
+                                                <button onClick={() => { setEditingBankComment(null); setNewComment(''); setNewCommentScore(''); setNewCommentCapEnabled(false); setNewCommentCapTotal(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#92400e', padding: 0, display: 'flex' }}><X size={12} /></button>
                                             )}
                                         </div>
                                         <input
@@ -2939,21 +2987,26 @@ export default function CorrectionViewB({
                                             onKeyDown={e => {
                                                 if (e.key === 'Enter' && newComment.trim()) {
                                                     const score = newCommentScore !== '' ? Number(newCommentScore) : undefined;
+                                                    const capEnabled = newCommentCapEnabled || undefined;
+                                                    const capTotal = newCommentCapEnabled && newCommentCapTotal !== '' ? Number(newCommentCapTotal) : undefined;
                                                     if (editingBankComment !== null) {
                                                         const b = [...commentBank];
-                                                        b[editingBankComment] = { ...b[editingBankComment], text: newComment.trim(), score, colorMode: newCommentColorMode, customColor: newCommentColorMode === 'custom' ? newCommentCustomColor : undefined };
+                                                        b[editingBankComment] = { ...b[editingBankComment], text: newComment.trim(), score, colorMode: newCommentColorMode, customColor: newCommentColorMode === 'custom' ? newCommentCustomColor : undefined, capEnabled, capTotal };
                                                         onUpdateCommentBank(b);
                                                         setEditingBankComment(null);
                                                     } else {
                                                         onUpdateCommentBank([...commentBank, {
+                                                            id: `cb_${Math.random().toString(36).slice(2, 9)}`,
                                                             text: newComment.trim(),
                                                             score,
                                                             colorMode: newCommentColorMode,
                                                             customColor: newCommentColorMode === 'custom' ? newCommentCustomColor : undefined,
-                                                            exerciseId: currentExercise.id
+                                                            exerciseId: currentExercise.id,
+                                                            capEnabled,
+                                                            capTotal,
                                                         }]);
                                                     }
-                                                    setNewComment(''); setNewCommentScore('');
+                                                    setNewComment(''); setNewCommentScore(''); setNewCommentCapEnabled(false); setNewCommentCapTotal('');
                                                 }
                                             }}
                                             style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text-primary)', padding: '0.2rem 0.3rem', fontSize: '0.65rem' }}
@@ -2965,6 +3018,24 @@ export default function CorrectionViewB({
                                                 onChange={e => setNewCommentScore(e.target.value)}
                                                 style={{ width: '40px', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text-primary)', padding: '0.2rem 0.3rem', fontSize: '0.65rem' }}
                                             />
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    id="comment-cap-toggle"
+                                                    checked={newCommentCapEnabled}
+                                                    onChange={e => setNewCommentCapEnabled(e.target.checked)}
+                                                    style={{ width: '10px', height: '10px', cursor: 'pointer' }}
+                                                />
+                                                <label htmlFor="comment-cap-toggle" style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>Límit</label>
+                                                {newCommentCapEnabled && (
+                                                    <input
+                                                        type="number" step="0.1" placeholder="Cap"
+                                                        value={newCommentCapTotal}
+                                                        onChange={e => setNewCommentCapTotal(e.target.value)}
+                                                        style={{ width: '40px', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '4px', color: 'var(--text-primary)', padding: '0.2rem 0.3rem', fontSize: '0.65rem' }}
+                                                    />
+                                                )}
+                                            </div>
                                             <select
                                                 value={newCommentColorMode}
                                                 onChange={e => setNewCommentColorMode(e.target.value as any)}
@@ -2986,21 +3057,26 @@ export default function CorrectionViewB({
                                                 onClick={() => {
                                                     if (newComment.trim()) {
                                                         const score = newCommentScore !== '' ? Number(newCommentScore) : undefined;
+                                                        const capEnabled = newCommentCapEnabled || undefined;
+                                                        const capTotal = newCommentCapEnabled && newCommentCapTotal !== '' ? Number(newCommentCapTotal) : undefined;
                                                         if (editingBankComment !== null) {
                                                             const b = [...commentBank];
-                                                            b[editingBankComment] = { ...b[editingBankComment], text: newComment.trim(), score, colorMode: newCommentColorMode, customColor: newCommentColorMode === 'custom' ? newCommentCustomColor : undefined };
+                                                            b[editingBankComment] = { ...b[editingBankComment], text: newComment.trim(), score, colorMode: newCommentColorMode, customColor: newCommentColorMode === 'custom' ? newCommentCustomColor : undefined, capEnabled, capTotal };
                                                             onUpdateCommentBank(b);
                                                             setEditingBankComment(null);
                                                         } else {
                                                             onUpdateCommentBank([...commentBank, {
+                                                                id: `cb_${Math.random().toString(36).slice(2, 9)}`,
                                                                 text: newComment.trim(),
                                                                 score,
                                                                 colorMode: newCommentColorMode,
                                                                 customColor: newCommentColorMode === 'custom' ? newCommentCustomColor : undefined,
-                                                                exerciseId: currentExercise.id
+                                                                exerciseId: currentExercise.id,
+                                                                capEnabled,
+                                                                capTotal,
                                                             }]);
                                                         }
-                                                        setNewComment(''); setNewCommentScore('');
+                                                        setNewComment(''); setNewCommentScore(''); setNewCommentCapEnabled(false); setNewCommentCapTotal('');
                                                     }
                                                 }}
                                                 style={{
@@ -3301,14 +3377,8 @@ export default function CorrectionViewB({
                                         );
                                     })}
                                     {(() => {
-                                        const colorPoints = currentAnnotations.reduce((sum, ann: any) => {
-                                            if (ann.type !== 'highlighter') return sum;
-                                            const pts = ann.presetId
-                                                ? (presets.find((p: any) => p.id === ann.presetId)?.points ?? ann.points)
-                                                : ann.points;
-                                            return typeof pts === 'number' ? sum + pts : sum;
-                                        }, 0);
-                                        const textPoints = currentAnnotations.reduce((sum, ann) => (ann.type === 'text' && typeof ann.score === 'number') ? sum + ann.score : sum, 0);
+                                        const colorPoints = computeHighlightAdj(currentAnnotations);
+                                        const textPoints = computeCommentAdj(currentAnnotations, commentBank);
 
                                         return (
                                             <>

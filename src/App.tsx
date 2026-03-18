@@ -61,6 +61,9 @@ function calculateProgress(students: Student[], exercises: ExerciseDef[], annota
   return Math.round((completed / (students.length * gradable.length)) * 100);
 }
 
+const migrateCommentBank = (bank: import('./types').AnnotationComment[]): import('./types').AnnotationComment[] =>
+  bank.map(c => c.id ? c : { ...c, id: `cb_${Math.random().toString(36).slice(2, 9)}` });
+
 function App() {
   const globalSaved = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
   const [mode, setMode] = useState<AppMode>('upload');
@@ -77,12 +80,12 @@ function App() {
   });
   const [cloudSyncSolution, setCloudSyncSolution] = useState<boolean>(true);
   const [currentFileName, setCurrentFileName] = useState<string | null>(globalSaved.lastActiveFileName || null);
-  const [globalCommentBank, setGlobalCommentBank] = useState<import('./types').AnnotationComment[]>(globalSaved.commentBank || [
-    { text: 'Excel·lent!', score: 1, colorMode: 'score' },
-    { text: 'Molt bé', score: 0.5, colorMode: 'score' },
-    { text: 'Revisa aquest concepte', score: -0.5, colorMode: 'neutral' },
-    { text: 'Falta justificar la resposta', score: -1, colorMode: 'neutral' },
-  ]);
+  const [globalCommentBank, setGlobalCommentBank] = useState<import('./types').AnnotationComment[]>(() => migrateCommentBank(globalSaved.commentBank || [
+    { id: 'cb_default1', text: 'Excel·lent!', score: 1, colorMode: 'score' },
+    { id: 'cb_default2', text: 'Molt bé', score: 0.5, colorMode: 'score' },
+    { id: 'cb_default3', text: 'Revisa aquest concepte', score: -0.5, colorMode: 'neutral' },
+    { id: 'cb_default4', text: 'Falta justificar la resposta', score: -1, colorMode: 'neutral' },
+  ]));
   const [sessionAlias, setSessionAlias] = useState<string | null>(null);
   const [pendingSession, setPendingSession] = useState<any | null>(null);
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
@@ -488,7 +491,7 @@ function App() {
 
     if (saved) {
       // Merge session comments/presets with global ones
-      const sessionComments = saved.commentBank || [];
+      const sessionComments = migrateCommentBank(saved.commentBank || []);
       const mergedComments = [...globalCommentBank, ...sessionComments.filter((c: any) => c.exerciseId)];
 
       const sessionPresets = saved.presets || [];
@@ -1755,7 +1758,7 @@ function App() {
           />
         )}
 
-        {mode === 'results' && pdfDoc && <ResultsView pdfDoc={pdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} targetMaxScore={targetMaxScore} onUpdateStudents={setStudents} onBack={() => setMode('correction')} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} onAuthorize={handleAuthorize} courses={courses} isAuthorizing={isAuthorizing} classroomStudents={classroomStudents} showAlert={showAlert} showConfirm={showConfirm} showToast={showToast} />}
+        {mode === 'results' && pdfDoc && <ResultsView pdfDoc={pdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} targetMaxScore={targetMaxScore} presets={presets} commentBank={commentBank} onUpdateStudents={setStudents} onBack={() => setMode('correction')} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} onAuthorize={handleAuthorize} courses={courses} isAuthorizing={isAuthorizing} classroomStudents={classroomStudents} showAlert={showAlert} showConfirm={showConfirm} showToast={showToast} />}
       </main>
     </div>
   );
