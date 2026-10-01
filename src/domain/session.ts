@@ -37,6 +37,10 @@ export interface SessionData {
     cloudSyncPDF: boolean;
     cloudSyncSolution: boolean;
     aiSuggestions: AiSuggestionStore;
+    /** Pàgines per examen amb què es va fer el repartiment d'alumnes (per no refer-lo si no ha canviat). */
+    studentsPagesPerExam: number | null;
+    /** Mida de lletra del segell de nota (la mateixa al corrector i al PDF). */
+    stampSize: number;
 }
 
 /** El que necessita la pantalla d'inici per mostrar una targeta de sessió. */
@@ -96,6 +100,8 @@ export function createEmptySession(fileName: string, globals: Pick<GlobalSetting
         cloudSyncPDF: globals.cloudSyncPDF,
         cloudSyncSolution: true,
         aiSuggestions: {},
+        studentsPagesPerExam: null,
+        stampSize: 24,
     };
 }
 
@@ -141,6 +147,10 @@ export function migrateSession(raw: unknown, fallbackFileName = ''): SessionData
         cloudSyncPDF: typeof r.cloudSyncPDF === 'boolean' ? r.cloudSyncPDF : true,
         cloudSyncSolution: typeof r.cloudSyncSolution === 'boolean' ? r.cloudSyncSolution : true,
         aiSuggestions: asRecord(r.aiSuggestions),
+        // Les sessions antigues no ho guardaven: s'assumeix que els alumnes es van repartir amb el valor actual
+        studentsPagesPerExam: typeof r.studentsPagesPerExam === 'number' ? r.studentsPagesPerExam
+            : students.length ? Math.max(1, asNumber(r.pagesPerExam, 1)) : null,
+        stampSize: asNumber(r.stampSize, 24),
     };
     if (session.lastStudentIdx >= Math.max(1, students.length)) session.lastStudentIdx = 0;
     return session;
