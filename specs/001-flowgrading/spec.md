@@ -43,3 +43,10 @@ Canvis d'estètica, de menús o de layouts; funcionalitats noves no demanades.
 ## Pendent de decisió (ho preguntaré)
 - Inventari exacte de menús/dreceres: l'extrec de l'original abans de la fase 1.
 - IA: proveïdor (Groq/qwen vs ia-gateway del servidor) i criteris per exercici.
+
+## F11 · Preclassificació amb IA: origen i enfocament
+Es basa en els projectes que l'Adrià ja va fer al servidor (referència, no es copien tal qual):
+- `docencia/legacy/correccio_examens_2eso|maig/` (`corregir.py`, `auto_detect_crops.py` amb registre d'imatge NCC, `COM_FUNCIONA.md`).
+- `scratch/pregrade_exercises_groq_robust.py` (prompt per criteris `checks[]` + comentari en català, temperatura 0, JSON, reintents).
+
+Com encaixa: per cada exercici, la IA llegeix el retall (i el solucionari si n'hi ha) i proposa **rúbrica marcada + comentari + nota**. És un *suggeriment*: l'Adrià l'aplica, el modifica o el descarta; mai es publica ni s'envia sol. S'afegeix com a `aiProvider` + un panell al costat de la rúbrica, sense canviar els layouts existents. Instruccions de correcció per exercici (`aiInstructions`) opcionals.

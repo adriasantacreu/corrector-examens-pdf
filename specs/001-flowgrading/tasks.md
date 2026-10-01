@@ -9,4 +9,4 @@
 - [ ] T006 Fase 3: F1 sessions · F2 PDF · F3 alumnes · F5 organitzador · F6 plantilla
 - [ ] T007 Fase 4: F7 anotacions · F8 puntuació/segell · F9 exportació
 - [ ] T008 Fase 5: F10 correu/Classroom · F4 OCR
-- [ ] T009 Fase 6: F11 preclassificació IA
+- [ ] T009 Fase 6: F11 preclassificació IA (partir dels projectes legacy del servidor, vegeu spec.md)
