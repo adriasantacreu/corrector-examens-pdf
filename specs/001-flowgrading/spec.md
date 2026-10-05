@@ -63,6 +63,10 @@ Referència: `docs/plans/2026-10-01_precorreccio-matrius-2bat.md` (2BAT, 12 alum
 
 Regles: la proposta és sempre un suggeriment (estat `pending` fins que l'Adrià l'aplica); mai es publica ni s'envia res sol; temperatura 0, sortida JSON, reintents. Esbós ja fet a la branca `refactor/modular`: `src/services/ai/preGrading.ts` (prompt per criteris + comentari) i `AiSuggestion` a `types.ts`.
 
-Pendent de decidir: **proveïdor** (vegeu la resposta a l'Adrià del 2026-10-05) i **on va la valoració global** (l'original no en té: text a la 1a pàgina, cos del correu o camp nou a Resultats).
+**Proveïdors (decidit 2026-10-05): via API, intercanviables.** Una interfície comuna `AiProvider` (`preGrade(input) → AiSuggestion`) i un fitxer per proveïdor: el passadís d'IA del servidor (`ia-gateway`), Gemini, i els que vinguin. Afegir-ne un = un fitxer + registre, sense tocar el nucli ni la UI. La clau no va mai al codi del client: passa per un proxy (com `api/groq.ts` de l'original) o per la configuració local de l'usuari.
+
+**Camins**: la mateixa idea per a qualsevol flux nou (importadors, exportadors, eines, panells, proveïdors d'IA o d'OCR). L'Adrià vol anar afegint funcionalitats i camins: la modularitat del registre (`plan.md` §Extensibilitat) és un requisit, no un extra.
+
+Pendent de decidir: **on va la valoració global** (l'original no en té: text a la 1a pàgina, cos del correu o camp nou a Resultats).
 
 Projectes antics que també serveixen de referència: `docencia/legacy/correccio_examens_2eso|maig/` (`auto_detect_crops.py`, registre d'imatge NCC) i `scratch/pregrade_exercises_groq_robust.py`.

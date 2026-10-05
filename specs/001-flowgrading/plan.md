@@ -11,7 +11,7 @@
 | `app/` | composició de pantalles i registre | tot |
 
 ## Extensibilitat
-Registre `app/registry.ts`: `tools` (correcció), `importers`, `exporters`, `aiProviders`, `panels`. Una feature exporta `FeatureModule { id, register(registry) }`. La IA (F11) és un `aiProvider` + un panell al costat de la rúbrica.
+Registre `app/registry.ts`: `tools` (correcció), `importers`, `exporters`, `aiProviders` (servidor, Gemini…), `ocrProviders`, `panels`. Sense cap proveïdor registrat, l'app funciona igual (la IA és opcional). Una feature exporta `FeatureModule { id, register(registry) }`. La IA (F11) és un `aiProvider` + un panell al costat de la rúbrica.
 
 ## Fases
 | Fase | Contingut | Fet quan… |
