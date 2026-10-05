@@ -51,3 +51,10 @@ test('enrere: Resultats → Correcció → Plantilla → Organitzador → Config
     await back.click();
     await expect(page.getByText('Nou PDF')).toBeVisible();
 });
+
+test('a Resultats cap nota passa del màxim (10) i la mitjana hi quadra', async ({ page }) => {
+    await openDemo(page);
+    await openSession(page, SESSIONS.results);
+    await expect(page.getByTestId('nota-alumne')).toHaveText(['10.00', '9.00', '9.25', '7.75', '10.00', '9.00']);
+    await expect(page.getByText('9.17', { exact: true })).toBeVisible();
+});

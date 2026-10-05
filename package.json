@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:fast": "tsc -b && vitest run",
     "e2e": "playwright test",
-    "e2e:update": "playwright test --update-snapshots",
+    "e2e:update": "playwright test --update-snapshots=all",
     "verify": "npm run test:fast && npm run e2e",
     "prepare": "git config core.hooksPath .githooks || true"
   },

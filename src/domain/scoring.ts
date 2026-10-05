@@ -74,7 +74,7 @@ export interface ScoringContext {
 }
 
 export interface ExerciseScore {
-    score: number; // Mai negativa
+    score: number; // Entre 0 i el màxim de l'exercici
     base: number;
     rubric: number;
     highlights: number;
@@ -92,11 +92,9 @@ export function computeExerciseScore(
     const rubric = computeRubricAdjustment(ex, counts);
     const highlights = computeHighlightAdjustment(anns, ctx.presets);
     const comments = computeCommentAdjustment(anns, ctx.commentBank);
-    return {
-        score: Math.max(0, base + rubric + highlights + comments),
-        base, rubric, highlights, comments,
-        max: getMaxScore(ex),
-    };
+    const max = getMaxScore(ex);
+    // Entre 0 i el màxim: un comentari positiu no pot fer passar l'exercici de la seva puntuació
+    return { score: Math.min(max, Math.max(0, base + rubric + highlights + comments)), base, rubric, highlights, comments, max };
 }
 
 /** Suma de notes màximes dels exercicis corregibles (la base per escalar a la nota final). */

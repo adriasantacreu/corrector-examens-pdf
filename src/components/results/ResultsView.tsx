@@ -341,7 +341,7 @@ export default function ResultsView({
                                                 )}
                                             </td>
                                             <td style={{ textAlign: 'right' }}>
-                                                <span style={{ fontSize: '1.25rem', fontWeight: 900, color: isPass ? 'var(--success)' : 'var(--danger)' }}>
+                                                <span data-testid="nota-alumne" style={{ fontSize: '1.25rem', fontWeight: 900, color: isPass ? 'var(--success)' : 'var(--danger)' }}>
                                                     {scoreData.normalized.toFixed(2)}
                                                 </span>
                                             </td>

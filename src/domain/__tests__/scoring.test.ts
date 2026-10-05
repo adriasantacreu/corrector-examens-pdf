@@ -36,6 +36,12 @@ describe('scoring', () => {
         expect(computeExerciseScore(ex, [], { r1: 3 }, ctx).score).toBe(0);
     });
 
+    it('never goes above the exercise max (positive comments included)', () => {
+        const anns: Annotation[] = [{ id: 't', type: 'text', x: 0, y: 0, text: 'Excel·lent!', score: 1, color: '#000', fontSize: 18 }];
+        const ex = crop({ scoringMode: 'from_max', maxScore: 3 });
+        expect(computeExerciseScore(ex, anns, {}, ctx).score).toBe(3);
+    });
+
     it('ignores control regions when computing the total and scale factor', () => {
         const exercises: ExerciseDef[] = [
             crop({ maxScore: 3 }),
