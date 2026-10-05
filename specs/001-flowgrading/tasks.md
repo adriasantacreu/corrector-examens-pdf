@@ -10,4 +10,4 @@
 - [ ] T007 Fase 4: F7 anotacions · F8 puntuació/segell · F9 exportació
 - [ ] T008 Fase 5: F10 correu/Classroom · F4 OCR
 - [ ] T009 Fase 6: F11 preclassificació IA (partir dels projectes legacy del servidor, vegeu spec.md)
-- [ ] T010 Banc de proves automàtic (Playwright headless, dades `?demo=reset`): recorregut de les 6 pantalles, correcció (boli, comentari, destacador, desfer/refer, navegació, nota), fidelitat PDF↔pantalla (posició/mida ±2 px, nota impresa), captures de referència; `test:fast` al pre-commit, `npm run e2e`/`verify` a part; regla d'agents a les instruccions del projecte
+- [ ] T010 🟡 en curs (recorregut fet: e2e/navigation.spec.ts, 4/4) · Banc de proves automàtic (Playwright headless, dades `?demo=reset`): recorregut de les 6 pantalles, correcció (boli, comentari, destacador, desfer/refer, navegació, nota), fidelitat PDF↔pantalla (posició/mida ±2 px, nota impresa), captures de referència; `test:fast` al pre-commit, `npm run e2e`/`verify` a part; regla d'agents a les instruccions del projecte

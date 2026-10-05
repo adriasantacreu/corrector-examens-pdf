@@ -32,4 +32,5 @@ ts_errors.txt
 .env.local
 .env.development.local
 .env.test.local
-.env.production.local
+.env.production.localtest-results/
+playwright-report/
