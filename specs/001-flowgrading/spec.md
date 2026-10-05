@@ -67,6 +67,8 @@ Regles: la proposta és sempre un suggeriment (estat `pending` fins que l'Adrià
 
 **Camins**: la mateixa idea per a qualsevol flux nou (importadors, exportadors, eines, panells, proveïdors d'IA o d'OCR). L'Adrià vol anar afegint funcionalitats i camins: la modularitat del registre (`plan.md` §Extensibilitat) és un requisit, no un extra.
 
-Pendent de decidir: **on va la valoració global** (l'original no en té: text a la 1a pàgina, cos del correu o camp nou a Resultats).
+**Dos exportadors, a triar per l'usuari** (decidit 2026-10-05): (1) **PDF + anotacions** de l'original (F9); (2) **informe** a l'estil de la precorrecció de matrius (`scratch/2026-10-01_precorreccio/reports.py`, estètica `adria`: nota, criteris per apartat i comentaris). Tots dos són `exporters` del registre i funcionen també sense IA. Com es genera l'informe des del navegador (LaTeX al servidor o render al client): es decideix a F9.
+
+Pendent de decidir (sense pressa): **on va la valoració global** (l'original no en té: text a la 1a pàgina, cos del correu o camp nou a Resultats).
 
 Projectes antics que també serveixen de referència: `docencia/legacy/correccio_examens_2eso|maig/` (`auto_detect_crops.py`, registre d'imatge NCC) i `scratch/pregrade_exercises_groq_robust.py`.
