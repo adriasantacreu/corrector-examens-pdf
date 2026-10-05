@@ -33,6 +33,8 @@ Refer FlowGrading des de zero amb **la mateixa UI, estètica i funcionalitat**, 
 Model Groq retirat; consultes Drive amb apòstrofs i sense paginació; puntuació calculada en 3 llocs; exportació ≠ visor; arrossegaments de plantilla; historial d'undo global; localStorage limitat; 401 de Google sense gestió; `new Image()` a cada render; worker de pdf.js per CDN.
 
 ## Criteris d'acceptació
+- Comportament: `comportament.md` és la referència funcional; cada ⚠ hi queda arreglat i cada ❌ decidit.
+- UI: `inventari-ui.md` és la referència visual (menús, botons, dreceres).
 - Cada pantalla, comparada amb l'original, és visualment idèntica (captura al costat).
 - Una funcionalitat nova s'afegeix en un fitxer + un registre, sense editar el nucli.
 - Tests de domini en verd, `tsc` i `build` nets.
