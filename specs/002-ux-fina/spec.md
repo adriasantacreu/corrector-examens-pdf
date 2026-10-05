@@ -1,6 +1,6 @@
 # Especificació: UX fina (bloc B)
 
-**Carpeta**: `specs/002-ux-fina` · **Creada**: 2026-10-05 · **Estat**: esborrany, pendent de l'OK de l'Adrià
+**Carpeta**: `specs/002-ux-fina` · **Creada**: 2026-10-05 · **Estat**: validada per l'Adrià (2026-10-05)
 **Entrada**: «Que l'experiència d'usuari sigui MERAVELLOSA quan fa qualsevol cosa», el logo sense la «fg» bona, el mode fosc (fluorescent que tapa, «Molt bé» il·legible), millores R2–R4 i C1–C6 acceptades.
 
 **Límit fix (constitució I)**: mateixos menús, botons, layouts, colors i tipografia. Aquí s'arreglen errors i es fa que cada acció respongui bé; no es redissenya res.
@@ -70,7 +70,7 @@ Auditoria de **totes** les accions de les 6 pantalles (`specs/001-flowgrading/in
 
 ## Criteris d'èxit
 
-- **CE-001** En fosc, el text sota un fluorescent i un comentari negre tenen contrast ≥ 4,5:1 (mesurat a la captura).
+- **CE-001** En fosc, un comentari negre té contrast ≥ 4,5:1 i la tinta sota un fluorescent ≥ 5,5:1 (amb el pintat d'abans, 4,7), mesurat als píxels.
 - **CE-002** Canvi d'alumne a la correcció < 150 ms amb el següent pre-carregat (mesura e2e).
 - **CE-003** 0 accions de l'auditoria sense resposta visible.
 - **CE-004** `npm run verify` en verd; la prova de fidelitat pantalla↔PDF segueix passant en clar i en fosc.

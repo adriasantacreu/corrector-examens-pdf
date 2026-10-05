@@ -56,5 +56,5 @@ test('a Resultats cap nota passa del màxim (10) i la mitjana hi quadra', async 
     await openDemo(page);
     await openSession(page, SESSIONS.results);
     await expect(page.getByTestId('nota-alumne')).toHaveText(['10.00', '9.00', '9.25', '7.75', '10.00', '9.00']);
-    await expect(page.getByText('9.17', { exact: true })).toBeVisible();
+    await expect(page.getByText(/^9\.17\s*\/\s*10$/)).toBeVisible();
 });

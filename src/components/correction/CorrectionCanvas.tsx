@@ -7,6 +7,7 @@ import type Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { AlertTriangle, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { FONT_SCALE } from '../../config/constants';
+import { displayInk } from '../../domain/colors';
 import { DEFAULT_TEXT_COLOR, droppedComment, eraseAt, newAnnotationId, stampComment } from '../../domain/annotations';
 import { normalizeRect } from '../../domain/geometry';
 import { formatScaledPoints, getHighlightPoints, SCORE_STAMP_ID } from '../../domain/scoring';
@@ -132,7 +133,7 @@ export default function CorrectionCanvas(p: Props) {
         if (!pos) return;
 
         if (p.pendingStampComment) {
-            const ann = stampComment(p.pendingStampComment, pos, tools.commentDefaultSize, isDarkMode);
+            const ann = stampComment(p.pendingStampComment, pos, tools.commentDefaultSize);
             apply([...annotations, ann]);
             setSelectedId(ann.id);
             p.clearPendingStampComment();
@@ -352,6 +353,7 @@ export default function CorrectionCanvas(p: Props) {
                                         isSelected,
                                         draggable: tool === 'select' && isSelected,
                                         baseScale: vp.baseScale,
+                                        isDark: isDarkMode,
                                         onSelect: select(ann.id),
                                         onDragEnd: (e: KonvaEventObject<DragEvent>) => onDragEnd(e, ann.id),
                                         onTransform,
@@ -414,6 +416,7 @@ export default function CorrectionCanvas(p: Props) {
                                     <ScoreStamp
                                         key={`stamp_${exercise.id}_${student.id}`}
                                         data={stamp}
+                                        isDark={isDarkMode}
                                         size={p.stampSize}
                                         selectable={tool === 'select'}
                                         isSelected={selectedId === SCORE_STAMP_ID}
@@ -430,7 +433,7 @@ export default function CorrectionCanvas(p: Props) {
                                     <Line
                                         ref={draftLineRef}
                                         points={draft.current.pen?.points ?? []}
-                                        stroke={tools.penColor} strokeWidth={tools.penWidth / vp.baseScale}
+                                        stroke={displayInk(tools.penColor, isDarkMode)} strokeWidth={tools.penWidth / vp.baseScale}
                                         lineCap="round" lineJoin="round" tension={0.5} opacity={tools.penOpacity}
                                     />
                                 )}

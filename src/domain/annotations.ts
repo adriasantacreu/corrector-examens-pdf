@@ -71,16 +71,11 @@ export function commentColors(comment: Pick<AnnotationComment, 'colorMode' | 'cu
 export const DEFAULT_TEXT_COLOR = '#111827';
 
 /** Anotació de text creada en "segellar" un comentari del banc al document. */
-export function stampComment(comment: AnnotationComment, pos: Point, fontSize: number, isDark: boolean): TextAnnotation {
-    let color = DEFAULT_TEXT_COLOR;
-    let bgFill = 'rgba(255,255,255,0.7)';
-    if (comment.colorMode === 'custom' && comment.customColor) {
-        color = comment.customColor;
-        bgFill = isDark ? `${comment.customColor}30` : `${comment.customColor}15`;
-    } else if (comment.score !== undefined && comment.score !== 0) {
-        color = comment.score > 0 ? (isDark ? '#34d399' : '#059669') : (isDark ? '#f87171' : '#dc2626');
-        bgFill = comment.score > 0 ? (isDark ? '#064e3b' : '#10b98115') : (isDark ? '#7f1d1d' : '#ef444415');
-    }
+export function stampComment(comment: AnnotationComment, pos: Point, fontSize: number): TextAnnotation {
+    // Sempre colors de paper (els del PDF): el mode fosc els adapta només en pintar-los a la pantalla
+    const paper = commentColors(comment, false);
+    const color = paper.text.startsWith('var(') ? DEFAULT_TEXT_COLOR : paper.text;
+    const bgFill = paper.background.startsWith('var(') ? 'rgba(255,255,255,0.7)' : paper.background;
     return {
         id: newAnnotationId('ann'),
         type: 'text',

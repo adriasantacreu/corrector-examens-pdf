@@ -1,5 +1,6 @@
 import { Group, Rect, Text } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
+import { displayInk } from '../../domain/colors';
 import { SCORE_STAMP_ID } from '../../domain/scoring';
 import { STAMP_WIDTH, stampTitleColor, type StampPlacement } from '../../domain/stamp';
 
@@ -10,9 +11,10 @@ export interface StampData extends StampPlacement {
 }
 
 /** Segell "Nota: x / y" amb el resum, que es pot moure i escalar. */
-export default function ScoreStamp({ data, size, selectable, isSelected, onSelect, onMoved }: {
+export default function ScoreStamp({ data, size, isDark, selectable, isSelected, onSelect, onMoved }: {
     data: StampData;
     size: number;
+    isDark: boolean;
     selectable: boolean;
     isSelected: boolean;
     onSelect: () => void;
@@ -48,7 +50,7 @@ export default function ScoreStamp({ data, size, selectable, isSelected, onSelec
                 fill={stampTitleColor(data.score, data.max)} align="left" width={STAMP_WIDTH} wrap="word"
             />
             {data.lines.length > 0 && (
-                <Text y={size * 1.7} text={data.lines.join('\n')} fontSize={size * 0.75} fontFamily="'Caveat', cursive" fill="rgba(0,0,0,0.6)" align="left" width={STAMP_WIDTH} wrap="word" />
+                <Text y={size * 1.7} text={data.lines.join('\n')} fontSize={size * 0.75} fontFamily="'Caveat', cursive" fill={displayInk('rgba(0,0,0,0.6)', isDark)} align="left" width={STAMP_WIDTH} wrap="word" />
             )}
             {isSelected && <Rect x={-4} y={-4} width={STAMP_WIDTH + 8} height={height + 8} stroke="#6366f1" dash={[4, 4]} strokeWidth={1} fill="transparent" />}
         </Group>

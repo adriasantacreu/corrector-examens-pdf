@@ -4,6 +4,7 @@
  */
 import { FONT_SCALE, RENDER_SCALE } from '../../config/constants';
 import { formatScaledPoints, getHighlightPoints } from '../../domain/scoring';
+import { parseColor } from '../../domain/colors';
 import type {
     Annotation, HighlighterAnnotation, HighlighterLegendAnnotation, ImageAnnotation, PenAnnotation, PresetHighlighter, TextAnnotation,
 } from '../../types';
@@ -17,14 +18,6 @@ export interface PaintContext {
     exerciseAnnotations: Annotation[];
     /** Imatges enganxades ja carregades (per id d'anotació). */
     images: Map<string, HTMLImageElement>;
-}
-
-function parseColor(color: string): { r: number; g: number; b: number; a: number } {
-    const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
-    if (m) return { r: +m[1], g: +m[2], b: +m[3], a: m[4] !== undefined ? parseFloat(m[4]) : 1 };
-    const c = color.replace('#', '');
-    if (c.length >= 6) return { r: parseInt(c.slice(0, 2), 16), g: parseInt(c.slice(2, 4), 16), b: parseInt(c.slice(4, 6), 16), a: 1 };
-    return { r: 0, g: 0, b: 0, a: 1 };
 }
 
 const rgb = ({ r, g, b }: { r: number; g: number; b: number }) => `rgb(${r},${g},${b})`;
@@ -91,7 +84,7 @@ function drawLegend(ctx: CanvasRenderingContext2D, ann: HighlighterLegendAnnotat
     ctx.restore();
 }
 
-function wrapLines(ctx: CanvasRenderingContext2D, text: string, width?: number): string[] {
+export function wrapLines(ctx: CanvasRenderingContext2D, text: string, width?: number): string[] {
     const lines: string[] = [];
     for (const base of text.split('\n')) {
         if (!width) { lines.push(base); continue; }
