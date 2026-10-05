@@ -66,7 +66,7 @@ Llegenda: ✅ funciona · ⚠ existeix però falla · ❌ era la idea però no h
 | Llista de notes, vinculació manual amb Classroom | ✅ | igual |
 | Baixar el PDF d'un alumne o de tots | ⚠ l'exportació no coincideix amb el visor (2a pàgina, costat a costat) | la mateixa disposició que el visor |
 | Correu amb plantilla (`{nom}`, `{nota}`, `{nota_maxima}`), de prova, individual i massiu | ✅ | igual, sempre amb confirmació |
-| **Publicar les notes a Classroom** | ❌ el README ho promet, però no existeix | vegeu la pregunta 2 |
+| **Publicar les notes a Classroom** | ❌ el README ho promet, però no existeix | ✅ s'hi afegeix (camí d'exportació, amb confirmació) |
 | Informe a l'estil de matrius | ❌ (nou) | segon exportador, decidit 2026-10-05 |
 
 ## 7 · OCR de noms
@@ -74,7 +74,34 @@ Llegenda: ✅ funciona · ⚠ existeix però falla · ❌ era la idea però no h
 |---|---|---|
 | Llegir el nom de cada examen i emparellar-lo amb la llista (Levenshtein) | ⚠ **no funciona**: el model de Groq s'ha retirat; el mosaic té números de 10 px | proveïdor d'OCR intercanviable (com la IA) per lots, i Tesseract com a alternativa |
 
+## Fidelitat: el que es veu = el que s'imprimeix (prioritat 1, 2026-10-05)
+El que més fallava segons l'Adrià: **on anotaves al PDF i on sortia a la realitat (mida i posició)**, i si **la nota de la pantalla i la impresa coincidien**.
+
+| Requisit | Com es garanteix |
+|---|---|
+| Posició i mida de cada anotació (traç, text, destacador, imatge, comentari, segell) idèntiques a pantalla i al PDF exportat | les anotacions es guarden en **coordenades de pàgina PDF** (punts), independents del zoom i de l'escala de render; visor i exportació fan servir **la mateixa funció de disposició** |
+| Gruix de línia i mida de lletra iguals a qualsevol zoom i al PDF | mides en unitats de pàgina, no en píxels de pantalla |
+| Nota igual a pantalla, segell, PDF, correu, informe i Classroom | **un sol motor de puntuació** (`domain/scoring`), cridat per tots |
+| Ho comprovem amb proves automàtiques, no a ull | **proves d'anada i tornada**: anotacions a coordenades conegudes → exportar → rasteritzar el PDF → comparar posició i mida (tolerància ≤ 1 pt); i la mateixa sessió ha de donar la mateixa nota a tots els llocs |
+
+## Usabilitat de retalls i correcció (sense tocar la UI)
+Millores de comportament, no de disseny: mateixos botons i layouts. Proposta per triar:
+
+**Retalls (Plantilla)**
+- R1 **Ajust automàtic per alumne**: els escanejos es desplacen o giren una mica; la zona definida un cop s'alinea sola a cada examen (registre d'imatge com `auto_detect_crops.py` del legacy), amb ajust manual si cal.
+- R2 Fletxes per moure la zona seleccionada (Maj = pas gran), Ctrl+D per duplicar, Ctrl+Z també a la plantilla.
+- R3 Imant a les vores del paper i de les altres zones.
+- R4 Avís si una zona queda buida (en blanc) en algun alumne: pàgines mal assignades.
+
+**Correcció**
+- C1 Precarregar l'alumne o exercici següent (canvi instantani).
+- C2 Recordar el zoom i el desplaçament per exercici en canviar d'alumne.
+- C3 Refer (Ctrl+Maj+Z), a més de desfer.
+- C4 Marcar els exercicis sense corregir i saltar al següent pendent.
+- C5 Segell de nota col·locat sol en un lloc lliure si no se n'ha fixat la posició.
+- C6 Comentaris del banc i destacadors que no se surtin del paper en deixar-los anar.
+
 ## Preguntes per a l'Adrià
-1. **Solucionari a la correcció**: entenc que la idea era veure la solució de l'exercici al costat mentre corregeixes, per això l'organitzes. Era així? On el vols: un panell plegable o un botó per alternar-lo?
-2. **Publicar notes a Classroom**: el README ho promet. Hi ha de ser? Seria un tercer camí a Resultats (sempre amb confirmació).
+1. ✅ (sí, 2026-10-05) **Solucionari a la correcció**: entenc que la idea era veure la solució de l'exercici al costat mentre corregeixes, per això l'organitzes. Era així? On el vols: un panell plegable o un botó per alternar-lo?
+2. ✅ (sí, 2026-10-05) **Publicar notes a Classroom**: el README ho promet. Hi ha de ser? Seria un tercer camí a Resultats (sempre amb confirmació).
 3. Hi ha **alguna cosa que no funcionés** i que no surti en aquesta llista? Tu l'has feta servir i jo només n'he llegit el codi.
