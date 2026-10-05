@@ -11,3 +11,4 @@
 - [ ] T008 Fase 5: F10 correu/Classroom · F4 OCR
 - [ ] T009 Fase 6: F11 preclassificació IA (partir dels projectes legacy del servidor, vegeu spec.md)
 - [x] T010 Banc de proves automàtic: `npm run verify` = tsc + vitest (30) + Playwright headless sobre `?demo=reset` (23): navegació 6 pantalles, correcció (boli, comentari, fluorescent, desfer/refer, alumne/exercici, nota, recàrrega), fidelitat pantalla↔PDF (nota impresa, posició/mida ±3 px de pàgina, mida de lletra; verificat amb mutació), 12 captures clar/fosc. Pre-commit `.githooks/` amb `test:fast`; regla a `AGENTS.md`, `GEMINI.md` i constitució VIII
+- [ ] T011 Bloc B · UX fina → `specs/002-ux-fina/` (spec escrita 2026-10-05, **PORTA**: OK de l'Adrià)
