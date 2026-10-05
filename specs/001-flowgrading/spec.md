@@ -1,6 +1,6 @@
 # Especificació: reconstrucció modular de FlowGrading
 
-**Estat:** esborrany per validar · **Origen:** app actual (`prova-app-correccio-pc`) + `README/CHRONICLE/GEMINI`
+**Estat:** validada (2026-10-05) · **Origen:** app actual (`prova-app-correccio-pc`) + `README/CHRONICLE/GEMINI`
 
 ## Objectiu
 Refer FlowGrading des de zero amb **la mateixa UI, estètica i funcionalitat**, però modular i preparada per afegir funcionalitats noves (inclosa la preclassificació amb IA).
@@ -40,13 +40,27 @@ Model Groq retirat; consultes Drive amb apòstrofs i sense paginació; puntuaci�
 ## Fora d'abast
 Canvis d'estètica, de menús o de layouts; funcionalitats noves no demanades.
 
-## Pendent de decisió (ho preguntaré)
-- Inventari exacte de menús/dreceres: l'extrec de l'original abans de la fase 1.
-- IA: proveïdor (Groq/qwen vs ia-gateway del servidor) i criteris per exercici.
+## Decisions (2026-10-05, OK de l'Adrià)
+- **Estètica i funcionalitat idèntiques a l'original** (`main`): és la referència visual i de comportament de tot.
+- La IA (F11) **no té interfície pròpia**: s'integra a la rúbrica, als comentaris i a la pantalla de resultats que ja hi ha.
+- Inventari de menús i dreceres: s'extreu de l'original (T002) abans de la fase 1.
 
-## F11 · Preclassificació amb IA: origen i enfocament
-Es basa en els projectes que l'Adrià ja va fer al servidor (referència, no es copien tal qual):
-- `docencia/legacy/correccio_examens_2eso|maig/` (`corregir.py`, `auto_detect_crops.py` amb registre d'imatge NCC, `COM_FUNCIONA.md`).
-- `scratch/pregrade_exercises_groq_robust.py` (prompt per criteris `checks[]` + comentari en català, temperatura 0, JSON, reintents).
+## F11 · Preclassificació amb IA = el flux de la precorrecció de matrius
+Referència: `docs/plans/2026-10-01_precorreccio-matrius-2bat.md` (2BAT, 12 alumnes, validat a l'editor web). Cada pas es correspon amb el que ja fa FlowGrading:
 
-Com encaixa: per cada exercici, la IA llegeix el retall (i el solucionari si n'hi ha) i proposa **rúbrica marcada + comentari + nota**. És un *suggeriment*: l'Adrià l'aplica, el modifica o el descarta; mai es publica ni s'envia sol. S'afegeix com a `aiProvider` + un panell al costat de la rúbrica, sense canviar els layouts existents. Instruccions de correcció per exercici (`aiInstructions`) opcionals.
+| Precorrecció de matrius | A FlowGrading (sense UI nova) |
+|---|---|
+| `build_crops.py`: retall per alumne i problema | zones de la **Plantilla** (F6) |
+| Solucionari escanejat, retallat per problema | **PDF solucionari** de la sessió, mateixa zona |
+| Criteris oficials `checks[]` (descripció, punts, resultat esperat) | **Rúbrica** de l'exercici; el resultat esperat va a `aiInstructions` |
+| Regles («qualsevol camí vàlid», sense determinants…) | `aiInstructions` de l'exercici |
+| Comentari per apartat, adreçat a l'alumne | **comentari** de l'exercici (`AiSuggestion.comment`) |
+| Valoració global transversal (ordre, presentació, claredat) | ⚠ l'original **no té comentari general** per alumne: decidir on va (vegeu pendents) |
+| Editor web per validar | **pantalla de Correcció**: la proposta precarrega els comptadors de la rúbrica i el comentari; aplicar / modificar / descartar |
+| `reports.py`: informe per alumne | **exportació PDF** (F9) i correu (F10) que ja hi ha |
+
+Regles: la proposta és sempre un suggeriment (estat `pending` fins que l'Adrià l'aplica); mai es publica ni s'envia res sol; temperatura 0, sortida JSON, reintents. Esbós ja fet a la branca `refactor/modular`: `src/services/ai/preGrading.ts` (prompt per criteris + comentari) i `AiSuggestion` a `types.ts`.
+
+Pendent de decidir: **proveïdor** (vegeu la resposta a l'Adrià del 2026-10-05) i si cal suport de **versions A/B** de l'examen (a matrius n'hi havia dues) i **on va la valoració global** (l'original no en té: text a la 1a pàgina, cos del correu o camp nou a Resultats).
+
+Projectes antics que també serveixen de referència: `docencia/legacy/correccio_examens_2eso|maig/` (`auto_detect_crops.py`, registre d'imatge NCC) i `scratch/pregrade_exercises_groq_robust.py`.

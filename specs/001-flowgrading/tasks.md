@@ -1,7 +1,7 @@
 # Tasques
 
 - [x] T000 Constitució, spec i pla escrits (pendent validació)
-- [ ] T001 **PORTA**: OK de l'Adrià a spec.md i plan.md
+- [x] T001 **PORTA**: OK de l'Adrià a spec.md i plan.md (2026-10-05: estètica idèntica; IA = flux de matrius dins la UI existent)
 - [ ] T002 Inventari de menús, botons i dreceres de l'original (només lectura) → `inventari-ui.md`
 - [ ] T003 Fase 1: demo de les 6 pantalles amb dades fictícies (Inici, Configuració, Organitzador, Plantilla, Correcció, Resultats)
 - [ ] T004 **PORTA**: validar visualment la demo contra l'original
