@@ -24,3 +24,6 @@ Claus d'IA només al servidor (`api/`). Dades de proves sempre fictícies.
 
 ### VII. Sense codi cadàver ni diàlegs natius
 Res de `alert/confirm` (diàlegs propis), res de codi comentat o duplicat.
+
+### VIII. El banc de proves mana
+Cap canvi és fet fins que passa `npm run verify` (tsc + vitest + Playwright: navegació, correcció, fidelitat pantalla↔PDF, captures). Si en trenca res, s'arregla abans de continuar. Detall: `AGENTS.md`.

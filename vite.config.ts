@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -5,6 +6,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   base: '/',
+  // Els tests de navegador (e2e/) són de Playwright: vitest només fa els unitaris de src/
+  test: { include: ['src/**/*.test.{ts,tsx}'] },
   server: {
     proxy: {
       '/api/groq': {

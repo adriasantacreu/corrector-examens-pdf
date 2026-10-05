@@ -106,10 +106,11 @@ function annotate(list: Student[], upTo: number) {
 
 function session(fileName: string, alias: string | null, patch: Partial<SessionData>, minutesAgo: number): SessionData {
     const base = createEmptySession(fileName, { commentBank: DEFAULT_COMMENT_BANK, presets: DEFAULT_PRESETS, cloudSyncPDF: false });
-    return withComputedFields({
-        ...base, sessionAlias: alias, pagesPerExam: 2, studentsPagesPerExam: 2,
-        lastModified: new Date(Date.now() - minutesAgo * 60_000).toISOString(), ...patch,
-    });
+    // withComputedFields posa la data d'ara: la de la demo s'aplica després perquè l'ordre sigui sempre el mateix
+    return {
+        ...withComputedFields({ ...base, sessionAlias: alias, pagesPerExam: 2, studentsPagesPerExam: 2, ...patch }),
+        lastModified: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    };
 }
 
 export const isDemoRequested = () => new URLSearchParams(window.location.search).has('demo');

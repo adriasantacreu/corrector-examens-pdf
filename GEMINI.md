@@ -3,6 +3,7 @@
 Aquest document conté mandats fonamentals, preferències d'estil i lliçons apreses per assegurar que el desenvolupament sigui fluid i sense errors.
 
 ## 🎯 Mandats Fonamentals
+- **Banc de proves**: cap canvi és fet fins que passa `npm run verify` (detall a `AGENTS.md`); si en trenca res, s'arregla abans de continuar.
 - **Compilació obligatòria**: ABANS de qualsevol `git push`, s'ha d'executar `npm run build` localment. No es permet pujar codi que no passi el xec de TypeScript.
 - **Importacions de Lucide**: Cada vegada que s'afegeixi una icona nova, cal verificar explícitament que s'ha importat al fitxer corresponent. Les icones no importades són la causa nº1 de crashenys en temps de renderitzat.
 - **Separador de comandes**: En aquest entorn (Windows/PowerShell), NO s'ha d'utilitzar `&&`. S'han d'executar les comandes de Git (add, commit, push) de forma seqüencial i separada.

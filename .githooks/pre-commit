@@ -1,0 +1,6 @@
+#!/bin/sh
+# Banc de proves ràpid (tsc + vitest) abans de cada commit. Els e2e (lents): `npm run e2e`.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+echo "▶ pre-commit: tsc + vitest"
+node node_modules/typescript/bin/tsc -b || { echo "✗ TypeScript no compila: commit aturat."; exit 1; }
+node node_modules/vitest/vitest.mjs run --reporter=dot || { echo "✗ Tests unitaris en vermell: commit aturat."; exit 1; }

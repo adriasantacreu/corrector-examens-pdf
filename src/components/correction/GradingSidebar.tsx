@@ -144,7 +144,7 @@ export default function GradingSidebar(p: Props) {
             <div className="grade-top-card">
                 <span className="correction-sidebar-label">Nota Final</span>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--accent)' }}>{round2(p.rawTotal)}</span>
+                    <span data-testid="nota-final" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--accent)' }}>{round2(p.rawTotal)}</span>
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>/ {p.totalPossible} pt</span>
                     <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--success)', marginLeft: 'auto' }}>= {scale(p.rawTotal)} / <NumericInput value={p.targetMaxScore} onChange={v => { if (v !== undefined) p.onTargetMaxScore(v); }} style={{ width: '32px', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--success)', fontSize: '0.8rem', fontWeight: 700, textAlign: 'center', padding: 0, display: 'inline' }} /></span>
                 </div>
@@ -220,7 +220,7 @@ export default function GradingSidebar(p: Props) {
                     <HandwrittenTitle size="1rem" color="blue" noMargin={true}>{`Exercici ${p.exerciseIdx + 1}${exercise.name ? ` — ${exercise.name}` : ''}`}</HandwrittenTitle>
                 </div>
                 {p.exerciseScore !== null ? (
-                    <span style={{ fontSize: '1.1rem', fontWeight: 800, color: p.exerciseScore < 0 ? 'var(--danger)' : 'var(--accent)' }}>
+                    <span data-testid="nota-exercici" style={{ fontSize: '1.1rem', fontWeight: 800, color: p.exerciseScore < 0 ? 'var(--danger)' : 'var(--accent)' }}>
                         {scale(p.exerciseScore)} {exercise.scoringMode !== 'from_zero' && exercise.maxScore !== undefined && `/ ${scale(exercise.maxScore)}`}
                     </span>
                 ) : (

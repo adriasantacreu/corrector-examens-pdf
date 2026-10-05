@@ -22,8 +22,17 @@ export async function openDemo(page: Page) {
 export async function openSession(page: Page, name: string) {
     let card = page.getByText(name).first();
     if (!(await card.isVisible())) {
-        await page.getByText('Darreres sessions').click();
+        await page.getByRole('button', { name: 'Darreres sessions' }).click();
         card = page.getByText(name).first();
     }
     await card.click();
+}
+
+/** Obre la sessió de correcció de la demo i hi tria l'alumne `n` (1-based) amb el desplegable. */
+export async function openCorrectionAt(page: Page, n: number) {
+    await openSession(page, SESSIONS.correction);
+    await expect(page.locator('.konvajs-content').first()).toBeVisible();
+    await page.locator('.student-section select').selectOption({ index: n - 1 });
+    await expect(page.getByText(`Alumne ${n} de 6`)).toBeVisible();
+    await page.locator('.student-section select').blur();
 }
