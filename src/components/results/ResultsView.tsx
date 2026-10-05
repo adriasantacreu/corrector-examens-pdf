@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react';
 import { ChevronLeft, Download, Sun, Moon, UserCheck, RefreshCw, FileDown, XCircle, MailCheck, MessageSquareText, Send as SendIcon, CheckCircle } from 'lucide-react';
-import type { Student, ExerciseDef, AnnotationStore, RubricCountStore, PresetHighlighter, AnnotationComment } from '../types';
-import { exportCombinedPDF, exportStudentPDF, generateStudentPDF } from '../utils/pdfExport';
-import { calculateStudentScore } from '../utils/scoreUtils';
-import HandwrittenTitle from './HandwrittenTitle';
-import FlowGradingLogo from './FlowGradingLogo';
+import type { Student, ExerciseDef, AnnotationStore, RubricCountStore, PresetHighlighter, AnnotationComment, ClassroomStudent } from '../../types';
+import { computeStudentScore, getScaleFactor } from '../../domain/scoring';
+import { blobToBase64, buildMimeMessage, sendMail } from '../../services/google/gmail';
+import type { PDFDocumentProxy } from '../../services/pdf/pdfDocument';
+import { downloadBlob, generateCombinedPdf, generateStudentPdf, studentPdfFileName, type ExportData } from '../../services/pdf/pdfExport';
+import HandwrittenTitle from '../common/HandwrittenTitle';
+import FlowGradingLogo from '../common/FlowGradingLogo';
 
 const DEFAULT_EMAIL_SUBJECT = `Correcció - FlowGrading: {nom}`;
 const DEFAULT_EMAIL_TEMPLATE = `Hola {nom},
@@ -18,7 +20,8 @@ Salutacions,
 FlowGrading.`;
 
 interface Props {
-    pdfDoc: any;
+    pdfDoc: PDFDocumentProxy;
+    stampSize: number;
     students: Student[];
     exercises: ExerciseDef[];
     annotations: AnnotationStore;
@@ -33,16 +36,16 @@ interface Props {
     accessToken: string | null;
     userEmail: string | null;
     onAuthorize: () => void;
-    courses: any[];
+    courses: unknown[];
     isAuthorizing: boolean;
-    classroomStudents: any[];
+    classroomStudents: ClassroomStudent[];
     showAlert: (title: string, message: string) => void;
     showConfirm: (title: string, message: string, onConfirm: () => void) => void;
     showToast: (title: string, text: string, type: 'loading' | 'success' | 'error') => void;
 }
 
 export default function ResultsView({
-    pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore,
+    pdfDoc, stampSize, students, exercises, annotations, rubricCounts, targetMaxScore,
     presets, commentBank,
     onUpdateStudents, onBack, theme, onToggleTheme,
     accessToken, userEmail, classroomStudents,
@@ -57,22 +60,30 @@ export default function ResultsView({
     const [emailTemplate, setEmailTemplate] = useState(DEFAULT_EMAIL_TEMPLATE);
     const [isEditingTemplate, setIsEditingTemplate] = useState(false);
 
+    const scoreOf = (studentId: string) =>
+        computeStudentScore(studentId, exercises, annotations, rubricCounts, targetMaxScore, { presets, commentBank });
+    const exportData = (): ExportData => ({
+        pdfDoc, exercises, annotations, rubricCounts, targetMaxScore, presets, commentBank, stampSize,
+        scaleFactor: getScaleFactor(exercises, targetMaxScore),
+    });
+
     const stats = useMemo(() => {
-        const scores = students.map(s => calculateStudentScore(s.id, exercises, annotations, rubricCounts, targetMaxScore, presets, commentBank).normalized);
+        const scores = students.map(s => scoreOf(s.id).normalized);
         const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
         const pass = scores.filter(s => s >= targetMaxScore / 2).length;
         return { avg: avg.toFixed(2), passRate: scores.length ? Math.round((pass / scores.length) * 100) : 0, passCount: pass, total: scores.length };
-    }, [students, exercises, annotations, rubricCounts, targetMaxScore]);
+    }, [students, exercises, annotations, rubricCounts, targetMaxScore, presets, commentBank]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleDownloadAll = async () => {
         setIsProcessing(true);
         setExportProgress(0);
         setActionState({ title: 'Generant PDFs', text: 'Preparant el document sencer...', type: 'loading' });
         try {
-            await exportCombinedPDF(pdfDoc, students, exercises, annotations, rubricCounts, targetMaxScore, (p) => {
+            const blob = await generateCombinedPdf(exportData(), students, (p) => {
                 setExportProgress(p);
                 setActionState({ title: 'Generant PDFs', text: `Processant... ${p}%`, type: 'loading' });
             });
+            downloadBlob(blob, 'correccions_totes.pdf');
             setActionState({ title: 'Èxit', text: 'PDF combinat generat correctament.', type: 'success' });
             setTimeout(() => setActionState(null), 3000);
         } catch (err) {
@@ -89,9 +100,10 @@ export default function ResultsView({
         setIsProcessing(true);
         setActionState({ title: 'Generant PDF', text: `Preparant la descàrrega per a ${student.name}...`, type: 'loading' });
         try {
-            await exportStudentPDF(pdfDoc, student, exercises, annotations as any, rubricCounts, targetMaxScore);
+            downloadBlob(await generateStudentPdf(exportData(), student), studentPdfFileName(student));
             setActionState(null);
         } catch (err) {
+            console.error(err);
             setActionState({ title: 'Error', text: `Error generant el PDF individual.`, type: 'error' });
             setTimeout(() => setActionState(null), 4000);
         } finally {
@@ -105,81 +117,27 @@ export default function ResultsView({
     };
 
     const sendEmailForStudent = async (student: Student, isTest: boolean = false) => {
-        const scoreData = calculateStudentScore(student.id, exercises, annotations, rubricCounts, targetMaxScore, presets, commentBank);
+        const scoreData = scoreOf(student.id);
         const isPass = scoreData.normalized >= targetMaxScore / 2;
-
-        const totalPossible = exercises.reduce((acc, ex) => acc + (ex.maxScore ?? 10), 0);
-        const scaleFactor = totalPossible > 0 ? targetMaxScore / totalPossible : 1;
-        const pdfBlob = await generateStudentPDF(pdfDoc, student, exercises, annotations as any, rubricCounts, scaleFactor);
-
-        const base64Pdf = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-            reader.onerror = reject;
-            reader.readAsDataURL(pdfBlob);
-        });
-
-        let subject = emailSubjectTemplate
-            .replace(/{nom}/g, student.name)
-            .replace(/{nota}/g, scoreData.normalized.toFixed(2))
-            .replace(/{nota_maxima}/g, targetMaxScore.toString())
-            .replace(/{estat}/g, isPass ? 'Aprovat' : 'Suspès');
-            
-        if (isTest) subject += ' (Prova)';
-        
-        let body = emailTemplate
-            .replace(/{nom}/g, student.name)
-            .replace(/{nota}/g, scoreData.normalized.toFixed(2))
-            .replace(/{nota_maxima}/g, targetMaxScore.toString())
-            .replace(/{estat}/g, isPass ? 'Aprovat' : 'Suspès');
-
-        if (isTest) {
-            body += "\n\n---\n(Aquest és un correu de prova del sistema per verificar el format.)";
-        }
-
-        const boundary = `flowgrading-boundary-${Date.now()}`;
-        const safeFileName = `correccio_${student.name.replace(/\s+/g, '_')}.pdf`;
-        const utf8ToBase64 = (str: string) => btoa(unescape(encodeURIComponent(str)));
         const targetEmail = isTest ? userEmail : student.email;
+        if (!accessToken || !targetEmail) throw new Error('Falta el correu o la connexió amb Google');
 
-        const messageParts = [
-            `To: ${targetEmail}`,
-            `Subject: =?UTF-8?B?${utf8ToBase64(subject)}?=`,
-            `Content-Type: multipart/mixed; boundary="${boundary}"`,
-            '',
-            `--${boundary}`,
-            'Content-Type: text/plain; charset="UTF-8"',
-            '',
-            body,
-            '',
-            `--${boundary}`,
-            `Content-Type: application/pdf; name="${safeFileName}"`,
-            `Content-Disposition: attachment; filename="${safeFileName}"`,
-            'Content-Transfer-Encoding: base64',
-            '',
-            base64Pdf,
-            '',
-            `--${boundary}--`
-        ].join('\r\n');
+        const fill = (template: string) => template
+            .replace(/{nom}/g, student.name)
+            .replace(/{nota}/g, scoreData.normalized.toFixed(2))
+            .replace(/{nota_maxima}/g, targetMaxScore.toString())
+            .replace(/{estat}/g, isPass ? 'Aprovat' : 'Suspès');
 
-        const encodedMessage = btoa(unescape(encodeURIComponent(messageParts)))
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=+$/, '');
+        let subject = fill(emailSubjectTemplate);
+        if (isTest) subject += ' (Prova)';
+        let body = fill(emailTemplate);
+        if (isTest) body += "\n\n---\n(Aquest és un correu de prova del sistema per verificar el format.)";
 
-        const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ raw: encodedMessage })
+        const pdfBlob = await generateStudentPdf(exportData(), student);
+        const mime = buildMimeMessage(targetEmail, subject, body, {
+            fileName: studentPdfFileName(student), contentType: 'application/pdf', base64: await blobToBase64(pdfBlob),
         });
-
-        if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error?.message || "Error desconegut");
-        }
+        await sendMail(accessToken, mime);
     };
 
     const handleSendTestEmail = async (student: Student) => {
@@ -194,8 +152,8 @@ export default function ResultsView({
             await sendEmailForStudent(student, true);
             setActionState({ title: 'Test enviat', text: `S'ha enviat el correu de prova a la teva bústia.`, type: 'success' });
             setTimeout(() => setActionState(null), 3000);
-        } catch (err: any) {
-            setActionState({ title: 'Error', text: `No s'ha pogut enviar: ${err.message}`, type: 'error' });
+        } catch (err) {
+            setActionState({ title: 'Error', text: `No s'ha pogut enviar: ${err instanceof Error ? err.message : String(err)}`, type: 'error' });
             setTimeout(() => setActionState(null), 4000);
         } finally {
             setIsSendingTest(false);
@@ -212,8 +170,8 @@ export default function ResultsView({
                 await sendEmailForStudent(student, false);
                 setActionState({ title: 'Enviat', text: `S'ha enviat la correcció a ${student.name} amb èxit.`, type: 'success' });
                 setTimeout(() => setActionState(null), 3000);
-            } catch (err: any) {
-                setActionState({ title: 'Error', text: `No s'ha pogut enviar: ${err.message}`, type: 'error' });
+            } catch (err) {
+                setActionState({ title: 'Error', text: `No s'ha pogut enviar: ${err instanceof Error ? err.message : String(err)}`, type: 'error' });
                 setTimeout(() => setActionState(null), 4000);
             } finally {
                 setIsSendingTest(false);
@@ -320,7 +278,7 @@ export default function ResultsView({
                             </thead>
                             <tbody>
                                 {students.map((s, i) => {
-                                    const scoreData = calculateStudentScore(s.id, exercises, annotations, rubricCounts, targetMaxScore, presets, commentBank);
+                                    const scoreData = scoreOf(s.id);
                                     const isPass = scoreData.normalized >= targetMaxScore / 2;
 
                                     return (
@@ -354,9 +312,9 @@ export default function ResultsView({
                                                             }}
                                                         >
                                                             <option value="">No vinculat</option>
-                                                            {classroomStudents.map(cs => (
-                                                                <option key={cs.profile.emailAddress} value={cs.profile.emailAddress}>
-                                                                    {cs.profile.name.fullName}
+                                                            {classroomStudents.filter(cs => cs.profile?.emailAddress).map(cs => (
+                                                                <option key={cs.profile!.emailAddress} value={cs.profile!.emailAddress}>
+                                                                    {cs.profile!.name?.fullName ?? cs.profile!.emailAddress}
                                                                 </option>
                                                             ))}
                                                         </select>

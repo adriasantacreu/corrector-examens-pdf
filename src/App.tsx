@@ -1,1767 +1,266 @@
-import { useState, useEffect, useRef } from 'react';
-import { Upload, ChevronLeft, RefreshCw, Moon, Sun, ChevronRight, Clock, Trash2, Cloud, LogOut, UserCheck, X, ClipboardPaste, UserMinus, Users, ArrowDown, FileCheck, Check, Pencil, CheckCircle, XCircle } from 'lucide-react';
-import type { Student, ExerciseDef, AnnotationStore, RubricCountStore } from './types';
-import { loadPDF, type PDFDocumentProxy } from './utils/pdfUtils';
-import TemplateDefiner from './components/TemplateDefiner';
-import CorrectionView from './components/CorrectionViewB';
-import PageOrganizer from './components/PageOrganizer';
-import ResultsView from './components/ResultsView';
-import FlowGradingLogo from './components/FlowGradingLogo';
-import HandwrittenTitle from './components/HandwrittenTitle';
-import { fetchClassroomStudents, matchClassroomStudents } from './utils/classroomUtils';
-import { storePDFLocal, getPDFLocal } from './utils/dbUtils';
-type AppMode = 'upload' | 'setup' | 'organize_pages' | 'configure_crops' | 'correction' | 'results';
+/**
+ * Compositor de l'app: connecta l'estat (sessió, preferències, Google, diàlegs) amb les pantalles.
+ * La lògica viu als hooks d'`app/` i `state/`; aquí només es decideix quina pantalla es mostra.
+ */
+import { useCallback, useState } from 'react';
+import { useClassroomImport } from './app/useClassroomImport';
+import { useCloudPdfSync } from './app/useCloudPdfSync';
+import { useNameRecognition } from './app/useNameRecognition';
+import { useRecentSessions } from './app/useRecentSessions';
+import { useSessionLifecycle } from './app/useSessionLifecycle';
+import { GlobalDialog, ProcessingOverlay, ToastCard } from './components/common/Overlays';
+import CorrectionView from './components/correction/CorrectionView';
+import HomeView from './components/home/HomeView';
+import PageOrganizer from './components/organizer/PageOrganizer';
+import ResultsView from './components/results/ResultsView';
+import SetupView from './components/setup/SetupView';
+import TemplateDefiner from './components/template/TemplateDefiner';
+import type { SessionSummary } from './domain/session';
+import { getStudentPage } from './domain/students';
+import { loadPdf } from './services/pdf/pdfDocument';
+import { deletePdf, solutionCacheKey, storePdf } from './services/storage/pdfCache';
+import { patchSession } from './services/storage/sessionRepository';
+import { useDialogs } from './state/useDialogs';
+import { useGlobalSettings } from './state/useGlobalSettings';
+import { useGoogleAuth } from './state/useGoogleAuth';
+import { useSessionStore } from './state/useSessionStore';
+import type { ExerciseDef } from './types';
 
-const SESSION_PREFIX = 'flowgrading_session_';
-const GLOBAL_KEY = 'flowgrading_global';
+export default function App() {
+    const globals = useGlobalSettings();
+    const auth = useGoogleAuth(globals);
+    const dialogs = useDialogs();
+    const { showToast, showConfirm, showAlert } = dialogs;
+    const [processing, setProcessing] = useState<string | null>(null);
 
-interface DialogState {
-  show: boolean;
-  title: string;
-  message: string;
-  type: 'alert' | 'confirm';
-  onConfirm?: () => void;
-  onCancel?: () => void;
-  checkboxLabel?: string;
-  checkboxChecked?: boolean;
-  onCheckboxChange?: (checked: boolean) => void;
-}
+    const store = useSessionStore(globals, auth.accessToken, auth.handleApiError);
+    const { session, update, pdfDoc, solutionPdfDoc } = store;
+    const mode = session?.mode ?? 'upload';
 
-interface ToastState {
-  show: boolean;
-  title: string;
-  text: string;
-  type: 'loading' | 'success' | 'error';
-}
-
-function getLevenshteinDistance(a: string, b: string): number {
-  const tmp = [];
-  for (let i = 0; i <= a.length; i++) tmp[i] = [i];
-  for (let j = 0; j <= b.length; j++) tmp[0][j] = j;
-  for (let i = 1; i <= a.length; i++) {
-    for (let j = 1; j <= b.length; j++) {
-      tmp[i][j] = Math.min(tmp[i - 1][j] + 1, tmp[i][j - 1] + 1, tmp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
-    }
-  }
-  return tmp[a.length][b.length];
-}
-
-function calculateProgress(students: Student[], exercises: ExerciseDef[], annotations: AnnotationStore): number {
-  if (!students.length || !exercises.length) return 0;
-  const gradable = exercises.filter(ex => ex.type === 'crop' || ex.type === 'pages');
-  if (!gradable.length) return 0;
-
-  let completed = 0;
-  students.forEach(s => {
-    gradable.forEach(ex => {
-      const anns = annotations[s.id]?.[ex.id] || [];
-      if (anns.length > 0) completed++;
+    const recent = useRecentSessions(mode === 'upload', auth.accessToken, globals.settings.lastActiveFileName, auth.handleApiError);
+    const syncPdf = useCloudPdfSync(auth.accessToken, setProcessing, showToast, auth.handleApiError);
+    const lifecycle = useSessionLifecycle({
+        store, globals, auth, dialogs, setProcessing, syncPdf,
+        onSessionsChanged: () => void recent.reload(),
+        removeSummary: recent.removeLocal,
     });
-  });
-  return Math.round((completed / (students.length * gradable.length)) * 100);
-}
+    const classroom = useClassroomImport(store, auth.accessToken, showToast, auth.handleApiError);
+    const ocr = useNameRecognition(store, showToast);
 
-const migrateCommentBank = (bank: import('./types').AnnotationComment[]): import('./types').AnnotationComment[] =>
-  bank.map(c => c.id ? c : { ...c, id: `cb_${Math.random().toString(36).slice(2, 9)}` });
-
-function App() {
-  const globalSaved = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
-  const [mode, setMode] = useState<AppMode>('upload');
-  const [theme, setTheme] = useState<'light' | 'dark'>(globalSaved.theme || 'light');
-  const [cloudSyncPDF, setCloudSyncPDF] = useState<boolean>(globalSaved.cloudSyncPDF ?? true);
-  const [globalPresets, setGlobalPresets] = useState<import('./types').PresetHighlighter[]>(() => {
-    const saved = globalSaved.presets || [];
-    if (saved.length >= 3) return saved;
-    return [
-      { id: 'h1', label: 'Error Procediment', color: 'rgba(239, 68, 68, 0.4)', points: -0.5 },
-      { id: 'h2', label: 'Error Càlcul', color: 'rgba(249, 115, 22, 0.4)', points: -0.25 },
-      { id: 'h3', label: 'Concepte Erroni', color: 'rgba(225, 29, 72, 0.4)', points: -1.0 },
-    ];
-  });
-  const [cloudSyncSolution, setCloudSyncSolution] = useState<boolean>(true);
-  const [currentFileName, setCurrentFileName] = useState<string | null>(globalSaved.lastActiveFileName || null);
-  const [globalCommentBank, setGlobalCommentBank] = useState<import('./types').AnnotationComment[]>(() => migrateCommentBank(globalSaved.commentBank || [
-    { id: 'cb_default1', text: 'Excel·lent!', score: 1, colorMode: 'score' },
-    { id: 'cb_default2', text: 'Molt bé', score: 0.5, colorMode: 'score' },
-    { id: 'cb_default3', text: 'Revisa aquest concepte', score: -0.5, colorMode: 'neutral' },
-    { id: 'cb_default4', text: 'Falta justificar la resposta', score: -1, colorMode: 'neutral' },
-  ]));
-  const [sessionAlias, setSessionAlias] = useState<string | null>(null);
-  const [pendingSession, setPendingSession] = useState<any | null>(null);
-  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
-  const [solutionPdfDoc, setSolutionPdfDoc] = useState<PDFDocumentProxy | null>(null);
-  const [solutionFileName, setSolutionFileName] = useState<string | null>(null);
-  const recentSessionsRef = useRef<HTMLDivElement>(null);
-  const [isAtTop, setIsAtTop] = useState(true);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isDraggingSolution, setIsDraggingSolution] = useState(false);
-  const [numPages, setNumPages] = useState<number>(0);
-  const [solutionPageIndexes, setSolutionPageIndexes] = useState<number[]>([]);
-
-  const [tempPagesPerExam, setTempPagesPerExam] = useState<string>('1');
-  const [tempNumStudents, setTempNumStudents] = useState<string>('0');
-
-  const [pagesPerExam, setPagesPerExam] = useState<number | ''>(1);
-  const [students, setStudents] = useState<Student[]>([]);
-  const [exercises, setExercises] = useState<ExerciseDef[]>([]);
-  const [annotations, setAnnotations] = useState<AnnotationStore>({});
-  const [rubricCounts, setRubricCounts] = useState<RubricCountStore>({});
-  const [targetMaxScore, setTargetMaxScore] = useState<number>(10);
-  const [presets, setPresets] = useState<import('./types').PresetHighlighter[]>([]);
-  const [studentList, setStudentList] = useState<string>('');
-  const [commentBank, setCommentBank] = useState<import('./types').AnnotationComment[]>([]);
-  const [studentIdx, setStudentIdx] = useState<number>(0);
-  const [exerciseIdx, setExerciseIdx] = useState<number>(0);
-  const [recentSessions, setRecentSessions] = useState<any[]>([]);
-
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingMessage, setProcessingMessage] = useState('');
-  const [accessToken, setAccessToken] = useState<string | null>(globalSaved.accessToken || null);
-  const [userEmail, setUserEmail] = useState<string | null>(globalSaved.userEmail || null);
-  const [userPicture, setUserPicture] = useState<string | null>(globalSaved.userPicture || null);
-  const [courses, setCourses] = useState<any[]>([]);
-  const [classroomStudents, setClassroomStudents] = useState<any[]>([]);
-  const [selectedCourseId, setSelectedCourseId] = useState<string>('');
-  const [isAuthorizing, setIsAuthorizing] = useState(false);
-  const [studentEmailMap, setStudentEmailMap] = useState<Record<string, string>>({});
-  const [showPasteArea, setShowPasteArea] = useState(false);
-  const [ocrCompleted, setOcrCompleted] = useState(false);
-  const [scrollPos, setScrollPos] = useState(0);
-
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    setIsAtTop(e.currentTarget.scrollTop < 10);
-    setScrollPos(e.currentTarget.scrollTop);
-  };
-
-  const calculateScrollProgress = () => {
-    // We want the highlight to disappear between 0 and 350px of scroll
-    const threshold = 350;
-    return Math.min(1, Math.max(0, scrollPos / threshold));
-  };
-
-  const [dialog, setDialog] = useState<DialogState>({ show: false, title: '', message: '', type: 'alert' });
-  const [toast, setToast] = useState<ToastState>({ show: false, title: '', text: '', type: 'loading' });
-
-  const showToast = (title: string, text: string, type: 'loading' | 'success' | 'error') => {
-    setToast({ show: true, title, text, type });
-    if (type === 'success' || type === 'error') {
-      setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
-    }
-  };
-
-  const showAlert = (title: string, message: string, options?: { checkboxLabel?: string, initialCheckboxState?: boolean, onCheckboxChange?: (checked: boolean) => void }) => {
-    setDialog({
-      show: true, title, message, type: 'alert',
-      checkboxLabel: options?.checkboxLabel,
-      checkboxChecked: options?.initialCheckboxState,
-      onCheckboxChange: options?.onCheckboxChange
-    });
-  };
-  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
-    setDialog({ show: true, title, message, type: 'confirm', onConfirm, onCancel: () => setDialog(d => ({ ...d, show: false })) });
-  };
-
-  // Global Escape handler to unfocus any input/textarea
-  useEffect(() => {
-    const handleGlobalEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && document.activeElement instanceof HTMLElement) {
-        if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') {
-          document.activeElement.blur();
-        }
-      }
+    const theme = globals.settings.theme;
+    const account = {
+        accessToken: auth.accessToken, userEmail: auth.userEmail, userPicture: auth.userPicture,
+        onAuthorize: auth.authorize, onLogout: auth.logout,
     };
-    window.addEventListener('keydown', handleGlobalEsc);
-    return () => window.removeEventListener('keydown', handleGlobalEsc);
-  }, []);
+    const common = { theme, onToggleTheme: globals.toggleTheme, ...account };
 
-  // Keyboard support for global dialogs - Maximum priority capture phase
-  useEffect(() => {
-    if (!dialog.show) return;
+    // --- Pantalla d'inici: accions sobre sessions recents ---
+    const renameSession = useCallback(async (s: SessionSummary, alias: string | null) => {
+        recent.patchLocal(s.fileName, { sessionAlias: alias });
+        await patchSession(s.fileName, { sessionAlias: alias });
+    }, [recent]);
 
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        e.stopImmediatePropagation(); // Absolute block of other handlers
-        if (dialog.type === 'confirm' && dialog.onConfirm) {
-          dialog.onConfirm();
-        }
-        setDialog(prev => ({ ...prev, show: false }));
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (dialog.type === 'confirm' && dialog.onCancel) {
-          dialog.onCancel();
-        }
-        setDialog(prev => ({ ...prev, show: false }));
-      }
-    };
+    const toggleSessionCloud = useCallback(async (s: SessionSummary) => {
+        const next = !s.cloudSyncPDF;
+        recent.patchLocal(s.fileName, { cloudSyncPDF: next });
+        await patchSession(s.fileName, { cloudSyncPDF: next });
+        await syncPdf(s.fileName, next);
+    }, [recent, syncPdf]);
 
-    // Attach to window with { capture: true } to intercept before ANY React component gets it
-    window.addEventListener('keydown', handleGlobalKeyDown, { capture: true });
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
-  }, [dialog]);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    const existing = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
-    localStorage.setItem(GLOBAL_KEY, JSON.stringify({
-      theme, accessToken, userEmail, userPicture,
-      lastActiveFileName: currentFileName || existing.lastActiveFileName,
-      cloudSyncPDF
-    }));
-  }, [theme, accessToken, userEmail, userPicture, currentFileName, cloudSyncPDF]);
-
-  const findLastSession = async () => {
-    const globalData = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
-    let targetFile = globalData.lastActiveFileName;
-
-    // If no last active, try to find the newest session from all localStorage
-    if (!targetFile) {
-      const keys = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k?.startsWith(SESSION_PREFIX)) keys.push(k);
-      }
-      if (keys.length > 0) {
-        const sessions = keys.map(k => JSON.parse(localStorage.getItem(k) || '{}'));
-        sessions.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
-        targetFile = sessions[0].fileName;
-      }
-    }
-
-    if (targetFile) {
-      const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + targetFile) || 'null');
-      if (saved) {
-        const file = await getPDFLocal(targetFile);
-        if (file) {
-          setPendingSession({ ...saved, file });
-          return;
-        }
-      }
-    }
-    setPendingSession(null);
-  };
-
-  const loadSessions = async () => {
-    const localSessions = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k?.startsWith(SESSION_PREFIX)) {
+    // --- Solucionari ---
+    const loadSolutionFile = useCallback(async (file: File) => {
+        if (!session) return;
+        showToast('Carregant', 'Llegint el document solucionari...', 'loading');
         try {
-          const content = JSON.parse(localStorage.getItem(k)!);
-          localSessions.push({ ...content, isCloud: false });
-        } catch (e) { }
-      }
-    }
-
-    if (accessToken) {
-      try {
-        const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=mimeType='application/json' and parents in 'appDataFolder' and name contains '.json'&spaces=appDataFolder&fields=files(id,name,modifiedTime)`, {
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-
-        if (res.status === 401) { handleLogout(); return; }
-
-        const data = await res.json();
-        const files = data.files || [];
-        const cloudSessions = [];
-        for (const file of files) {
-          try {
-            const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
-              headers: { 'Authorization': `Bearer ${accessToken}` }
-            });
-            const content = await contentRes.json();
-            cloudSessions.push({ ...content, isCloud: true, lastModified: file.modifiedTime, cloudId: file.id });
-          } catch (e) { }
-        }
-
-        const combined = [...localSessions];
-        cloudSessions.forEach(cs => {
-          const idx = combined.findIndex(ls => ls.fileName === cs.fileName);
-          if (idx === -1) combined.push(cs);
-          else if (new Date(cs.lastModified).getTime() > new Date(combined[idx].lastModified).getTime()) {
-            combined[idx] = cs;
-          }
-        });
-        setRecentSessions(combined.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()));
-      } catch (e) {
-        setRecentSessions(localSessions.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()));
-      }
-    } else {
-      setRecentSessions(localSessions.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()));
-    }
-  };
-
-  const handleDeleteSession = async (session: any) => {
-    // 1. Optimistic UI update: Remove from local state immediately
-    setRecentSessions(prev => prev.filter(s => s.fileName !== session.fileName));
-    if (pendingSession?.fileName === session.fileName) {
-      setPendingSession(null);
-      const global = JSON.parse(localStorage.getItem(GLOBAL_KEY) || '{}');
-      delete global.lastActiveFileName;
-      localStorage.setItem(GLOBAL_KEY, JSON.stringify(global));
-    }
-
-    // 2. Remove from localStorage
-    localStorage.removeItem(SESSION_PREFIX + session.fileName);
-
-    // 3. Remove PDF from IndexedDB
-    try {
-      const { deletePDFLocal } = await import('./utils/dbUtils');
-      await deletePDFLocal(session.fileName);
-      if (session.solutionFileName) {
-        await deletePDFLocal(`solution_${session.fileName}_${session.solutionFileName}`);
-      }
-    } catch (e) { console.error("Error deleting local files:", e); }
-
-    // 4. Remove from Google Drive if cloud session
-    if (session.isCloud && session.cloudId && accessToken) {
-      try {
-        await fetch(`https://www.googleapis.com/drive/v3/files/${session.cloudId}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-      } catch (e) {
-        console.error("Error deleting from Drive:", e);
-      }
-    }
-
-    // 5. Final sync to ensure list is perfect
-    loadSessions();
-  };
-
-  useEffect(() => {
-    if (mode === 'upload') {
-      loadSessions();
-      findLastSession();
-    }
-  }, [mode, accessToken]);
-
-
-  useEffect(() => {
-    if (accessToken) {
-      fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { 'Authorization': `Bearer ${accessToken}` } })
-        .then(r => {
-          if (r.status === 401) { handleLogout(); throw new Error("Token expired"); }
-          return r.json();
-        })
-        .then(data => {
-          if (data.email) {
-            setUserEmail(data.email);
-            setUserPicture(data.picture);
-          }
-        })
-        .catch(() => { });
-
-      fetch('https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE', { headers: { 'Authorization': `Bearer ${accessToken}` } })
-        .then(r => {
-          if (r.status === 401) { handleLogout(); return; }
-          return r.json();
-        })
-        .then(data => {
-          if (data && data.courses) setCourses(data.courses);
-        })
-        .catch(() => { });
-    }
-  }, [accessToken]);
-
-  const saveToDrive = async (fileName: string, data: any) => {
-    if (!accessToken) return;
-    try {
-      // Sync JSON Data (always)
-      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${fileName}.json' and parents in 'appDataFolder'&spaces=appDataFolder`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-      const searchData = await searchRes.json();
-      const existingFile = searchData.files && searchData.files[0];
-
-      const boundary = '-------314159265358979323846';
-      const metadata = { name: `${fileName}.json`, parents: ['appDataFolder'] };
-      const multipartRequestBody = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(data)}\r\n--${boundary}--`;
-
-      await fetch(existingFile ? `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart` : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-        method: existingFile ? 'PATCH' : 'POST',
-        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
-        body: multipartRequestBody
-      });
-    } catch (err) { }
-  };
-
-  useEffect(() => {
-    if (currentFileName && mode !== 'upload') {
-      const state = {
-        fileName: currentFileName, sessionAlias, mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, presets, lastStudentIdx: studentIdx, lastExerciseIdx: exerciseIdx, lastModified: new Date().toISOString(), studentEmailMap, progress: calculateProgress(students, exercises, annotations),
-        classroomStudents, ocrCompleted, solutionFileName, solutionPageIndexes
-      };
-      localStorage.setItem(SESSION_PREFIX + currentFileName, JSON.stringify(state));
-
-      // Update Global Comment Bank with "General" comments (those without exerciseId)
-      const generalComments = commentBank.filter(c => !c.exerciseId);
-      if (JSON.stringify(generalComments) !== JSON.stringify(globalCommentBank)) {
-        setGlobalCommentBank(generalComments);
-      }
-
-      // Update Global Presets with "General" presets
-      const generalPresets = presets.filter(p => !p.exerciseId);
-      if (JSON.stringify(generalPresets) !== JSON.stringify(globalPresets)) {
-        setGlobalPresets(generalPresets);
-      }
-
-      const timeout = setTimeout(() => saveToDrive(currentFileName, state), 3000);
-      return () => clearTimeout(timeout);
-    }
-  }, [mode, pagesPerExam, exercises, students, annotations, rubricCounts, targetMaxScore, studentList, commentBank, presets, studentIdx, exerciseIdx, classroomStudents, ocrCompleted, solutionFileName, solutionPageIndexes, sessionAlias]);
-
-  // Sync global settings
-  useEffect(() => {
-    const globalState = {
-      theme, cloudSyncPDF, lastActiveFileName: currentFileName, accessToken, userEmail, userPicture,
-      commentBank: globalCommentBank, presets: globalPresets
-    };
-    localStorage.setItem(GLOBAL_KEY, JSON.stringify(globalState));
-  }, [theme, cloudSyncPDF, currentFileName, accessToken, userEmail, userPicture, globalCommentBank, globalPresets]);
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || file.type !== 'application/pdf') return;
-    processUploadedFile(file);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file && file.type === 'application/pdf') {
-      processUploadedFile(file);
-    } else if (file) {
-      showToast("Fitxer no vàlid", "Només es permeten fitxers PDF.", "error");
-    }
-  };
-
-  const handleSolutionUpload = async (e: React.ChangeEvent<HTMLInputElement> | File) => {
-    const file = (e instanceof File) ? e : e.target.files?.[0];
-    if (!file || file.type !== 'application/pdf') {
-      if (file) showToast("Fitxer no vàlid", "Només es permeten fitxers PDF per al solucionari.", "error");
-      return;
-    }
-    showToast("Carregant", "Llegint el document solucionari...", "loading");
-    try {
-      const doc = await loadPDF(file);
-      setSolutionPdfDoc(doc);
-      setSolutionFileName(file.name);
-      await storePDFLocal(`solution_${currentFileName}_${file.name}`, file);
-      showToast("Èxit", "Solucionari carregat", "success");
-    } catch {
-      showToast("Error", "Error carregant el solucionari.", "error");
-    }
-  };
-
-  const handleSolutionDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDraggingSolution(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file && file.type === 'application/pdf') {
-      handleSolutionUpload(file);
-    } else if (file) {
-      showToast("Fitxer no vàlid", "Només es permeten fitxers PDF per al solucionari.", "error");
-    }
-  };
-
-  const handleSolutionDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDraggingSolution(true);
-  };
-
-  const handleSolutionDragLeave = () => {
-    setIsDraggingSolution(false);
-  };
-
-  const loadSessionFromFile = async (file: File, forceReset: boolean = false) => {
-    setIsProcessing(true); setProcessingMessage('Carregant PDF...');
-    const saved = forceReset ? null : JSON.parse(localStorage.getItem(SESSION_PREFIX + file.name) || 'null');
-
-    if (saved) {
-      // Merge session comments/presets with global ones
-      const sessionComments = migrateCommentBank(saved.commentBank || []);
-      const mergedComments = [...globalCommentBank, ...sessionComments.filter((c: any) => c.exerciseId)];
-
-      const sessionPresets = saved.presets || [];
-      const mergedPresets = [...globalPresets, ...sessionPresets.filter((p: any) => p.exerciseId)];
-
-      setPagesPerExam(saved.pagesPerExam); setExercises(saved.exercises); setStudents(saved.students); setAnnotations(saved.annotations); setRubricCounts(saved.rubricCounts); setTargetMaxScore(saved.targetMaxScore); setStudentList(saved.studentList); setCommentBank(mergedComments); setPresets(mergedPresets); setStudentIdx(saved.lastStudentIdx || 0); setExerciseIdx(saved.lastExerciseIdx || 0); setStudentEmailMap(saved.studentEmailMap || {});
-      setClassroomStudents(saved.classroomStudents || []);
-      setOcrCompleted(saved.ocrCompleted || false);
-      setTempPagesPerExam(String(saved.pagesPerExam));
-      setSolutionFileName(saved.solutionFileName || null);
-      setSolutionPageIndexes(saved.solutionPageIndexes || []);
-      setSessionAlias(saved.sessionAlias || null);
-      if (saved.solutionFileName) {
-        getPDFLocal(`solution_${file.name}_${saved.solutionFileName}`).then(f => {
-          if (f) loadPDF(f).then(setSolutionPdfDoc);
-        });
-      } else {
-        setSolutionPdfDoc(null);
-      }
-    } else {
-      // CRITICAL FIX: Reset all state to prevent data-crossing from previous sessions
-      setPagesPerExam(1); setExercises([]); setStudents([]); setAnnotations({}); setRubricCounts({}); setTargetMaxScore(10); setStudentList('');
-      setCommentBank([...globalCommentBank]);
-      setPresets([...globalPresets]);
-      setStudentIdx(0); setExerciseIdx(0); setStudentEmailMap({});
-      setClassroomStudents([]); setOcrCompleted(false); setTempPagesPerExam('1');
-      setSolutionFileName(null); setSolutionPageIndexes([]); setSolutionPdfDoc(null);
-      setSessionAlias(null);
-    }
-
-    try {
-      const doc = await loadPDF(file); setPdfDoc(doc); setNumPages(doc.numPages);
-      const calcStudentsCount = saved ? (saved.students.length || Math.floor(doc.numPages / (saved.pagesPerExam || 1))) : doc.numPages;
-      setTempNumStudents(String(calcStudentsCount));
-      if (!saved) setTempPagesPerExam('1');
-
-      setMode(saved?.mode || 'setup'); setCurrentFileName(file.name);
-      storePDFLocal(file.name, file).catch(console.error);
-    } catch { showToast("Error", "Error carregant el fitxer PDF.", "error"); } finally { setIsProcessing(false); }
-  };
-
-  const processUploadedFile = (file: File) => {
-    const existingSession = localStorage.getItem(SESSION_PREFIX + file.name);
-    if (existingSession) {
-      showConfirm(
-        "Sessió existent",
-        `Hem trobat dades guardades per a '${file.name}'. Vols continuar amb la correcció o començar de zero (s'esborraran les dades anteriors)?`,
-        () => loadSessionFromFile(file, false)
-      );
-      // Hack to allow "Començar de zero" on cancel
-      setDialog(d => ({
-        ...d,
-        onCancel: () => loadSessionFromFile(file, true)
-      }));
-    } else {
-      if (accessToken) {
-        showConfirm(
-          "Sincronització al núvol",
-          "Vols activar la sincronització al núvol per a aquest fitxer? Això et permetrà continuar la correcció des de qualsevol dispositiu.",
-          () => {
-            setCloudSyncPDF(true);
-            loadSessionFromFile(file, false);
-          }
-        );
-        // Hack to allow "No" (Local only)
-        setDialog(d => ({
-          ...d,
-          onCancel: () => {
-            setCloudSyncPDF(false);
-            loadSessionFromFile(file, false);
-          }
-        }));
-      } else {
-        loadSessionFromFile(file, false);
-      }
-    }
-  };
-
-  const handleSelectSession = async (s: any) => {
-    let f = await getPDFLocal(s.fileName);
-
-    // If not in local IndexedDB, try to get it from Drive
-    if (!f && accessToken) {
-      setIsProcessing(true);
-      setProcessingMessage('Recuperant PDF del núvol...');
-      try {
-        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${s.fileName}.pdf' and parents in 'appDataFolder'&spaces=appDataFolder`, {
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        const searchData = await searchRes.json();
-        const driveFile = searchData.files && searchData.files[0];
-
-        if (driveFile) {
-          const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFile.id}?alt=media`, {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-          });
-          const blob = await contentRes.blob();
-          f = new File([blob], s.fileName, { type: 'application/pdf' });
-          // Save locally for next time
-          await storePDFLocal(s.fileName, f);
-          setProcessingMessage('PDF recuperat ✅');
-          await new Promise(r => setTimeout(r, 800));
-        }
-      } catch (e) {
-        console.error("Cloud PDF recovery failed:", e);
-      } finally {
-        setIsProcessing(false);
-      }
-    }
-
-    if (f) {
-      loadSessionFromFile(f);
-    } else {
-      setCurrentFileName(s.fileName);
-      showToast("Fitxer no trobat", "Carrega el PDF manualment per continuar.", "error");
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'application/pdf';
-      input.onchange = (e: any) => {
-        const file = e.target.files?.[0];
-        if (file && file.name === s.fileName) loadSessionFromFile(file);
-        else if (file) showToast("Fitxer incorrecte", "El fitxer no coincideix.", "error");
-      };
-      input.click();
-    }
-  };
-
-  const importClassroom = async () => {
-    if (!accessToken || !selectedCourseId) return;
-    setIsProcessing(true);
-    showToast("Classroom", "Sincronitzant amb Classroom...", "loading");
-    try {
-      const cs = await fetchClassroomStudents(accessToken, selectedCourseId);
-      if (!cs) {
-        throw new Error("No students returned");
-      }
-      setClassroomStudents(cs);
-      const names = cs.map((c: any) => c.profile?.name?.fullName || c.profile?.emailAddress || 'Desconegut');
-      setStudentList(Array.from(new Set([...studentList.split('\n'), ...names])).filter(n => n && n.trim()).join('\n'));
-      const newMap = { ...studentEmailMap };
-      cs.forEach((c: any) => {
-        if (c.profile?.name?.fullName) {
-          newMap[c.profile.name.fullName] = c.profile.emailAddress;
-        }
-      });
-      setStudentEmailMap(newMap);
-      if (students.length) {
-        const { updatedStudents } = matchClassroomStudents(students, cs);
-        setStudents(updatedStudents);
-      }
-      showToast("Èxit", "Alumnes importats correctament", "success");
-    } catch (err) {
-      console.error(err);
-      showToast("Error Classroom", "Error sincronitzant amb Classroom.", "error");
-    } finally { setIsProcessing(false); }
-  };
-
-  const [isBackgroundOcrRunning, setIsBackgroundOcrRunning] = useState(false);
-  const [ocrProgress, setOcrProgress] = useState<{current: number, total: number} | null>(null);
-
-  const runOCR = async (customExercises?: ExerciseDef[]) => {
-    const targetEx = customExercises || exercises;
-    const ocr = targetEx.find(e => e.type === 'ocr_name') as import('./types').OcrNameRegion;
-    if (!ocr || !pdfDoc) return;
-
-    const known = studentList.split('\n').map(n => n.trim()).filter(n => n.length > 0);
-    const hasToken = true; // clau gestionada pel proxy /api/groq al servidor
-
-    console.log('[OCR DEBUG] useBatchOcr check:', {
-      skipOcr: ocr.skipOcr,
-      hasToken: hasToken,
-      knownNamesCount: known.length
-    });
-
-    setIsBackgroundOcrRunning(true);
-    showToast("Identificant", "Llegint els noms automàticament...", "loading");
-    const { extractTextFromRegion, extractImageFromRegion } = await import('./utils/ocrUtils');
-
-    const useBatchOcr = !ocr.skipOcr && hasToken; // known.length > 0 removed, it's optional now!
-
-    if (useBatchOcr) {
-      console.log('[OCR DEBUG] Starting BATCH OCR mode (Groq). Context list:', known.length > 0 ? 'Provided' : 'Empty');
-      const crops: string[] = [];
-      setOcrProgress({ current: 0, total: students.length });
-      
-      const updatedWithCrops = [...students];
-      for (let i = 0; i < updatedWithCrops.length; i++) {
-        try {
-          const pIdx = updatedWithCrops[i].pageIndexes[Math.min(ocr.pageIndex, updatedWithCrops[i].pageIndexes.length - 1)] || updatedWithCrops[i].pageIndexes[0];
-          const crop = await extractImageFromRegion(pdfDoc, pIdx, ocr);
-          crops.push(crop);
-          updatedWithCrops[i] = { ...updatedWithCrops[i], nameCropUrl: crop };
-          setOcrProgress({ current: i + 1, total: updatedWithCrops.length });
-          showToast("OCR", `Retallant noms... ${i + 1}/${updatedWithCrops.length}`, "loading");
+            store.setSolutionPdfDoc(await loadPdf(file));
+            update({ solutionFileName: file.name, solutionPageIndexes: [] });
+            await storePdf(solutionCacheKey(session.fileName, file.name), file);
+            showToast('Èxit', 'Solucionari carregat', 'success');
         } catch {
-          crops.push('');
+            showToast('Error', 'Error carregant el solucionari.', 'error');
         }
-      }
-      
-      setStudents(updatedWithCrops);
+    }, [session, store, update, showToast]);
 
-      (async () => {
-        try {
-          showToast("Identificant", "Processant noms amb IA...", "loading");
-          const { processBatchOCR } = await import('./utils/groqOcrUtils');
-          const results = await processBatchOCR(crops.filter(c => c !== ''), known);
-          console.log('[OCR DEBUG] Batch OCR results received:', results);
-          
-          let identifiedCount = 0;
-          setStudents(prev => {
-            const next = [...prev];
-            let cropIdx = 0;
-            for (let i = 0; i < next.length; i++) {
-              if (next[i].nameCropUrl) {
-                const identifiedName = results[(cropIdx + 1).toString()];
-                if (identifiedName && identifiedName !== 'Desconegut') {
-                  next[i] = { ...next[i], name: identifiedName };
-                  if (studentEmailMap[identifiedName]) next[i].email = studentEmailMap[identifiedName];
-                  identifiedCount++;
-                }
-                cropIdx++;
-              }
-            }
-            return next;
-          });
-          setOcrCompleted(true);
-          showToast("Èxit OCR", `S'han identificat ${identifiedCount} noms correctament.`, "success");
-        } catch (err) {
-          console.error('[OCR DEBUG] Batch OCR background failed:', err);
-          showToast("Error OCR", "No s'ha pogut completar la identificació per IA.", "error");
-        } finally {
-          setIsBackgroundOcrRunning(false);
-          setOcrProgress(null);
-        }
-      })();
+    const removeSolution = useCallback(() => {
+        if (!session?.solutionFileName) return;
+        void deletePdf(solutionCacheKey(session.fileName, session.solutionFileName));
+        store.setSolutionPdfDoc(null);
+        update({ solutionFileName: null, solutionPageIndexes: [] });
+    }, [session, store, update]);
 
-    } else {
-      console.log('[OCR DEBUG] Starting INDIVIDUAL OCR mode (Tesseract Fallback)');
-      showToast("Identificant", "Processant noms un a un...", "loading");
-      (async () => {
-        const updated = [...students];
-        for (let i = 0; i < updated.length; i++) {
-          setOcrProgress({ current: i + 1, total: updated.length });
-          showToast("OCR", `Llegint alumne ${i + 1}/${updated.length}`, "loading");
-          try {
-            const pIdx = updated[i].pageIndexes[Math.min(ocr.pageIndex, updated[i].pageIndexes.length - 1)] || updated[i].pageIndexes[0];
-            const crop = await extractImageFromRegion(pdfDoc, pIdx, ocr);
-            
-            let name = updated[i].name;
-            if (!ocr.skipOcr) {
-              const text = await extractTextFromRegion(pdfDoc, pIdx, ocr);
-              name = text.trim();
-              if (known.length > 0 && name.length > 2) {
-                let best = '', min = 999;
-                known.forEach(kn => {
-                  const d = getLevenshteinDistance(name.toLowerCase(), kn.toLowerCase());
-                  if (d < min) { min = d; best = kn; }
-                });
-                if (min < best.length * 0.4) {
-                  name = best;
-                }
-              }
-            }
-            
-            setStudents(prev => prev.map((s, idx) => idx === i ? { ...s, name: name || s.name, nameCropUrl: crop } : s));
-          } catch { }
-        }
-        setOcrCompleted(true);
-        setIsBackgroundOcrRunning(false);
-        setOcrProgress(null);
-        showToast("Èxit OCR", "S'ha completat la lectura de noms.", "success");
-      })();
-    }
-  };
+    // --- Plantilla: en acabar, es llegeixen els noms (si no s'ha fet) i es passa a corregir ---
+    const completeTemplate = useCallback(async () => {
+        if (!session) return;
+        if (!session.ocrCompleted) await ocr.run(session.exercises);
+        lifecycle.setMode('correction');
+    }, [session, ocr, lifecycle]);
 
-  const handleAuthorize = () => {
-    setIsAuthorizing(true);
-    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const clientId = isLocal
-      ? "89755629853-3i114l0ocgkpv5cla6d86n8ufuammvii.apps.googleusercontent.com"
-      : "89755629853-b6o9a5052s8t84bu3nahath37itesf3l.apps.googleusercontent.com";
-
-    try {
-      const client = (window as any).google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.rosters.readonly https://www.googleapis.com/auth/classroom.profile.emails https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.appdata',
-        callback: (r: any) => { if (r.access_token) setAccessToken(r.access_token); setIsAuthorizing(false); }
-      });
-      client.requestAccessToken();
-    } catch (e) { setIsAuthorizing(false); }
-  };
-
-  const performFileSync = async (fileName: string, shouldSync: boolean, prefix: string = '', fileType: string = 'application/pdf') => {
-    if (!accessToken) return;
-    const fullFileName = prefix ? `${prefix}_${currentFileName}_${fileName}` : fileName;
-    const driveName = prefix ? `${prefix}_${currentFileName}_${fileName}.pdf` : `${fileName}.pdf`;
-
-    try {
-      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='${driveName}' and parents in 'appDataFolder'&spaces=appDataFolder`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-      const searchData = await searchRes.json();
-      const existingFile = searchData.files && searchData.files[0];
-
-      if (shouldSync && !existingFile) {
-        setIsProcessing(true);
-        setProcessingMessage(`Sincronitzant ${prefix ? 'solucionari' : 'PDF'} al núvol...`);
-        const file = await getPDFLocal(fullFileName);
-        if (file) {
-          const metadata = { name: driveName, parents: ['appDataFolder'] };
-          const boundary = '-------pdf314159265358979323846';
-          const reader = new FileReader();
-          reader.readAsArrayBuffer(file);
-          await new Promise((resolve, reject) => {
-            reader.onload = async () => {
-              try {
-                const arrayBuffer = reader.result as ArrayBuffer;
-                const multipartBody = [
-                  `--${boundary}\r\n`,
-                  `Content-Type: application/json; charset=UTF-8\r\n\r\n`,
-                  `${JSON.stringify(metadata)}\r\n`,
-                  `--${boundary}\r\n`,
-                  `Content-Type: ${fileType}\r\n\r\n`,
-                  new Uint8Array(arrayBuffer),
-                  `\r\n--${boundary}--`
-                ];
-                const blob = new Blob(multipartBody, { type: `multipart/related; boundary=${boundary}` });
-                const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-                  method: 'POST',
-                  headers: { 'Authorization': `Bearer ${accessToken}` },
-                  body: blob
-                });
-                if (res.ok) {
-                  setProcessingMessage(`${prefix ? 'Solucionari' : 'PDF'} sincronitzat ✅`);
-                  setTimeout(resolve, 800);
-                } else reject(new Error("Drive upload failed"));
-              } catch (e) { reject(e); }
-            };
-          });
-        }
-      } else if (!shouldSync && existingFile) {
-        setIsProcessing(true);
-        setProcessingMessage(`Alliberant espai al Drive...`);
-        await fetch(`https://www.googleapis.com/drive/v3/files/${existingFile.id}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        setProcessingMessage('Espai alliberat ✅');
-        await new Promise(r => setTimeout(r, 800));
-      }
-    } catch (e) {
-      console.error("Cloud sync operation failed:", e);
-      showToast("Sync fallida", "No s'ha pogut canviar l'estat del fitxer al núvol.", "error");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const startConfiguration = async (overrideCloudSync?: boolean) => {
-    if (!pdfDoc || !currentFileName) return;
-    const useCloudSync = overrideCloudSync !== undefined ? overrideCloudSync : cloudSyncPDF;
-    await performFileSync(currentFileName, useCloudSync);
-    if (solutionFileName) await performFileSync(solutionFileName, cloudSyncSolution, 'solution');
-
-    const safePages = Number(pagesPerExam) || 1;
-    const count = Math.floor(pdfDoc.numPages / safePages);
-    if (students.length === 0 || students.length !== count) {
-      setStudents(Array.from({ length: count }, (_, i) => ({
-        id: `student_${i + 1}`, name: `Alumne ${i + 1}`, pageIndexes: Array.from({ length: safePages }, (__, p) => i * safePages + p + 1)
-      })));
-    }
-    setMode('organize_pages');
-  };
-
-
-  const handleBack = () => {
-    if (mode === 'setup') { setMode('upload'); setCurrentFileName(null); setPdfDoc(null); }
-    else if (mode === 'organize_pages') setMode('setup');
-    else if (mode === 'configure_crops') setMode('organize_pages');
-    else if (mode === 'correction') setMode('configure_crops');
-    else if (mode === 'results') setMode('correction');
-  };
-
-  const handleLogout = () => {
-    setAccessToken(null);
-    setUserEmail(null);
-    setUserPicture(null);
-    localStorage.removeItem(GLOBAL_KEY);
-  };
-
-  const UnifiedHeader = ({ nextAction, nextLabel }: { nextAction?: () => void, nextLabel?: string }) => {
-    const [isEditingHeaderAlias, setIsEditingHeaderAlias] = useState(false);
+    const updateExercise = useCallback((ux: ExerciseDef) => update(s => ({
+        exercises: s.exercises.map(ex => (ex.id === ux.id ? ux : ex)),
+    })), [update]);
 
     return (
-      <header className="header" style={{ position: 'relative' }}>
-        {isBackgroundOcrRunning && ocrProgress && (
-          <div style={{
-            position: 'absolute', top: 0, left: 0, right: 0, height: '3px',
-            background: 'var(--bg-tertiary)', zIndex: 100, overflow: 'hidden'
-          }}>
-            <div style={{
-              height: '100%', background: 'var(--accent)',
-              width: `${(ocrProgress.current / ocrProgress.total) * 100}%`,
-              transition: 'width 0.3s ease-out',
-              boxShadow: '0 0 10px var(--accent)'
-            }} />
-          </div>
-        )}
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
-          <button className="btn-icon" onClick={handleBack} title="Enrere" style={{ color: 'var(--text-primary)', padding: '0.5rem', background: 'transparent', border: 'none', flexShrink: 0 }}>
-            <ChevronLeft size={28} />
-          </button>
-          {currentFileName && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1 }}>
-              {isEditingHeaderAlias ? (
-                <input
-                  autoFocus
-                  defaultValue={sessionAlias || currentFileName}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      const val = e.currentTarget.value.trim();
-                      setSessionAlias(val === currentFileName ? null : (val || null));
-                      setIsEditingHeaderAlias(false);
-                    } else if (e.key === 'Escape') {
-                      setIsEditingHeaderAlias(false);
-                    }
-                  }}
-                  onBlur={(e) => {
-                    const val = e.target.value.trim();
-                    setSessionAlias(val === currentFileName ? null : (val || null));
-                    setIsEditingHeaderAlias(false);
-                  }}
-                  style={{
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)',
-                    border: '1px solid var(--accent)',
-                    borderRadius: '0.4rem',
-                    padding: '0.2rem 0.6rem',
-                    fontSize: '1rem',
-                    fontWeight: 800,
-                    width: '100%',
-                    maxWidth: '300px'
-                  }}
-                />
-              ) : (
-                <div
-                  onClick={() => setIsEditingHeaderAlias(true)}
-                  style={{
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                    minWidth: 0,
-                    padding: '0.2rem 0.5rem',
-                    borderRadius: '0.4rem',
-                    transition: 'background 0.2s'
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)50'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  title="Clic per canviar el nom de la sessió"
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
-                    <span style={{
-                      fontSize: '1.1rem',
-                      fontWeight: 800,
-                      color: 'var(--text-primary)',
-                      opacity: 0.8,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      {sessionAlias || currentFileName}
-                    </span>
-                    <Pencil size={12} style={{ opacity: 0.4, flexShrink: 0 }} />
-                  </div>
-                  {sessionAlias && sessionAlias !== currentFileName && (
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '-2px' }}>
-                      {currentFileName}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-          <FlowGradingLogo size="2.2rem" animate={false} />
-        </div>
-
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '1.25rem', justifyContent: 'flex-end' }}>
-          <button className="btn-icon" onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}>
-            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
-          </button>
-          {accessToken ? (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.4rem 1rem',
-              background: 'var(--bg-tertiary)', borderRadius: '2rem', border: '1px solid var(--border)',
-              height: '42px'
-            }}>
-              {userPicture ? (
-                <img src={userPicture} alt="User" style={{ width: '28px', height: '28px', borderRadius: '50%', border: '1px solid var(--accent)', objectFit: 'cover' }} />
-              ) : (
-                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800 }}>{userEmail?.[0].toUpperCase()}</div>
-              )}
-              <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>{userEmail?.split('@')[0]}</span>
-              <button onClick={handleLogout} className="btn-icon" style={{ padding: '2px' }}><LogOut size={14} color="var(--danger)" /></button>
-            </div>
-          ) : (
-            <button className="btn-google" onClick={handleAuthorize}>
-              <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="G" style={{ width: '18px' }} />
-              <span style={{ fontWeight: 700 }}>Connecta</span>
-            </button>
-          )}
-          {nextAction && (
-            <button className="btn btn-primary" onClick={nextAction}>
-              {nextLabel || 'Continuar'} <ChevronRight size={18} />
-            </button>
-          )}
-        </div>
-      </header>
-    );
-  };
-
-  return (
-    <div className={`app-container ${mode === 'upload' ? 'home-page' : ''}`} style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {isProcessing && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)' }}>
-          <div className="card" style={{ textAlign: 'center', padding: '3.5rem', maxWidth: '400px', width: '90%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2rem', boxShadow: '0 30px 60px rgba(0,0,0,0.4)' }}>
-            <div className="loader" style={{ width: '50px', height: '50px', border: '4px solid var(--accent-light)', borderTop: '4px solid var(--accent)' }}></div>
-            <div style={{ transform: 'rotate(-1deg)' }}>
-              <HandwrittenTitle size="2.2rem" color="blue" noMargin={true}>{processingMessage}</HandwrittenTitle>
-            </div>
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Això pot trigar uns segons...</p>
-          </div>
-        </div>
-      )}
-
-      {toast.show && (
-        <div className="card" style={{
-          position: 'fixed', bottom: '2rem', right: '2rem', zIndex: 10001,
-          width: '320px', padding: '1.25rem 1.5rem',
-          boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.25)',
-          border: '1px solid var(--border)',
-          textAlign: 'center',
-          display: 'flex', flexDirection: 'column', gap: '0.75rem',
-          overflow: 'hidden',
-          background: 'var(--glass-bg)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)'
-        }}>
-          <div style={{
-            position: 'absolute', top: 0, left: 0, right: 0, height: '6px',
-            background: toast.type === 'success' ? 'var(--hl-green)' : toast.type === 'error' ? 'var(--hl-red)' : 'var(--hl-purple)'
-          }} />
-          
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <div style={{ transform: 'rotate(-2deg)' }}>
-              <HandwrittenTitle size="1.8rem" color={toast.type === 'success' ? 'green' : toast.type === 'error' ? 'red' : 'purple'} noMargin={true}>
-                {toast.title}
-              </HandwrittenTitle>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: 600 }}>
-            {toast.type === 'success' ? <CheckCircle size={16} color="var(--success)" /> : toast.type === 'error' ? <XCircle size={16} color="var(--danger)" /> : <RefreshCw size={16} className="spin" color="var(--accent)" />}
-            {toast.text}
-          </div>
-        </div>
-      )}
-
-      {dialog.show && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)' }}>
-          <div className="card" style={{ maxWidth: '480px', width: '90%', padding: '3.5rem 3rem', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '2.5rem', border: '1px solid var(--border)', boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.3)', position: 'relative', overflow: 'hidden' }}>
-            <div style={{
-              position: 'absolute', top: 0, left: 0, right: 0, height: '8px',
-              background: dialog.type === 'alert' ? 'var(--hl-yellow)' : 'var(--hl-blue)'
-            }} />
-
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '-0.5rem' }}>
-              <div style={{ transform: 'rotate(-2deg)' }}>
-                <HandwrittenTitle size="3rem" color={dialog.type === 'alert' ? 'yellow' : 'blue'} noMargin={true}>
-                  {dialog.title}
-                </HandwrittenTitle>
-              </div>
-            </div>
-
-            <div style={{ color: 'var(--text-primary)', fontSize: '1.15rem', lineHeight: '1.6', fontWeight: 600 }}>
-              {dialog.message}
-            </div>
-
-            {dialog.checkboxLabel && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center', cursor: 'pointer', marginTop: '-1rem' }}>
-                <input
-                  type="checkbox"
-                  checked={dialog.checkboxChecked}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setDialog(prev => ({ ...prev, checkboxChecked: checked }));
-                    if (dialog.onCheckboxChange) dialog.onCheckboxChange(checked);
-                  }}
-                />
-                <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{dialog.checkboxLabel}</span>
-              </label>
-            )}
-
-            <div style={{ display: 'flex', gap: '1.25rem', justifyContent: 'center', width: '100%' }}>
-              {dialog.type === 'confirm' && (
-                <button
-                  className="btn btn-secondary"
-                  style={{ flex: 1, fontWeight: 800, padding: '0.8rem' }}
-                  onClick={() => { dialog.onCancel?.(); setDialog(d => ({ ...d, show: false })); }}
-                >
-                  <X size={18} /> Cancel·lar
-                </button>
-              )}
-              <button
-                className="btn btn-primary"
-                style={{ flex: 1, fontWeight: 800, padding: '0.8rem' }}
-                onClick={() => { dialog.onConfirm?.(); setDialog(d => ({ ...d, show: false })); }}
-              >
-                <Check size={20} /> D'acord
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {mode === 'upload' && (
-        <div style={{ position: 'absolute', top: '1.5rem', right: '1.5rem', display: 'flex', gap: '1.25rem', alignItems: 'center', zIndex: 10 }}>
-          <button className="btn-icon" onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}>
-            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
-          </button>
-          {accessToken ? (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.4rem 1rem',
-              background: 'var(--bg-tertiary)', borderRadius: '2rem', border: '1px solid var(--border)',
-              height: '42px'
-            }}>
-              {userPicture ? <img src={userPicture} alt="User" style={{ width: '28px', height: '28px', borderRadius: '50%' }} /> : <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800 }}>{userEmail?.[0].toUpperCase()}</div>}
-              <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>{userEmail?.split('@')[0]}</span>
-              <button onClick={handleLogout} className="btn-icon" style={{ padding: '2px' }}><LogOut size={14} color="var(--danger)" /></button>
-            </div>
-          ) : (
-            <button className="btn-google" onClick={handleAuthorize}>
-              <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="G" style={{ width: '18px' }} />
-              <span style={{ fontWeight: 700 }}>Connecta amb Google</span>
-            </button>
-          )}
-        </div>
-      )}
-
-      {mode !== 'upload' && mode !== 'configure_crops' && mode !== 'correction' && mode !== 'organize_pages' && mode !== 'results' && (
-        <UnifiedHeader nextAction={mode === 'setup' ? startConfiguration : undefined} />
-      )}
-
-      <main className="main-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-        {mode === 'upload' && (
-          <div
-            onScroll={handleScroll}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            style={{
-              height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center',
-              justifyContent: 'flex-start', overflowY: 'auto', position: 'relative',
-              background: isDragging ? 'var(--accent-light)' : 'transparent',
-              transition: 'background 0.3s ease'
-            }}
-          >
-            {/* Drag Overlay */}
-            {isDragging && (
-              <div style={{
-                position: 'fixed', inset: 0, zIndex: 100,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'rgba(59, 130, 246, 0.1)', backdropFilter: 'blur(4px)',
-                pointerEvents: 'none'
-              }}>
-                <div style={{
-                  padding: '3rem 5rem', border: '4px dashed var(--accent)', borderRadius: '3rem',
-                  background: 'var(--bg-secondary)', boxShadow: '0 20px 50px rgba(0,0,0,0.1)',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem',
-                  transform: 'scale(1.1)', transition: 'transform 0.2s'
-                }}>
-                  <div style={{ width: '80px', height: '80px', background: 'var(--accent-light)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Upload size={40} color="var(--accent)" />
-                  </div>
-                  <HandwrittenTitle size="3rem" color="blue">Deixa anar el PDF</HandwrittenTitle>
-                </div>
-              </div>
-            )}
-
-            {/* Subtle Scroll Button - Bottom Left Horizontal */}
-            {recentSessions.filter(s => s.fileName !== pendingSession?.fileName).length > 0 && (
-              <button
-                onClick={() => recentSessionsRef.current?.scrollIntoView({ behavior: 'smooth' })}
-                style={{
-                  position: 'fixed', left: '2rem', bottom: '2rem',
-                  display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-secondary)',
-                  border: '1px solid var(--border)', borderRadius: '2rem', padding: '0.6rem 1.2rem',
-                  color: 'var(--text-secondary)', opacity: isAtTop ? 0.7 : 0, cursor: 'pointer', fontSize: '0.85rem', fontWeight: 700,
-                  transition: 'all 0.3s', zIndex: 50, boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-                  pointerEvents: isAtTop ? 'auto' : 'none',
-                  transform: isAtTop ? 'none' : 'translateY(10px)'
-                }}
-                onMouseEnter={e => { if (isAtTop) { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-2px)'; } }}
-                onMouseLeave={e => { if (isAtTop) { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.transform = 'none'; } }}
-              >
-                <span>Darreres sessions</span>
-                <ArrowDown size={16} />
-              </button>
-            )}
-
-            {/* Hero Section - Forced to 100vh to keep it clean */}
-            <div style={{ minHeight: '100vh', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '25vh 2rem 4rem', flexShrink: 0 }}>
-              <div style={{ marginBottom: '14rem', transform: 'rotate(-4.5deg)', flexShrink: 0 }}>
-                <FlowGradingLogo size="13rem" rotation={-7} extraThick={true} scrollProgress={calculateScrollProgress()} />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '3rem', alignItems: 'center', marginBottom: '6rem', flexShrink: 0, width: '100%', maxWidth: '900px' }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem', justifyContent: 'center', width: '100%' }}>
-                  {/* Main CTA: Upload New */}
-                  <div style={{ flex: '1', minWidth: '20rem', maxWidth: '26rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    <label className="btn btn-primary" style={{ padding: '1.2rem 2rem', fontSize: '1.2rem', height: '5.2rem', borderRadius: '1.5rem', boxShadow: '0 10px 25px var(--accent-light)', width: '100%', cursor: 'pointer' }}>
-                      <input type="file" accept="application/pdf" onChange={handleFileUpload} style={{ display: 'none' }} />
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <div style={{ width: '2.8rem', height: '2.8rem', background: 'rgba(255,255,255,0.2)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <Upload size={24} />
-                        </div>
-                        <div style={{ textAlign: 'left' }}>
-                          <div style={{ fontWeight: 800 }}>Nou PDF</div>
-                          <div style={{ fontSize: '0.75rem', opacity: 0.8, fontWeight: 600 }}>Comença de zero</div>
-                        </div>
-                      </div>
-                    </label>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600, textAlign: 'center', padding: '0 1rem' }}>
-                      Puja el fitxer combinat amb tots els exàmens per començar la configuració.
-                    </p>
-                  </div>
-
-                  {/* Session Recovery CTA (Only if pendingSession exists) */}
-                  {pendingSession && (
-                    <div style={{ flex: '1', minWidth: '20rem', maxWidth: '26rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                      <button
-                        className="btn btn-secondary"
-                        onClick={() => {
-                          loadSessionFromFile(pendingSession.file);
-                          setPendingSession(null);
-                        }}
-                        style={{ padding: '1.2rem 2rem', fontSize: '1.2rem', height: '5.2rem', borderRadius: '1.5rem', width: '100%', border: '2px solid var(--accent)', background: 'var(--bg-secondary)', cursor: 'pointer' }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%' }}>
-                          <div style={{ width: '2.8rem', height: '2.8rem', background: 'var(--accent-light)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <RefreshCw size={24} color="var(--accent)" />
-                          </div>                          <div style={{ textAlign: 'left', flex: 1, overflow: 'hidden' }}>
-                            <div style={{ fontWeight: 800, color: 'var(--accent)' }}>Continuar PDF</div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {pendingSession.fileName}
-                            </div>
-                          </div>
-                          <div style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--success)' }}>{pendingSession.progress || 0}%</div>
-                        </div>
-                      </button>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{pendingSession.students?.length || 0} alumnes detectats</span>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                          {accessToken && (
-                            <div
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                const newSync = !cloudSyncPDF;
-                                setCloudSyncPDF(newSync);
-                                const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + pendingSession.fileName) || '{}');
-                                saved.cloudSyncPDF = newSync;
-                                localStorage.setItem(SESSION_PREFIX + pendingSession.fileName, JSON.stringify(saved));
-                                setPendingSession({ ...pendingSession, cloudSyncPDF: newSync });
-                                await performFileSync(pendingSession.fileName, newSync);
-                              }}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer',
-                                padding: '0.2rem 0.6rem', background: 'var(--bg-tertiary)70', borderRadius: '1rem',
-                                border: '1px solid var(--border)'
-                              }}
-                            >
-                              <div style={{
-                                width: '24px', height: '12px', background: cloudSyncPDF ? 'var(--success)' : 'var(--text-secondary)',
-                                borderRadius: '6px', position: 'relative', transition: 'all 0.3s ease'
-                              }}>
-                                <div style={{
-                                  width: '8px', height: '8px', background: 'white', borderRadius: '50%',
-                                  position: 'absolute', top: '2px', left: cloudSyncPDF ? '14px' : '2px', transition: 'all 0.3s ease'
-                                }} />
-                              </div>
-                              <span style={{ fontSize: '0.65rem', fontWeight: 800 }}>Núvol {cloudSyncPDF ? "Sí" : "No"}</span>
-                            </div>
-                          )}
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              showConfirm("Eliminar sessió", `Vols eliminar la sessió de '${pendingSession.fileName}'?`, () => handleDeleteSession(pendingSession));
-                            }}
-                            style={{ background: 'none', border: 'none', color: 'var(--danger)', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                          >
-                            Descarta sessió
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Scrollable Sessions Section */}
-            {recentSessions.filter(s => s.fileName !== pendingSession?.fileName).length > 0 && (
-              <div ref={recentSessionsRef} style={{ width: '100%', maxWidth: '1000px', flexShrink: 0, paddingBottom: '8rem' }}>
-                <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
-                  <HandwrittenTitle size="2.4rem" color="purple">Darreres sessions</HandwrittenTitle>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
-                  {recentSessions.filter(s => s.fileName !== pendingSession?.fileName).map(s => {
-                    const isEditingAlias = s.isEditingAlias;
-                    return (
-                      <div key={s.fileName} className="card" style={{ padding: '1.5rem', cursor: isEditingAlias ? 'default' : 'pointer', transition: 'all 0.2s ease', position: 'relative', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '1rem' }} onMouseEnter={e => { if (!isEditingAlias) { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 12px 24px -10px rgba(0,0,0,0.1)'; } }} onMouseLeave={e => { if (!isEditingAlias) { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; } }} onClick={() => !isEditingAlias && handleSelectSession(s)}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <div style={{ fontWeight: 800, fontSize: '1.05rem', display: 'flex', flexDirection: 'column', gap: '0.2rem', overflow: 'hidden', flex: 1, position: 'relative' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
-                              {isEditingAlias ? (
-                                <input
-                                  autoFocus
-                                  defaultValue={s.sessionAlias || s.fileName}
-                                  onClick={e => e.stopPropagation()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.stopPropagation();
-                                      const val = e.currentTarget.value.trim();
-                                      const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + s.fileName) || '{}');
-                                      saved.sessionAlias = val || null;
-                                      localStorage.setItem(SESSION_PREFIX + s.fileName, JSON.stringify(saved));
-                                      // Update state to remove edit mode
-                                      setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, sessionAlias: val || null, isEditingAlias: false } : rs));
-                                    } else if (e.key === 'Escape') {
-                                      e.stopPropagation();
-                                      setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, isEditingAlias: false } : rs));
-                                    }
-                                  }}
-                                  onBlur={() => setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, isEditingAlias: false } : rs))}
-                                  style={{ width: '100%', padding: '0.2rem 0.5rem', border: '1px solid var(--accent)', borderRadius: '0.25rem', fontSize: '1rem', fontWeight: 800 }}
-                                />
-                              ) : (
-                                <>
-                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    {s.sessionAlias || s.fileName}
-                                    {s.isCloud && <Cloud size={14} color="var(--accent)" />}
-                                  </span>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, isEditingAlias: true } : rs)); }}
-                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px', display: 'flex', alignItems: 'center', opacity: 0.5 }}
-                                    onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-                                    onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}
-                                    title="Canviar nom"
-                                  >
-                                    <Pencil size={12} />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                            {s.sessionAlias && !isEditingAlias && (
-                              <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {s.fileName}
-                              </span>
-                            )}
-                          </div>
-                          <button onClick={(e) => { e.stopPropagation(); showConfirm("Eliminar sessió", `Vols eliminar la sessió de '${s.fileName}'?`, () => handleDeleteSession(s)); }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: '4px', opacity: 0.6 }} onMouseEnter={e => e.currentTarget.style.opacity = '1'} onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}><Trash2 size={16} /></button>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}><Clock size={14} /> {new Date(s.lastModified).toLocaleDateString()}</div>
-
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 800, marginBottom: '0.2rem' }}>
-                          <span style={{ color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Progrés</span>
-                          <span style={{ color: 'var(--success)' }}>{s.progress || 0}%</span>
-                        </div>
-                        <div className="progress-bar-container" style={{ marginTop: 0 }}><div className="progress-bar-fill" style={{ width: `${s.progress || 0}%` }}></div></div>
-
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>{s.students?.length || 0} alumnes detectats</div>
-
-                          {accessToken && (
-                            <div
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                const newSync = !(s.cloudSyncPDF ?? true);
-                                const saved = JSON.parse(localStorage.getItem(SESSION_PREFIX + s.fileName) || '{}');
-                                saved.cloudSyncPDF = newSync;
-                                localStorage.setItem(SESSION_PREFIX + s.fileName, JSON.stringify(saved));
-                                setRecentSessions(prev => prev.map(rs => rs.fileName === s.fileName ? { ...rs, cloudSyncPDF: newSync } : rs));
-                                if (currentFileName === s.fileName) setCloudSyncPDF(newSync);
-                                await performFileSync(s.fileName, newSync);
-                              }}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer',
-                                padding: '0.2rem 0.5rem', background: 'var(--bg-tertiary)70', borderRadius: '1rem',
-                                border: '1px solid var(--border)'
-                              }}
-                            >
-                              <div style={{
-                                width: '24px', height: '12px', background: (s.cloudSyncPDF ?? true) ? 'var(--success)' : 'var(--text-secondary)',
-                                borderRadius: '6px', position: 'relative', transition: 'all 0.3s ease'
-                              }}>
-                                <div style={{
-                                  width: '8px', height: '8px', background: 'white', borderRadius: '50%',
-                                  position: 'absolute', top: '2px', left: (s.cloudSyncPDF ?? true) ? '14px' : '2px', transition: 'all 0.3s ease'
-                                }} />
-                              </div>
-                              <span style={{ fontSize: '0.6rem', fontWeight: 800 }}>Núvol {(s.cloudSyncPDF ?? true) ? "Sí" : "No"}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {mode === 'setup' && (
-          <div style={{ flex: 1, overflowY: 'auto', padding: '3rem 4rem' }}>
-            <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '3rem', marginBottom: '3.5rem', flexWrap: 'wrap' }}>
-                <HandwrittenTitle size="3rem" color="green">Configuració de l'examen</HandwrittenTitle>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '2.5rem', marginBottom: '3.5rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div className="card" style={{ flex: 1, background: 'var(--bg-tertiary)', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                    <label style={{ display: 'block', fontWeight: 800, fontSize: '0.85rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Pàgines i alumnes</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>Pàgines/Examen</span>
-                        <input
-                          type="text"
-                          value={tempPagesPerExam}
-                          onChange={e => setTempPagesPerExam(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              const val = parseInt(tempPagesPerExam) || 1;
-                              setPagesPerExam(val);
-                              setTempNumStudents(String(Math.floor(numPages / val)));
-                            }
-                          }}
-                          onBlur={() => {
-                            const val = parseInt(tempPagesPerExam) || 1;
-                            setPagesPerExam(val);
-                            setTempNumStudents(String(Math.floor(numPages / val)));
-                          }}
-                          style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid var(--border)', fontSize: '1.25rem', fontWeight: 800, textAlign: 'center' }}
-                        />
-                      </div>
-                      <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: '1rem' }}>O</div>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem' }}>Total alumnes</span>
-                        <input
-                          type="text"
-                          value={tempNumStudents}
-                          onChange={e => setTempNumStudents(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              const val = parseInt(tempNumStudents) || 1;
-                              setPagesPerExam(Math.floor(numPages / val));
-                              setTempPagesPerExam(String(Math.floor(numPages / val)));
-                            }
-                          }}
-                          onBlur={() => {
-                            const val = parseInt(tempNumStudents) || 1;
-                            setPagesPerExam(Math.floor(numPages / val));
-                            setTempPagesPerExam(String(Math.floor(numPages / val)));
-                          }}
-                          style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid var(--border)', fontSize: '1.25rem', fontWeight: 800, textAlign: 'center' }}
-                        />
-                      </div>
-                    </div>
-                    <div style={{ padding: '0.5rem', background: 'var(--bg-secondary)', borderRadius: '0.4rem', border: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
-                      <span>Total PDF: <strong>{numPages}</strong> pàgines</span>
-                      {accessToken && (
-                        <div
-                          onClick={() => {
-                            const newSync = !cloudSyncPDF;
-                            setCloudSyncPDF(newSync);
-                            if (currentFileName) performFileSync(currentFileName, newSync);
-                          }}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer',
-                            padding: '0.2rem 0.5rem', background: 'var(--bg-tertiary)', borderRadius: '1rem',
-                            border: '1px solid var(--border)'
-                          }}
-                        >
-                          <div style={{
-                            width: '24px', height: '12px', background: cloudSyncPDF ? 'var(--success)' : 'var(--text-secondary)',
-                            borderRadius: '6px', position: 'relative', transition: 'all 0.3s ease'
-                          }}>
-                            <div style={{
-                              width: '8px', height: '8px', background: 'white', borderRadius: '50%',
-                              position: 'absolute', top: '2px', left: cloudSyncPDF ? '14px' : '2px', transition: 'all 0.3s ease'
-                            }} />
-                          </div>
-                          <span style={{ fontSize: '0.65rem', fontWeight: 800 }}>Núvol {cloudSyncPDF ? "actiu" : "desactivat"}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div
-                    className="card"
-                    onDragOver={handleSolutionDragOver}
-                    onDragLeave={handleSolutionDragLeave}
-                    onDrop={handleSolutionDrop}
-                    style={{
-                      flex: 1, background: isDraggingSolution ? 'var(--accent-light)' : 'var(--bg-tertiary)',
-                      padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem',
-                      border: isDraggingSolution ? '2px dashed var(--accent)' : '1px solid transparent',
-                      transition: 'all 0.2s ease'
+        <div className={`app-container ${mode === 'upload' ? 'home-page' : ''}`} style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+            {processing && <ProcessingOverlay message={processing} />}
+            {dialogs.toast.show && <ToastCard title={dialogs.toast.title} text={dialogs.toast.text} type={dialogs.toast.type} />}
+            {dialogs.dialog.show && (
+                <GlobalDialog
+                    dialog={dialogs.dialog}
+                    onConfirm={dialogs.confirm}
+                    onCancel={dialogs.cancel}
+                    onCheckbox={checked => {
+                        dialogs.setDialog(d => ({ ...d, checkboxChecked: checked }));
+                        dialogs.dialog.onCheckboxChange?.(checked);
                     }}
-                  >
-                    <label style={{ display: 'block', fontWeight: 800, fontSize: '0.85rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Solucionari</label>
-                    <div
-                      style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '1rem' }}
-                    >
-                      {!solutionFileName ? (
-                        <label className="btn btn-secondary" style={{ width: '100%', cursor: 'pointer', border: '2px dashed var(--border)', background: 'transparent' }}>
-                          <Upload size={18} /> Pujar Solucionari
-                          <input type="file" accept="application/pdf" onChange={handleSolutionUpload} style={{ display: 'none' }} />
-                        </label>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
-                            <div style={{ width: '32px', height: '32px', background: 'var(--accent-light)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <FileCheck size={18} color="var(--accent)" />
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: '0.8rem', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{solutionFileName}</div>
-                              <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 600 }}>PDF Solucionari</div>
-                            </div>
-                            <button className="btn-icon" onClick={() => { setSolutionPdfDoc(null); setSolutionFileName(null); }} style={{ color: 'var(--danger)' }}><Trash2 size={16} /></button>
-                          </div>
+                />
+            )}
 
-                          {accessToken && (
-                            <div
-                              onClick={() => {
-                                const newSync = !cloudSyncSolution;
-                                setCloudSyncSolution(newSync);
-                                if (solutionFileName) performFileSync(solutionFileName, newSync, 'solution');
-                              }}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer',
-                                padding: '0.4rem 0.8rem', background: 'var(--bg-secondary)', borderRadius: '1rem',
-                                border: '1px solid var(--border)', width: 'fit-content', alignSelf: 'center'
-                              }}
-                            >
-                              <div style={{
-                                width: '28px', height: '14px', background: cloudSyncSolution ? 'var(--success)' : 'var(--text-secondary)',
-                                borderRadius: '7px', position: 'relative', transition: 'all 0.3s ease'
-                              }}>
-                                <div style={{
-                                  width: '10px', height: '10px', background: 'white', borderRadius: '50%',
-                                  position: 'absolute', top: '2px', left: cloudSyncSolution ? '16px' : '2px', transition: 'all 0.3s ease'
-                                }} />
-                              </div>
-                              <span style={{ fontSize: '0.7rem', fontWeight: 800 }}>Núvol {cloudSyncSolution ? "actiu" : "desactivat"}</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', fontWeight: 500 }}>
-                        {isDraggingSolution ? "Deixa'l anar aquí!" : "Opcional: Arrossega o puja el PDF de referència."}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+            {!session && (
+                <HomeView
+                    {...common}
+                    sessions={recent.sessions}
+                    pending={recent.pending}
+                    onUploadFile={file => void lifecycle.processUploadedFile(file)}
+                    onInvalidFile={() => showToast('Fitxer no vàlid', 'Només es permeten fitxers PDF.', 'error')}
+                    onResume={(s, file) => void lifecycle.resumeSession(s, file)}
+                    onDelete={s => showConfirm('Eliminar sessió', `Vols eliminar la sessió "${s.sessionAlias || s.fileName}"? Aquesta acció no es pot desfer.`, () => void lifecycle.removeSession(s))}
+                    onRename={(s, alias) => void renameSession(s, alias)}
+                    onToggleCloud={s => void toggleSessionCloud(s)}
+                />
+            )}
 
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div className="card" style={{ flex: 1, background: 'var(--bg-tertiary)', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    <label style={{ display: 'block', fontWeight: 800, fontSize: '0.85rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Carrega el teu llistat</label>
-                    {accessToken ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <select
-                            value={selectedCourseId}
-                            onChange={e => setSelectedCourseId(e.target.value)}
-                            style={{ flex: 1, padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid var(--accent)', color: 'var(--accent)', fontWeight: 700, background: 'var(--bg-secondary)' }}
-                          >
-                            <option value="" disabled>Selecciona un curs Classroom...</option>
-                            {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                          </select>
-                          <button className="btn btn-primary" onClick={importClassroom} disabled={!selectedCourseId} style={{ padding: '0.75rem', borderRadius: '50%', width: '42px', height: '42px', flexShrink: 0 }} title="Sincronitzar ara">
-                            <RefreshCw size={18} />
-                          </button>
-                        </div>
-                        <button className="btn btn-secondary" style={{ width: '100%', fontSize: '0.85rem' }} onClick={() => setShowPasteArea(true)}>
-                          <ClipboardPaste size={16} /> O enganxar llista manual
-                        </button>
-                      </div>
-                    ) : (
-                      <div style={{ textAlign: 'center', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0' }}>Connecta amb Google per importar alumnes de Classroom.</p>
-                        <button className="btn-google" onClick={handleAuthorize} style={{ width: '100%', justifyContent: 'center' }}>Connecta amb Google</button>
-                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <div style={{ position: 'absolute', left: 0, right: 0, height: '1px', background: 'var(--border)', zIndex: 1 }}></div>
-                            <span style={{ position: 'relative', zIndex: 2, background: 'var(--bg-tertiary)', padding: '0 0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700 }}>O BÉ</span>
-                        </div>
-                        <button
-                            onClick={() => setShowPasteArea(true)}
-                            style={{
-                                background: 'none',
-                                border: 'none',
-                                color: 'var(--accent)',
-                                fontSize: '0.85rem',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                                textDecoration: 'underline',
-                                padding: 0
+            {session && pdfDoc && (
+                <main className="main-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+                    {mode === 'setup' && (
+                        <SetupView
+                            {...common}
+                            session={session}
+                            update={update}
+                            numPages={pdfDoc.numPages}
+                            courses={auth.courses}
+                            ocrProgress={ocr.progress}
+                            onBack={lifecycle.goBack}
+                            onNext={() => void lifecycle.startConfiguration()}
+                            onImportClassroom={courseId => void classroom.importCourse(courseId)}
+                            onSolutionFile={file => void loadSolutionFile(file)}
+                            onInvalidSolution={() => showToast('Fitxer no vàlid', 'Només es permeten fitxers PDF per al solucionari.', 'error')}
+                            onRemoveSolution={removeSolution}
+                            onToggleCloudPdf={() => {
+                                const next = !session.cloudSyncPDF;
+                                update({ cloudSyncPDF: next });
+                                void syncPdf(session.fileName, next);
                             }}
-                        >
-                            Enganxar llista manualment
-                        </button>
-                      </div>
+                            onToggleCloudSolution={() => {
+                                const next = !session.cloudSyncSolution;
+                                update({ cloudSyncSolution: next });
+                                if (session.solutionFileName) void syncPdf(session.fileName, next, session.solutionFileName);
+                            }}
+                            showConfirm={showConfirm}
+                        />
                     )}
-                  </div>
-                </div>
-              </div>
 
-              {showPasteArea && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-                  <div className="card" style={{ maxWidth: '500px', width: '90%', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <HandwrittenTitle size="1.8rem" color="red" noMargin={true}>Enganxar llista</HandwrittenTitle>
-                      <button className="btn-icon" onClick={() => setShowPasteArea(false)}><X size={20} /></button>
-                    </div>
-                    <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Escriu o enganxa els noms dels alumnes, un per cada línia.</p>
-                    <textarea value={studentList} onChange={(e) => setStudentList(e.target.value)} style={{ width: '100%', height: '300px', padding: '1rem', borderRadius: '0.75rem', border: '1px solid var(--border)', fontSize: '1rem' }} />
-                    <button className="btn btn-primary" onClick={() => setShowPasteArea(false)}>Guardar llista</button>
-                  </div>
-                </div>
-              )}
-
-              <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingLeft: '1rem' }}>
-                <HandwrittenTitle size="2.2rem" color="red">Llistat d'alumnes importats</HandwrittenTitle>
-                {(classroomStudents.length > 0 || studentList.trim()) && (
-                  <button className="btn btn-secondary" style={{ color: 'var(--danger)', fontSize: '0.8rem', padding: '0.4rem 1rem' }} onClick={() => {
-                    showConfirm("Eliminar-ho tot", "Vols eliminar TOTS els alumnes del llistat?", () => {
-                      setClassroomStudents([]);
-                      setStudentList('');
-                    });
-                  }}>
-                    <UserMinus size={14} /> Eliminar-ho tot
-                  </button>
-                )}
-              </div>
-              <div className="card" style={{ padding: '0', overflow: 'hidden', border: '1px solid var(--border)', borderRadius: '1.5rem' }}>
-                <table className="modern-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: '60px' }}>#</th>
-                      <th>Nom de l'alumne</th>
-                      <th>Email / Classroom</th>
-                      <th style={{ width: '60px', textAlign: 'center' }}>Acció</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {classroomStudents.length > 0 ? (
-                      classroomStudents.map((cs, i) => (
-                        <tr key={i}>
-                          <td style={{ fontWeight: 800, color: 'var(--text-secondary)' }}>{i + 1}</td>
-                          <td style={{ fontWeight: 700 }}>{cs.profile?.name?.fullName || 'Desconegut'}</td>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--success)', fontWeight: 600, fontSize: '0.85rem' }}>
-                              <UserCheck size={14} /> {cs.profile?.emailAddress}
-                            </div>
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <button className="btn-icon" style={{ color: 'var(--danger)', padding: '4px' }} onClick={() => {
-                              setClassroomStudents(prev => prev.filter((_, idx) => idx !== i));
-                            }}>
-                              <X size={16} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    ) : studentList.trim() ? (
-                      studentList.split('\n').filter(n => n.trim()).map((name, i) => (
-                        <tr key={i}>
-                          <td style={{ fontWeight: 800, color: 'var(--text-secondary)' }}>{i + 1}</td>
-                          <td style={{ fontWeight: 700 }}>{name}</td>
-                          <td style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontStyle: 'italic' }}>Introduït manualment</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <button className="btn-icon" style={{ color: 'var(--danger)', padding: '4px' }} onClick={() => {
-                              const lines = studentList.split('\n').filter(n => n.trim());
-                              lines.splice(i, 1);
-                              setStudentList(lines.join('\n'));
-                            }}>
-                              <X size={16} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={4} style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-                            <Users size={32} style={{ opacity: 0.3 }} />
-                            <p>Encara no has carregat cap alumne. Sincronitza amb Classroom o enganxa una llista.</p>
-                          </div>
-                        </td>
-                      </tr>
+                    {mode === 'organize_pages' && (
+                        <PageOrganizer
+                            {...common}
+                            pdfDoc={pdfDoc}
+                            solutionPdfDoc={solutionPdfDoc}
+                            groups={session.students}
+                            solutionPages={session.solutionPageIndexes}
+                            pagesPerExam={Math.max(1, session.pagesPerExam || 1)}
+                            fileName={session.fileName}
+                            sessionAlias={session.sessionAlias}
+                            onRename={alias => update({ sessionAlias: alias })}
+                            onChange={(students, solutionPageIndexes) => update({ students, solutionPageIndexes })}
+                            onConfirm={() => lifecycle.setMode('configure_crops')}
+                            onBack={lifecycle.goBack}
+                            showConfirm={showConfirm}
+                        />
                     )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {mode === 'organize_pages' && pdfDoc && <PageOrganizer pdfDoc={pdfDoc} solutionPdfDoc={solutionPdfDoc} initialGroups={students} initialSolutionPages={solutionPageIndexes} pagesPerExam={Number(pagesPerExam) || 1} currentFileName={currentFileName} sessionAlias={sessionAlias} onUpdateSessionAlias={setSessionAlias} onBack={handleBack} onConfirm={(g, sp) => { setStudents(g); setSolutionPageIndexes(sp); setMode('configure_crops'); }} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout} showAlert={showAlert} showConfirm={showConfirm} />}
-        {mode === 'configure_crops' && pdfDoc && (
-          <TemplateDefiner
-            pdfDoc={pdfDoc} pagesPerExam={Number(pagesPerExam) || 1} initialExercises={exercises}
-            currentFileName={currentFileName} sessionAlias={sessionAlias} onUpdateSessionAlias={setSessionAlias}
-            onBack={handleBack}
-            onComplete={async (ex) => {
-              setExercises(ex);
-              if (ocrCompleted) { setMode('correction'); return; }
-              await runOCR(ex);
-              setMode('correction');
-            }}
-            theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
-            accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout}
-            onRunOCR={() => runOCR()}
-            onResetOCR={() => {
-              setStudents(prev => prev.map(s => ({ ...s, name: s.id, nameCropUrl: undefined })));
-              setOcrCompleted(false);
-            }}
-            ocrCompleted={ocrCompleted}
-            showAlert={showAlert} showConfirm={showConfirm} showToast={showToast}
-          />
-        )}
-        {mode === 'correction' && pdfDoc && (
-          <CorrectionView
-            pdfDoc={pdfDoc} solutionPdfDoc={solutionPdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts}
-            commentBank={commentBank} targetMaxScore={targetMaxScore} onUpdateCommentBank={setCommentBank} onUpdateTargetMaxScore={setTargetMaxScore}
-            presets={presets} onUpdatePresets={setPresets}
-            onBack={handleBack} onFinish={() => setMode('results')}
-            onUpdateAnnotations={(s, e, a) => setAnnotations(prev => ({ ...prev, [s]: { ...prev[s], [e]: a } }))}
-            onUpdateRubricCounts={(s, e, i, d) => setRubricCounts(prev => {
-              const cur = prev?.[s]?.[e]?.[i] ?? 0; return { ...prev, [s]: { ...prev[s], [e]: { ...prev[s]?.[e], [i]: Math.max(0, cur + d) } } };
-            })}
-            onUpdateExercise={ux => setExercises(prev => prev.map(ex => ex.id === ux.id ? ux : ex))}
-            studentIdx={studentIdx} exerciseIdx={exerciseIdx} onUpdateStudentIdx={setStudentIdx} onUpdateExerciseIdx={setExerciseIdx}
-            theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
-            accessToken={accessToken} userEmail={userEmail} userPicture={userPicture} onAuthorize={handleAuthorize} onLogout={handleLogout}
-            showConfirm={showConfirm}
-          />
-        )}
+                    {mode === 'configure_crops' && (
+                        <TemplateDefiner
+                            {...common}
+                            pdfDoc={pdfDoc}
+                            pagesPerExam={Math.max(1, session.pagesPerExam || 1)}
+                            templatePage={logical => (session.students[0] ? getStudentPage(session.students[0], logical, pdfDoc.numPages) : undefined) ?? logical}
+                            exercises={session.exercises}
+                            onChange={exercises => update({ exercises })}
+                            fileName={session.fileName}
+                            sessionAlias={session.sessionAlias}
+                            onRename={alias => update({ sessionAlias: alias })}
+                            onComplete={() => void completeTemplate()}
+                            onBack={lifecycle.goBack}
+                            onRunOCR={() => void ocr.run()}
+                            onResetOCR={ocr.reset}
+                            ocrCompleted={session.ocrCompleted}
+                            showConfirm={showConfirm}
+                            showToast={showToast}
+                        />
+                    )}
 
-        {mode === 'results' && pdfDoc && <ResultsView pdfDoc={pdfDoc} students={students} exercises={exercises} annotations={annotations} rubricCounts={rubricCounts} targetMaxScore={targetMaxScore} presets={presets} commentBank={commentBank} onUpdateStudents={setStudents} onBack={() => setMode('correction')} theme={theme} onToggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} accessToken={accessToken} userEmail={userEmail} onAuthorize={handleAuthorize} courses={courses} isAuthorizing={isAuthorizing} classroomStudents={classroomStudents} showAlert={showAlert} showConfirm={showConfirm} showToast={showToast} />}
-      </main>
-    </div>
-  );
+                    {mode === 'correction' && (
+                        <CorrectionView
+                            {...common}
+                            pdfDoc={pdfDoc}
+                            solutionPdfDoc={solutionPdfDoc}
+                            students={session.students}
+                            exercises={session.exercises}
+                            annotations={session.annotations}
+                            rubricCounts={session.rubricCounts}
+                            commentBank={session.commentBank}
+                            targetMaxScore={session.targetMaxScore}
+                            stampSize={session.stampSize}
+                            onUpdateStampSize={stampSize => update({ stampSize })}
+                            onUpdateCommentBank={commentBank => update({ commentBank })}
+                            onUpdateTargetMaxScore={targetMaxScore => update({ targetMaxScore })}
+                            presets={session.presets}
+                            onUpdatePresets={presets => update({ presets })}
+                            onUpdateAnnotations={(sId, eId, anns) => update(s => ({
+                                annotations: { ...s.annotations, [sId]: { ...s.annotations[sId], [eId]: anns } },
+                            }))}
+                            onUpdateRubricCounts={(sId, eId, itemId, delta) => update(s => {
+                                const cur = s.rubricCounts[sId]?.[eId]?.[itemId] ?? 0;
+                                return { rubricCounts: { ...s.rubricCounts, [sId]: { ...s.rubricCounts[sId], [eId]: { ...s.rubricCounts[sId]?.[eId], [itemId]: Math.max(0, cur + delta) } } } };
+                            })}
+                            onUpdateExercise={updateExercise}
+                            onBack={lifecycle.goBack}
+                            onFinish={() => lifecycle.setMode('results')}
+                            studentIdx={session.lastStudentIdx}
+                            exerciseIdx={session.lastExerciseIdx}
+                            onUpdateStudentIdx={lastStudentIdx => update({ lastStudentIdx })}
+                            onUpdateExerciseIdx={lastExerciseIdx => update({ lastExerciseIdx })}
+                            showConfirm={showConfirm}
+                        />
+                    )}
+
+                    {mode === 'results' && (
+                        <ResultsView
+                            pdfDoc={pdfDoc}
+                            stampSize={session.stampSize}
+                            students={session.students}
+                            exercises={session.exercises}
+                            annotations={session.annotations}
+                            rubricCounts={session.rubricCounts}
+                            targetMaxScore={session.targetMaxScore}
+                            presets={session.presets}
+                            commentBank={session.commentBank}
+                            onUpdateStudents={students => update({ students })}
+                            onBack={lifecycle.goBack}
+                            theme={theme}
+                            onToggleTheme={globals.toggleTheme}
+                            accessToken={auth.accessToken}
+                            userEmail={auth.userEmail}
+                            onAuthorize={auth.authorize}
+                            courses={auth.courses}
+                            isAuthorizing={auth.isAuthorizing}
+                            classroomStudents={session.classroomStudents}
+                            showAlert={showAlert}
+                            showConfirm={showConfirm}
+                            showToast={showToast}
+                        />
+                    )}
+                </main>
+            )}
+        </div>
+    );
 }
-
-export default App;

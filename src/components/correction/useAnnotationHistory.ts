@@ -3,16 +3,26 @@ import type { Annotation } from '../../types';
 
 const MAX_STEPS = 20;
 
+interface Stacks {
+    past: Annotation[][];
+    future: Annotation[][];
+}
+
+const EMPTY: Stacks = { past: [], future: [] };
+
 /**
- * Historial per desfer (Ctrl+Z), separat per alumne i exercici.
+ * Historial per desfer (Ctrl+Z) i refer (Ctrl+Shift+Z), separat per alumne i exercici.
  * Abans era un sol historial global: desfer després de canviar d'exercici hi copiava les anotacions d'un altre.
  */
 export function useAnnotationHistory(key: string, current: Annotation[], commit: (anns: Annotation[]) => void) {
-    const [stacks, setStacks] = useState<Record<string, Annotation[][]>>({});
+    const [stacks, setStacks] = useState<Record<string, Stacks>>({});
     const lastCoalesce = useRef<string | null>(null);
 
     const push = useCallback((snapshot: Annotation[]) => {
-        setStacks(prev => ({ ...prev, [key]: [...(prev[key] ?? []).slice(-(MAX_STEPS - 1)), snapshot] }));
+        setStacks(prev => {
+            const s = prev[key] ?? EMPTY;
+            return { ...prev, [key]: { past: [...s.past.slice(-(MAX_STEPS - 1)), snapshot], future: [] } };
+        });
     }, [key]);
 
     /**
@@ -25,13 +35,21 @@ export function useAnnotationHistory(key: string, current: Annotation[], commit:
         commit(next);
     }, [current, commit, push]);
 
-    const stack = stacks[key];
-    const undo = useCallback(() => {
-        if (!stack?.length) return;
-        lastCoalesce.current = null;
-        setStacks(prev => ({ ...prev, [key]: stack.slice(0, -1) }));
-        commit(stack[stack.length - 1]);
-    }, [key, stack, commit]);
+    const s = stacks[key] ?? EMPTY;
 
-    return { apply, push, undo, canUndo: (stack?.length ?? 0) > 0 };
+    const undo = useCallback(() => {
+        if (!s.past.length) return;
+        lastCoalesce.current = null;
+        setStacks(prev => ({ ...prev, [key]: { past: s.past.slice(0, -1), future: [...s.future, current] } }));
+        commit(s.past[s.past.length - 1]);
+    }, [key, s, current, commit]);
+
+    const redo = useCallback(() => {
+        if (!s.future.length) return;
+        lastCoalesce.current = null;
+        setStacks(prev => ({ ...prev, [key]: { past: [...s.past, current], future: s.future.slice(0, -1) } }));
+        commit(s.future[s.future.length - 1]);
+    }, [key, s, current, commit]);
+
+    return { apply, push, undo, redo, canUndo: s.past.length > 0, canRedo: s.future.length > 0 };
 }
