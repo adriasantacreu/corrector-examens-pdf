@@ -43,6 +43,8 @@ Canvis d'estètica, de menús o de layouts; funcionalitats noves no demanades.
 ## Decisions (2026-10-05, OK de l'Adrià)
 - **Estètica i funcionalitat idèntiques a l'original** (`main`): és la referència visual i de comportament de tot.
 - La IA (F11) **no té interfície pròpia**: s'integra a la rúbrica, als comentaris i a la pantalla de resultats que ja hi ha.
+- **La IA és un afegit opcional**: l'app ha de ser 100 % funcional sense la precorrecció (sense proveïdor configurat, cap pantalla ni flux en depèn; la feature F11 s'activa o no via registre).
+- **Una sessió per versió** de l'examen (A, B…): no cal suport de versions dins una sessió.
 - Inventari de menús i dreceres: s'extreu de l'original (T002) abans de la fase 1.
 
 ## F11 · Preclassificació amb IA = el flux de la precorrecció de matrius
@@ -61,6 +63,6 @@ Referència: `docs/plans/2026-10-01_precorreccio-matrius-2bat.md` (2BAT, 12 alum
 
 Regles: la proposta és sempre un suggeriment (estat `pending` fins que l'Adrià l'aplica); mai es publica ni s'envia res sol; temperatura 0, sortida JSON, reintents. Esbós ja fet a la branca `refactor/modular`: `src/services/ai/preGrading.ts` (prompt per criteris + comentari) i `AiSuggestion` a `types.ts`.
 
-Pendent de decidir: **proveïdor** (vegeu la resposta a l'Adrià del 2026-10-05) i si cal suport de **versions A/B** de l'examen (a matrius n'hi havia dues) i **on va la valoració global** (l'original no en té: text a la 1a pàgina, cos del correu o camp nou a Resultats).
+Pendent de decidir: **proveïdor** (vegeu la resposta a l'Adrià del 2026-10-05) i **on va la valoració global** (l'original no en té: text a la 1a pàgina, cos del correu o camp nou a Resultats).
 
 Projectes antics que també serveixen de referència: `docencia/legacy/correccio_examens_2eso|maig/` (`auto_detect_crops.py`, registre d'imatge NCC) i `scratch/pregrade_exercises_groq_robust.py`.
