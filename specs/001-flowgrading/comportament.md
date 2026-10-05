@@ -85,7 +85,7 @@ El que més fallava segons l'Adrià: **on anotaves al PDF i on sortia a la reali
 | Ho comprovem amb proves automàtiques, no a ull | **proves d'anada i tornada**: anotacions a coordenades conegudes → exportar → rasteritzar el PDF → comparar posició i mida (tolerància ≤ 1 pt); i la mateixa sessió ha de donar la mateixa nota a tots els llocs |
 
 ## Usabilitat de retalls i correcció (sense tocar la UI)
-Millores de comportament, no de disseny: mateixos botons i layouts. Proposta per triar:
+Millores de comportament, no de disseny: mateixos botons i layouts. **Totes acceptades (2026-10-05).** Prioritat: R1, C1, C3, C4.
 
 **Retalls (Plantilla)**
 - R1 **Ajust automàtic per alumne**: els escanejos es desplacen o giren una mica; la zona definida un cop s'alinea sola a cada examen (registre d'imatge com `auto_detect_crops.py` del legacy), amb ajust manual si cal.
