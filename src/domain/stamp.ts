@@ -29,10 +29,13 @@ export const clampStamp = (pos: { x: number; y: number }, bounds: Size) => ({
     y: Math.max(0, Math.min(pos.y, bounds.height - 50)),
 });
 
-/** Posició efectiva: la de l'alumne, si no la de l'exercici, si no la per defecte (i sempre dins del contingut). */
-export function resolveStamp(ex: ExerciseDef, anns: Annotation[], lastPageWidth: number, bounds: Size): StampPlacement {
+/**
+ * Posició efectiva: la de l'alumne, si no la de l'exercici, si no la zona lliure (`free`, C5) o la per defecte
+ * (i sempre dins del contingut).
+ */
+export function resolveStamp(ex: ExerciseDef, anns: Annotation[], lastPageWidth: number, bounds: Size, free?: { x: number; y: number }): StampPlacement {
     const custom = anns.find(a => a.id === SCORE_STAMP_ID) as TextAnnotation | undefined;
-    const fallback = defaultStampPosition(lastPageWidth, bounds.height);
+    const fallback = free ?? defaultStampPosition(lastPageWidth, bounds.height);
     const pos = clampStamp({ x: custom?.x ?? ex.stampX ?? fallback.x, y: custom?.y ?? ex.stampY ?? fallback.y }, bounds);
     return { ...pos, scale: custom?.width ? custom.width / STAMP_WIDTH : ex.stampScale ?? 1 };
 }

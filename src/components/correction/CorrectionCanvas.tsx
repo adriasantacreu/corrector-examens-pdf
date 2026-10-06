@@ -8,8 +8,8 @@ import type { KonvaEventObject } from 'konva/lib/Node';
 import { AlertTriangle, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { FONT_SCALE } from '../../config/constants';
 import { displayInk } from '../../domain/colors';
-import { DEFAULT_TEXT_COLOR, droppedComment, eraseAt, newAnnotationId, stampComment } from '../../domain/annotations';
-import { normalizeRect } from '../../domain/geometry';
+import { DEFAULT_TEXT_COLOR, droppedComment, eraseAt, keepInPaper, newAnnotationId, stampComment, withLabelInside } from '../../domain/annotations';
+import { clipRectToBounds, normalizeRect } from '../../domain/geometry';
 import { formatScaledPoints, getHighlightPoints, SCORE_STAMP_ID } from '../../domain/scoring';
 import type { StageViewport } from '../../hooks/useStageViewport';
 import type {
@@ -126,6 +126,8 @@ export default function CorrectionCanvas(p: Props) {
     }, [editingText, vp, apply, setSelectedId]);
 
     const redrawDraft = () => draftLineRef.current?.getLayer()?.batchDraw();
+    /** C6: el que es crea o es mou queda dins del paper. */
+    const inPaper = <T extends Annotation>(a: T): T => (render ? keepInPaper(a, render.bounds, tools.commentDefaultSize) : a);
 
     const handleMouseDown = (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
         if (editingText && tool !== 'text') { commitTextEdit(); return; }
@@ -136,7 +138,7 @@ export default function CorrectionCanvas(p: Props) {
         if (!pos) return;
 
         if (p.pendingStampComment) {
-            const ann = stampComment(p.pendingStampComment, pos, tools.commentDefaultSize);
+            const ann = inPaper(stampComment(p.pendingStampComment, pos, tools.commentDefaultSize));
             apply([...annotations, ann]);
             setSelectedId(ann.id);
             p.clearPendingStampComment();
@@ -214,7 +216,8 @@ export default function CorrectionCanvas(p: Props) {
             apply([...latest.current, { ...pen, points }]);
         }
         if (highlight) {
-            const { startX: _sx, startY: _sy, ...ann } = highlight;
+            const { startX: _sx, startY: _sy, ...drawn } = highlight;
+            const ann = render ? withLabelInside({ ...drawn, ...clipRectToBounds(drawn, render.bounds) }, tools.commentDefaultSize) : drawn;
             // Un clic sense arrossegar ja no crea un fluorescent invisible que resta punts
             if (ann.width >= MIN_HIGHLIGHT && ann.height >= MIN_HIGHLIGHT) apply([...latest.current, ann]);
             else redrawDraft();
@@ -234,7 +237,9 @@ export default function CorrectionCanvas(p: Props) {
                 e.target.position({ x: 0, y: 0 });
                 return { ...a, points: a.points.map((v, i) => (i % 2 === 0 ? v + dx : v + dy)) };
             }
-            return { ...a, x: e.target.x(), y: e.target.y() } as Annotation;
+            const moved = inPaper({ ...a, x: e.target.x(), y: e.target.y() } as Annotation);
+            e.target.position({ x: (moved as { x: number }).x, y: (moved as { y: number }).y });
+            return moved;
         });
         apply(next);
     };
@@ -269,9 +274,9 @@ export default function CorrectionCanvas(p: Props) {
                     return { ...a, points: a.points.map((v, i) => (i % 2 === 0 ? ox + (v - ox) * sx : oy + (v - oy) * sy)) };
                 }
                 case 'text':
-                    return { ...a, x: node.x(), y: node.y(), width: Math.max(20, node.width() * sx), height: Math.max(20, node.height() * sy) };
+                    return inPaper({ ...a, x: node.x(), y: node.y(), width: Math.max(20, node.width() * sx), height: Math.max(20, node.height() * sy) });
                 case 'highlighter':
-                    return { ...a, x: node.x(), y: node.y(), width: Math.max(5, node.width() * sx), height: Math.max(5, node.height() * sy) };
+                    return inPaper({ ...a, x: node.x(), y: node.y(), width: Math.max(5, node.width() * sx), height: Math.max(5, node.height() * sy) });
                 case 'image':
                     return { ...a, x: node.x(), y: node.y(), width: Math.abs(a.width * sx), height: Math.abs(a.height * sy) };
                 case 'highlighter_legend':
@@ -292,7 +297,7 @@ export default function CorrectionCanvas(p: Props) {
         try { comment = JSON.parse(payload); } catch { comment = { text: payload }; }
         const rect = e.currentTarget.getBoundingClientRect();
         const pos = stage.getAbsoluteTransform().copy().invert().point({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-        const ann = droppedComment(comment, pos, tools.commentDefaultSize);
+        const ann = inPaper(droppedComment(comment, pos, tools.commentDefaultSize));
         apply([...annotations, ann]);
         p.onCommentDragEnd();
         setTool('select');

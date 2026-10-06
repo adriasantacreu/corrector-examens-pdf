@@ -7,6 +7,6 @@
 - [x] B004 [H3] Auditoria de totes les accions → `auditoria.md`
 - [x] B005 [H3] Arreglar el que surti de l'auditoria (progrés, errors, desfer) · A1–A4, E1–E4, D1–D2, V1–V2 fets; V3–V4 a B007 · `e2e/feedback.spec.ts`
 - [x] B006 [H4] C1 mesura i pre-càrrega · C2 zoom per exercici · C4 pendents i drecera
-- [ ] B007 [H5] C5 segell en zona lliure · C6 anotacions dins el paper
+- [x] B007 [H5] C5 segell en zona lliure · C6 anotacions dins el paper
 - [ ] B008 [H6] R2 teclat a la plantilla · R3 imant · R4 avís de zona en blanc
 - [ ] B009 **PORTA**: validació final de l'Adrià a la demo pública

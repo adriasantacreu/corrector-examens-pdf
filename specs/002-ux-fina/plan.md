@@ -16,6 +16,8 @@ Spec validada per l'Adrià el 2026-10-05.
 | C1 (fet) | Camí instantani amb `peekPage` (canvas ja resolts, sense frame «Carregant») + pre-càrrega de l'alumne anterior, el següent i el mateix alumne a l'exercici següent. Mesurat: ~47 ms de mediana (`e2e/perf.spec.ts`) | La fletxa enrere també parpellejava |
 | C2 (fet) | Vista guardada per exercici amb `fitFor` (retall@mida del contenidor): es restaura si encaixa, si no `fit()` | Canviar d'alumne dins l'exercici manté el zoom; un retall diferent no hereta una vista absurda |
 | C4 (fet) | «Feta» = `hasWork` a la parella alumne-exercici. ✓/○ del desplegable = exercici actual; la barra de progrés continua comptant alumnes amb alguna feina. `n` i botó «Següent pendent (N)»: resta d'alumnes del mateix exercici, després exercicis següents, i torna a començar | Es corregeix exercici a exercici |
+| C5 (fet) | Zona lliure del segell només quan no hi ha posició fixada: graella de tinta (cel·les de 16 px, fons = lluminositat més freqüent, per això igual en fosc) i la zona sense tinta més a baix a la dreta. Petjada fixa (`stampFootprint`), només tinta (no esquiva anotacions). Mateixa funció a pantalla i PDF | Que el segell no salti mentre s'anota; fidelitat |
+| C6 (fet) | `keepInPaper`: comentaris i fluorescents es desplacen el mínim per quedar dins en crear, deixar anar o transformar; el fluorescent dibuixat es retalla. Etiqueta del fluorescent: a sota (`labelOffsetY` desat) si a sobre no hi cap. Segell en moure'l: tota la petjada dins | Desat a les dades: pantalla i PDF iguals; les dades antigues no canvien |
 | R3 | Imant de 8 px de pantalla a vores i zones, Alt el desactiva | Habitual a editors |
 
 ## Fitxers

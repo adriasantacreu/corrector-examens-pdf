@@ -8,8 +8,10 @@ import {
     SCORE_STAMP_ID, buildScoreSummaryLines, computeExerciseScore, computeStudentScore, formatScaledPoints,
     getGradableExercises, getMaxScore, getScaleFactor, getTotalPossiblePoints, hasWork, nextPending, round2, type GridPos,
 } from '../../domain/scoring';
+import { findStampSpot, stampFootprint } from '../../domain/freeSpot';
+import { inkGrid } from '../../services/pdf/inkGrid';
 import { DEFAULT_STAMP_SIZE, customStampAnnotation, resolveStamp, type StampPlacement } from '../../domain/stamp';
-import { countPresetUses, newAnnotationId } from '../../domain/annotations';
+import { countPresetUses, newAnnotationId, keepInPaper } from '../../domain/annotations';
 import { useStageViewport, type SavedView } from '../../hooks/useStageViewport';
 import type { PDFDocumentProxy } from '../../services/pdf/pdfDocument';
 import type {
@@ -175,17 +177,25 @@ export default function CorrectionView(props: Props) {
     const presetUses = useCallback((id: string) => countPresetUses(annotations, id), [annotations]);
 
     // --- Segell de nota ---
+    // C5: zona lliure de tinta (només cal si el segell no té posició fixada; el PDF la calcula igual)
+    const needsFreeSpot = !!exercise && exercise.stampX === undefined && !current.some(a => a.id === SCORE_STAMP_ID);
+    const freeSpot = useMemo(() => {
+        if (!render || !exercise || !needsFreeSpot) return null;
+        const grid = inkGrid(render.pages.map(pg => ({ canvas: pg.img, sx: 0, sy: 0, x: pg.x, y: pg.y, width: pg.width, height: pg.height })), render.bounds);
+        return findStampSpot(grid, render.bounds, stampFootprint(stampSize, exercise.stampScale ?? 1));
+    }, [render, exercise, needsFreeSpot, stampSize]);
+
     const stamp: StampData | null = useMemo(() => {
         if (!render || !exercise || !exScore) return null;
         const last = render.placements[render.placements.length - 1];
-        const placement = resolveStamp(exercise, current, last ? last.x + last.width : render.bounds.width, render.bounds);
+        const placement = resolveStamp(exercise, current, last ? last.x + last.width : render.bounds.width, render.bounds, freeSpot ?? undefined);
         return {
             ...placement,
             score: round2(exScore.score * factor),
             max: getMaxScore(exercise) * factor,
             lines: buildScoreSummaryLines(exercise, current, counts, presets, factor),
         };
-    }, [render, exercise, exScore, current, counts, presets, factor]);
+    }, [render, exercise, exScore, current, counts, presets, factor, freeSpot]);
 
     const stampAll = () => {
         if (!pendingStampChange || !exercise) return;
@@ -214,11 +224,11 @@ export default function CorrectionView(props: Props) {
                 id: editingText.id || newAnnotationId('text'), type: 'text', x: editingText.x, y: editingText.y,
                 width: editingText.width, height: editingText.height, text, color: '#111827', fontSize: tools.commentDefaultSize,
             };
-            apply([...current, ann]);
+            apply([...current, render ? keepInPaper(ann, render.bounds, tools.commentDefaultSize) : ann]);
         }
         setEditingText(null);
         tools.setTool('select');
-    }, [editingText, current, apply, tools]);
+    }, [editingText, current, apply, tools, render]);
 
     const deleteSelected = useCallback(() => {
         if (!selectedId) return;
@@ -410,7 +420,13 @@ export default function CorrectionView(props: Props) {
                         onCommentDragEnd={noOp}
                         stamp={stamp}
                         stampSize={stampSize}
-                        onStampMoved={setPendingStampChange}
+                        onStampMoved={(p: StampPlacement) => {
+                            // C6: el segell sencer queda dins del paper (no només la cantonada)
+                            if (!render) return setPendingStampChange(p);
+                            const fp = stampFootprint(stampSize, p.scale);
+                            const fit = (v: number, size: number, limit: number) => Math.max(0, Math.min(v, limit - size));
+                            setPendingStampChange({ ...p, x: fit(p.x, fp.width, render.bounds.width), y: fit(p.y, fp.height, render.bounds.height) });
+                        }}
                         formatPoints={formatPoints}
                         scaleFactor={factor}
                         onFit={fit}

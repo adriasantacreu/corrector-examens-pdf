@@ -2,7 +2,7 @@
 
 **Data**: 2026-10-05 · **Mètode**: rastrejador Playwright sobre la demo pública (`?demo=reset`, 1440×900, clar). Per a cada pantalla, clica **cada element clicable** (cursor de mà, `button`, `select`, `input`) un a un, amb context de navegador net, i anota: canvi al DOM o al canvas, errors de consola, excepcions, diàlegs natius, descàrregues, selector de fitxers. Els botons de Google s'ometen (cal sessió real). Complementat amb una revisió del codi de les accions lentes i dels `catch`.
 
-**Estat (2026-10-06)**: B005 fet. Totes les files de les taules estan arreglades, menys V3 i V4, que van a B007. Ho proven `e2e/feedback.spec.ts` (A1–A3, D1, D2, E1) i les captures revisades (A4, V1).
+**Estat (2026-10-06)**: B005 fet. Totes les files de les taules estan arreglades, V3 i V4 arreglades a B007 (C5 i C6: `e2e/fidelity.spec.ts`, `e2e/correction.spec.ts`, `keepInPaper.test.ts`). Ho proven `e2e/feedback.spec.ts` (A1–A3, D1, D2, E1) i les captures revisades (A4, V1).
 
 **Resum**: 159 elements (7 pantalles, inclosa la llista de sessions) · 0 excepcions · 0 diàlegs natius (`alert`/`confirm`) · 2 errors de consola (401 de l'OCR per IA, esperat a la demo estàtica). Els «muts» són els de la taula de sota; la resta respon.
 
@@ -52,8 +52,8 @@ Ja tenen confirmació:
 |---|---|---|---|
 | V1 | Correcció · panell dret | El títol «Rúbrica» surt tallat («…ica»): `HandwrittenTitle` es desplaça −3,5 rem i el panell el talla (igual a l'original) | `noMargin`, com «Generals» (B005) |
 | V2 | Inici · targetes | La data surt en el format de l'idioma del navegador (`10/4/2026` en anglès) | Format fix `ca-ES` (B005) |
-| V3 | Correcció | La llegenda del segell queda sota la barra de zoom i a tocar de la vora | C5/C6 (B007) |
-| V4 | Correcció | L'etiqueta d'un fluorescent a dalt del retall trepitja l'enunciat | C6 (B007) |
+| V3 | Correcció | La llegenda del segell queda sota la barra de zoom i a tocar de la vora | ✓ C5: segell a la zona lliure (B007) |
+| V4 | Correcció | L'etiqueta d'un fluorescent a dalt del retall trepitja l'enunciat | ✓ C6: etiqueta a sota si no hi cap (B007) |
 
 ## Fora d'abast (anotat)
 

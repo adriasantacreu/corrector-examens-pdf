@@ -66,6 +66,7 @@ test('el PDF exportat reprodueix la nota i les anotacions de la pantalla', async
     const [shownScore, shownMax] = exerciseText.split(' / ');
     const hl = await screenGeometry(page, 'h_1');
     const comment = await screenGeometry(page, 't_1');
+    const stampOnScreen = await screenGeometry(page, 'system_score_stamp');
 
     await page.getByRole('button', { name: 'Finalitzar' }).click();
     await expect(page.getByText('Resultats i Exportació')).toBeVisible();
@@ -81,6 +82,9 @@ test('el PDF exportat reprodueix la nota i les anotacions de la pantalla', async
     // 1. Nota impresa = nota de pantalla
     const stamp = pageCalls.find(c => c.op === 'text' && c.text?.startsWith('Nota: ') && c.y < EX1.y + EX1.height && c.y > EX1.y);
     expect(stamp?.text).toBe(`Nota: ${shownScore} / ${shownMax}`);
+    // … i al mateix lloc: la zona lliure (C5) es calcula igual a la pantalla i al PDF
+    expect(Math.abs(stamp!.x - (EX1.x + stampOnScreen.fx * EX1.width))).toBeLessThanOrEqual(TOL);
+    expect(Math.abs(stamp!.y - (EX1.y + stampOnScreen.fy * EX1.height))).toBeLessThanOrEqual(TOL);
 
     // 2. Marcador: mateixa posició i mida
     const orange = pageCalls.find(c => c.op === 'rect' && /249,\s*115,\s*22|#f97316/i.test(c.style))!;

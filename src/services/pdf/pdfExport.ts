@@ -5,7 +5,7 @@
 import { PDFDocument } from 'pdf-lib';
 import { FONT_SCALE } from '../../config/constants';
 import { annotationAnchor, findPlacement, layoutBounds, layoutPages, translateAnnotation, type PagePlacement } from '../../domain/pageLayout';
-import { resolveStamp, STAMP_WIDTH, stampTitleColor, type StampPlacement } from '../../domain/stamp';
+import { DEFAULT_STAMP_SIZE, resolveStamp, STAMP_WIDTH, stampTitleColor, type StampPlacement } from '../../domain/stamp';
 import {
     buildScoreSummaryLines, computeExerciseScore, computeStudentScore, getGradableExercises, getMaxScore,
     round2, SCORE_STAMP_ID, type ScoringContext,
@@ -16,6 +16,8 @@ import type {
 } from '../../types';
 import { paintAnnotations, preloadImages } from './annotationPainter';
 import type { PDFDocumentProxy } from './pdfDocument';
+import { findStampSpot, stampFootprint } from '../../domain/freeSpot';
+import { inkGrid, type InkSource } from './inkGrid';
 import { getPageSize, renderPageCopy } from './pageRenderer';
 
 export interface ExportData extends ScoringContext {
@@ -69,6 +71,14 @@ export async function generateStudentPdf(data: ExportData, student: Student): Pr
         groups.set(exId, [...(groups.get(exId) ?? []), ...anns]);
         byPage.set(page, groups);
     };
+    // Les pàgines es pinten primer: el segell (C5) busca la zona lliure sobre les mateixes imatges que el corrector
+    const canvases = new Map<number, HTMLCanvasElement>();
+    for (const n of student.pageIndexes.filter(p => p !== -1 && p >= 1 && p <= pdfDoc.numPages)) {
+        if (!canvases.has(n)) canvases.set(n, await renderPageCopy(pdfDoc, n));
+    }
+    const freeSpot = (ex: GradableExercise, anns: Annotation[], sources: InkSource[], bounds: { width: number; height: number }) =>
+        ex.stampX !== undefined || anns.some(a => a.id === SCORE_STAMP_ID) ? undefined
+            : findStampSpot(inkGrid(sources, bounds), bounds, stampFootprint(data.stampSize || DEFAULT_STAMP_SIZE, ex.stampScale ?? 1));
     const allAnns: Annotation[] = [];
     const useLegendFor = new Set<string>();
 
@@ -84,7 +94,10 @@ export async function generateStudentPdf(data: ExportData, student: Student): Pr
         if (ex.type === 'crop') {
             const page = getStudentPage(student, ex.pageIndex, pdfDoc.numPages);
             if (page === undefined) continue;
-            const stamp = resolveStamp(ex, anns, ex.width, { width: ex.width, height: ex.height });
+            const bounds = { width: ex.width, height: ex.height };
+            const full = canvases.get(page);
+            const free = full && freeSpot(ex, anns, [{ canvas: full, sx: ex.x, sy: ex.y, x: 0, y: 0, width: ex.width, height: ex.height }], bounds);
+            const stamp = resolveStamp(ex, anns, ex.width, bounds, free);
             const stampAnns = stampAnnotations(ex, score, stamp, lines, scaleFactor, data.stampSize);
             push(page, ex.id, [...visible, ...stampAnns].map(a => translateAnnotation(a, ex.x, ex.y)));
             continue;
@@ -97,7 +110,12 @@ export async function generateStudentPdf(data: ExportData, student: Student): Pr
             if (!target) continue;
             push(pageByOrder.get(target.order)!, ex.id, [translateAnnotation(ann, -target.x, -target.y)]);
         }
-        const stamp = resolveStamp(ex, anns, placements[placements.length - 1].width, layoutBounds(placements));
+        const bounds = layoutBounds(placements);
+        const free = freeSpot(ex, anns, placements.flatMap(pl => {
+            const canvas = canvases.get(pageByOrder.get(pl.order)!);
+            return canvas ? [{ canvas, sx: 0, sy: 0, x: pl.x, y: pl.y, width: pl.width, height: pl.height }] : [];
+        }), bounds);
+        const stamp = resolveStamp(ex, anns, placements[placements.length - 1].width, bounds, free);
         const target = findPlacement(stamp, placements) ?? placements[0];
         const local = { ...stamp, x: stamp.x - target.x, y: stamp.y - target.y };
         push(pageByOrder.get(target.order)!, ex.id, stampAnnotations(ex, score, local, lines, scaleFactor, data.stampSize));
@@ -119,7 +137,7 @@ export async function generateStudentPdf(data: ExportData, student: Student): Pr
     const images = await preloadImages(allAnns);
     const pdf = await PDFDocument.create();
     for (const pageNumber of student.pageIndexes.filter(p => p !== -1 && p >= 1 && p <= pdfDoc.numPages)) {
-        const canvas = await renderPageCopy(pdfDoc, pageNumber);
+        const canvas = canvases.get(pageNumber)!;
         const ctx = canvas.getContext('2d')!;
         for (const [exId, anns] of byPage.get(pageNumber) ?? []) {
             paintAnnotations(ctx, anns, {

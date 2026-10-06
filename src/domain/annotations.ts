@@ -1,5 +1,6 @@
-import type { Annotation, AnnotationComment, AnnotationStore, HighlighterAnnotation, TextAnnotation } from '../types';
-import type { Point } from './geometry';
+import { FONT_SCALE } from '../config/constants';
+import type { Annotation, AnnotationComment, AnnotationStore, HighlighterAnnotation, Rect, TextAnnotation } from '../types';
+import type { Point, Size } from './geometry';
 import { pointInRect } from './geometry';
 
 export const newAnnotationId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -123,3 +124,42 @@ export function detachFromPreset(ann: HighlighterAnnotation, points: number | un
 export const countPresetUses = (store: AnnotationStore, presetId: string): number =>
     Object.values(store).flatMap(byEx => Object.values(byEx)).flat()
         .filter(a => a.type === 'highlighter' && a.presetId === presetId).length;
+
+// --- C6: res fora del paper ---
+
+/** Caixa d'un comentari (unitats del document) com el dibuixa el corrector, amb els punts de sobre inclosos. */
+export function textBox(a: TextAnnotation, defaultFontSize: number): Rect {
+    const fs = (a.fontSize || defaultFontSize) * FONT_SCALE;
+    const lines = (a.text || ' ').split('\n');
+    const width = a.width || Math.max(...lines.map(l => l.length)) * fs * 0.6;
+    const height = a.height || fs * 1.1 * lines.length;
+    const above = a.score !== undefined ? fs * 0.7 : 0;
+    return { x: a.x, y: a.y - above, width, height: height + above };
+}
+
+/** Desplaçament mínim perquè la caixa quedi dins; si no hi cap, enganxada a dalt a l'esquerra. */
+function shiftInside(box: Rect, bounds: Size): Point {
+    const axis = (start: number, size: number, limit: number) =>
+        size >= limit || start < 0 ? -start : Math.min(0, limit - (start + size));
+    return { x: axis(box.x, box.width, bounds.width), y: axis(box.y, box.height, bounds.height) };
+}
+
+/** L'etiqueta d'un fluorescent va a sobre; si no hi cap (a dalt del retall, sobre l'enunciat), a sota. */
+export function withLabelInside(h: HighlighterAnnotation, defaultFontSize: number): HighlighterAnnotation {
+    if (h.labelOffsetY !== undefined) return h;
+    const fs = (h.fontSize || defaultFontSize) * FONT_SCALE;
+    return h.y - (fs + 4) < 0 ? { ...h, labelOffsetY: h.height + 4 } : h;
+}
+
+/** Comentaris i fluorescents sempre dins del paper (en crear-los i en moure'ls); la resta no es toca. */
+export function keepInPaper<T extends Annotation>(a: T, bounds: Size, defaultFontSize: number): T {
+    if (a.type === 'text') {
+        const d = shiftInside(textBox(a, defaultFontSize), bounds);
+        return d.x || d.y ? { ...a, x: a.x + d.x, y: a.y + d.y } : a;
+    }
+    if (a.type === 'highlighter') {
+        const d = shiftInside(a, bounds);
+        return withLabelInside(d.x || d.y ? { ...a, x: a.x + d.x, y: a.y + d.y } : a, defaultFontSize) as T;
+    }
+    return a;
+}

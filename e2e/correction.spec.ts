@@ -136,3 +136,30 @@ test('«Següent pendent» i la tecla N salten a la parella alumne-exercici sens
         await expect(studentSel.locator('option:checked')).toHaveText(/^○/);
     }
 });
+
+test('un fluorescent arrossegat fora del paper queda retallat al paper (C6)', async ({ page }) => {
+    // Rectangle del paper a la pantalla (la imatge més gran del canvas) i del darrer fluorescent
+    const rects = () => page.evaluate(() => {
+        type N = { getClientRect: () => { x: number; y: number; width: number; height: number }; name: () => string; getAttr: (k: string) => unknown };
+        const K = (window as unknown as { Konva: { stages: { find: (s: string) => N[] }[] } }).Konva;
+        const st = K.stages[0];
+        const area = (r: { width: number; height: number }) => r.width * r.height;
+        const paper = st.find('Image').map(n => n.getClientRect()).sort((a, b) => area(b) - area(a))[0];
+        const hls = st.find('Rect').filter(n => String(n.getAttr('fill') ?? '').startsWith('rgba')).map(n => n.getClientRect());
+        return { paper, hl: hls[hls.length - 1] };
+    });
+    // Allunyar perquè quedi marge fora del paper
+    for (let i = 0; i < 3; i++) await page.getByTitle('Allunyar (-)').click();
+    await page.waitForTimeout(300);
+    const box = (await canvas(page).boundingBox())!;
+    const { paper } = await rects();
+    await page.keyboard.press('2');
+    // De dins del paper fins més enllà del seu marge dret i inferior
+    const from: [number, number] = [paper.x + paper.width - 120, paper.y + 60];
+    const to: [number, number] = [Math.min(box.width - 2, paper.x + paper.width + 80), from[1] + 40];
+    expect(to[0], 'el destí és fora del paper').toBeGreaterThan(paper.x + paper.width + 20);
+    await drag(page, from, to);
+    await expect(exerciseScore(page)).toHaveText(/^2\.75\s*\/ 3$/);
+    const { hl } = await rects();
+    expect(hl.x + hl.width).toBeLessThanOrEqual(paper.x + paper.width + 1);
+});
