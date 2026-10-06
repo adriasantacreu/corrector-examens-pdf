@@ -6,11 +6,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { layoutPages, relayoutAnnotation, relayoutPoint } from '../../domain/pageLayout';
 import {
     SCORE_STAMP_ID, buildScoreSummaryLines, computeExerciseScore, computeStudentScore, formatScaledPoints,
-    getGradableExercises, getMaxScore, getScaleFactor, getTotalPossiblePoints, hasWork, round2,
+    getGradableExercises, getMaxScore, getScaleFactor, getTotalPossiblePoints, hasWork, nextPending, round2, type GridPos,
 } from '../../domain/scoring';
 import { DEFAULT_STAMP_SIZE, customStampAnnotation, resolveStamp, type StampPlacement } from '../../domain/stamp';
 import { countPresetUses, newAnnotationId } from '../../domain/annotations';
-import { useStageViewport } from '../../hooks/useStageViewport';
+import { useStageViewport, type SavedView } from '../../hooks/useStageViewport';
 import type { PDFDocumentProxy } from '../../services/pdf/pdfDocument';
 import type {
     Annotation, AnnotationComment, AnnotationStore, ExerciseDef, GradableExercise, HighlighterLegendAnnotation,
@@ -80,7 +80,7 @@ export default function CorrectionView(props: Props) {
 
     const tools = useCorrectionTools();
     const vp = useStageViewport();
-    const { render, isLoading, error: renderError, retry: retryRender } = useExerciseRender(pdfDoc, student, students[studentIdx + 1], exercise, isDarkMode);
+    const { render, isLoading, error: renderError, retry: retryRender } = useExerciseRender(pdfDoc, student, [students[studentIdx + 1], students[studentIdx - 1]], exercise, isDarkMode, gradable[exerciseIdx + 1] as GradableExercise | undefined);
 
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [editingText, setEditingText] = useState<EditingText | null>(null);
@@ -127,8 +127,19 @@ export default function CorrectionView(props: Props) {
         const spans = exercise.type === 'pages' && !!exercise.spansTwoPages;
         vp.fitContent(render.bounds, spans ? { fitHeight: true } : { fitHeight: false, topAligned: true });
     }, [render, exercise, vp]);
+    // C2: cada exercici recorda el zoom i la posició (també en passar d'alumne). Només si el retall i el visor
+    // fan la mateixa mida; si no, la vista desada no encaixaria i es torna a ajustar.
+    const savedViews = useRef(new Map<string, { view: SavedView; fitFor: string }>());
+    const fitFor = render ? `${render.bounds.width}x${render.bounds.height}@${vp.containerSize.width}x${vp.containerSize.height}` : '';
     const renderKey = render?.key;
-    useEffect(() => { fit(); }, [renderKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        const saved = exercise && savedViews.current.get(exercise.id);
+        if (saved && saved.fitFor === fitFor) vp.restoreView(saved.view);
+        else fit();
+    }, [renderKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        if (render && exercise) savedViews.current.set(exercise.id, { view: { scale: vp.stageScale, baseScale: vp.baseScale, pos: vp.stagePos }, fitFor });
+    }, [vp.stageScale, vp.baseScale, vp.stagePos]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // --- Notes ---
     const scoringCtx = useMemo(() => ({ presets, commentBank }), [presets, commentBank]);
@@ -141,6 +152,25 @@ export default function CorrectionView(props: Props) {
     const correctedIds = useMemo(() => new Set(students
         .filter(st => gradable.some(ex => hasWork(annotations[st.id]?.[ex.id], rubricCounts[st.id]?.[ex.id])))
         .map(st => st.id)), [students, gradable, annotations, rubricCounts]);
+
+    // C4: el ✓ del desplegable és de l'exercici actual i «n» salta a la següent parella alumne-exercici sense feina
+    const isDone = useCallback(({ studentIdx: s, exerciseIdx: e }: GridPos) => {
+        const st = students[s], ex = gradable[e];
+        return !!st && !!ex && hasWork(annotations[st.id]?.[ex.id], rubricCounts[st.id]?.[ex.id]);
+    }, [students, gradable, annotations, rubricCounts]);
+    const doneHereIds = useMemo(() => new Set(students.filter((_, i) => isDone({ studentIdx: i, exerciseIdx })).map(st => st.id)),
+        [students, exerciseIdx, isDone]);
+    const pendingCount = useMemo(() => {
+        let n = 0;
+        for (let e = 0; e < gradable.length; e++) for (let s = 0; s < students.length; s++) if (!isDone({ studentIdx: s, exerciseIdx: e })) n++;
+        return n;
+    }, [students.length, gradable.length, isDone]);
+    const goNextPending = useCallback(() => {
+        const next = nextPending(students.length, gradable.length, isDone, { studentIdx, exerciseIdx });
+        if (!next) return;
+        onUpdateStudentIdx(next.studentIdx);
+        onUpdateExerciseIdx(next.exerciseIdx);
+    }, [students.length, gradable.length, isDone, studentIdx, exerciseIdx, onUpdateStudentIdx, onUpdateExerciseIdx]);
 
     const presetUses = useCallback((id: string) => countPresetUses(annotations, id), [annotations]);
 
@@ -222,8 +252,8 @@ export default function CorrectionView(props: Props) {
     });
 
     // --- Teclat (un sol gestor) ---
-    const keyState = useRef({ current, selectedId, editingText, studentIdx, exerciseIdx });
-    keyState.current = { current, selectedId, editingText, studentIdx, exerciseIdx };
+    const keyState = useRef({ current, selectedId, editingText, studentIdx, exerciseIdx, goNextPending });
+    keyState.current = { current, selectedId, editingText, studentIdx, exerciseIdx, goNextPending };
     const keyActions = useRef({ deleteSelected, commitTextEdit, undo: history.undo, redo: history.redo });
     keyActions.current = { deleteSelected, commitTextEdit, undo: history.undo, redo: history.redo };
 
@@ -258,6 +288,7 @@ export default function CorrectionView(props: Props) {
                 case 'x': tools.setTool('eraser'); setSelectedId(null); return;
                 case 't': tools.setTool('text'); setSelectedId(null); return;
                 case 'h': tools.setTool('highlighter'); tools.setActivePresetId(null); setSelectedId(null); return;
+                case 'n': st.goNextPending(); return;
             }
 
             if (COLOR_KEYS[key]) {
@@ -414,6 +445,9 @@ export default function CorrectionView(props: Props) {
                     studentIdx={studentIdx}
                     onStudentIdx={onUpdateStudentIdx}
                     correctedIds={correctedIds}
+                    doneHereIds={doneHereIds}
+                    pendingCount={pendingCount}
+                    onNextPending={goNextPending}
                     annotations={current}
                     apply={apply}
                     selectedId={selectedId}

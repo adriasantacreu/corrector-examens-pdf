@@ -99,3 +99,40 @@ test('la nota sobreviu a recarregar la pàgina', async ({ page }) => {
     await expect(page.getByText('Alumne 4 de 6')).toBeVisible();
     await expect(finalScore(page)).toHaveText('9.75');
 });
+
+test('cada exercici recorda el zoom, també en canviar d\'alumne', async ({ page }) => {
+    const zoom = page.getByTestId('zoom-pct');
+    const fitted = await zoom.textContent();
+    await page.getByTitle('Apropar (+)').click();
+    await page.getByTitle('Apropar (+)').click();
+    const zoomed = await zoom.textContent();
+    expect(zoomed).not.toBe(fitted);
+
+    await page.keyboard.press('ArrowRight'); // alumne 5, mateix exercici
+    await expect(page.getByText('Alumne 5 de 6')).toBeVisible();
+    await expect(zoom).toHaveText(zoomed!);
+
+    await page.keyboard.press('ArrowDown'); // exercici 2: el seu ajust
+    await expect(zoom).not.toHaveText(zoomed!);
+    await page.keyboard.press('ArrowUp'); // de tornada a l'exercici 1
+    await expect(zoom).toHaveText(zoomed!);
+
+    await page.getByTitle('Ajustar a la pàgina').click();
+    await expect(zoom).toHaveText(fitted!);
+});
+
+test('«Següent pendent» i la tecla N salten a la parella alumne-exercici sense corregir', async ({ page }) => {
+    const studentSel = page.locator('.student-section select');
+    const exerciseSel = page.locator('select').first();
+    const pos = async () => `${await studentSel.inputValue()}-${await exerciseSel.inputValue()}`;
+    const btn = page.getByTestId('next-pending');
+    await expect(btn).toHaveText(/Següent pendent \(\d+\)/);
+
+    for (const go of [() => page.keyboard.press('n'), () => btn.click()]) {
+        const before = await pos();
+        await go();
+        await expect.poll(pos).not.toBe(before);
+        // On arriba encara no té feina: el ✓/○ del desplegable és de l'exercici actual
+        await expect(studentSel.locator('option:checked')).toHaveText(/^○/);
+    }
+});

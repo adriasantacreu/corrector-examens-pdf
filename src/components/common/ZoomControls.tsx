@@ -29,7 +29,7 @@ export default function ZoomControls({ scale, onZoom, onFit, variant }: {
                 <Plus size={18} />
             </button>
             <div style={{ borderLeft: '1px solid var(--border)', height: '24px', marginLeft: '0.5rem', paddingLeft: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: 800, minWidth: '45px', textAlign: 'center' }}>
+                <span data-testid="zoom-pct" style={{ fontSize: '0.85rem', fontWeight: 800, minWidth: '45px', textAlign: 'center' }}>
                     {Math.round(scale * 100)}%
                 </span>
                 <button className="btn-icon" style={{ opacity: 0.7 }} title="Ajustar a la pàgina" onClick={onFit}>

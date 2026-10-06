@@ -33,6 +33,12 @@ export interface FitOptions {
     topAligned?: boolean;
 }
 
+export interface SavedView {
+    scale: number;
+    baseScale: number;
+    pos: { x: number; y: number };
+}
+
 export function useStageViewport() {
     const stageRef = useRef<Konva.Stage>(null);
     const { ref: containerRef, nodeRef: containerEl, size: containerSize } = useElementSize<HTMLDivElement>();
@@ -110,6 +116,13 @@ export function useStageViewport() {
         });
     }, [containerEl]);
 
+    /** Torna a una vista desada (zoom i desplaçament d'abans). */
+    const restoreView = useCallback((view: SavedView) => {
+        setStageScale(view.scale);
+        setBaseScale(view.baseScale);
+        setStagePos(view.pos);
+    }, []);
+
     /** Punt del document sota el punter (tenint en compte zoom i desplaçament). */
     const pointerToDocument = useCallback((): { x: number; y: number } | null => {
         const stage = stageRef.current;
@@ -121,7 +134,7 @@ export function useStageViewport() {
     return {
         stageRef, containerRef, containerEl, containerSize,
         stageScale, baseScale, stagePos, setStagePos,
-        applyZoom, handleWheel, handlePinch, endPinch, fitContent, pointerToDocument,
+        applyZoom, handleWheel, handlePinch, endPinch, fitContent, restoreView, pointerToDocument,
     };
 }
 

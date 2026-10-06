@@ -147,6 +147,23 @@ export const formatScaledPoints = (points: number, factor: number): string => {
 export const hasWork = (anns: Annotation[] | undefined, counts: Record<string, number> | undefined): boolean =>
     (anns?.length ?? 0) > 0 || Object.values(counts ?? {}).some(v => v > 0);
 
+export interface GridPos { studentIdx: number; exerciseIdx: number }
+
+/**
+ * Següent parella alumne-exercici pendent (sense feina) des de la posició actual, sense comptar-la: primer la resta
+ * d'alumnes del mateix exercici (es corregeix exercici a exercici), després els exercicis següents, i torna a començar.
+ */
+export function nextPending(students: number, exercises: number, isDone: (pos: GridPos) => boolean, from: GridPos): GridPos | null {
+    const total = students * exercises;
+    const start = from.exerciseIdx * students + from.studentIdx;
+    for (let k = 1; k < total; k++) {
+        const i = (start + k) % total;
+        const pos = { studentIdx: i % students, exerciseIdx: Math.floor(i / students) };
+        if (!isDone(pos)) return pos;
+    }
+    return null;
+}
+
 /** Percentatge de parelles alumne-exercici ja treballades (el que es mostra a les targetes de sessió). */
 export function calculateProgress(
     studentIds: string[],

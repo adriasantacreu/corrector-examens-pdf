@@ -24,6 +24,10 @@ interface Props {
     studentIdx: number;
     onStudentIdx: (idx: number) => void;
     correctedIds: Set<string>;
+    /** Alumnes amb feina a l'exercici actual (✓ del desplegable). */
+    doneHereIds: Set<string>;
+    pendingCount: number;
+    onNextPending: () => void;
     // Selecció
     annotations: Annotation[];
     apply: (anns: Annotation[], coalesce?: string) => void;
@@ -175,7 +179,7 @@ export default function GradingSidebar(p: Props) {
                     <select value={studentIdx} onChange={e => p.onStudentIdx(Number(e.target.value))}
                         style={{ flex: 1, background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.3rem 0.5rem', fontSize: '0.8rem', fontWeight: 600 }}>
                         {students.map((st, i) => (
-                            <option key={st.id} value={i}>{p.correctedIds.has(st.id) ? '✓ ' : '○ '}{cleanName(st) || `Alumne ${i + 1}`}</option>
+                            <option key={st.id} value={i}>{p.doneHereIds.has(st.id) ? '✓ ' : '○ '}{cleanName(st) || `Alumne ${i + 1}`}</option>
                         ))}
                     </select>
                     <button className="btn-icon" onClick={() => p.onStudentIdx(Math.min(students.length - 1, studentIdx + 1))} disabled={studentIdx === students.length - 1} style={{ padding: '4px', flexShrink: 0 }}>
@@ -191,7 +195,18 @@ export default function GradingSidebar(p: Props) {
                         <div style={{ height: '100%', width: `${progressPct}%`, borderRadius: '3px', background: progressPct === 100 ? 'var(--success)' : 'var(--accent)', transition: 'width 0.4s ease' }} />
                     </div>
                 </div>
-                <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textAlign: 'center' }}>Alumne {studentIdx + 1} de {students.length}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>Alumne {studentIdx + 1} de {students.length}</span>
+                <button data-testid="next-pending" onClick={p.onNextPending} disabled={p.pendingCount === 0}
+                    title={p.pendingCount ? 'Ves a la següent parella alumne-exercici sense corregir (N)' : 'Tot corregit'}
+                    style={{
+                        background: 'transparent', border: '1px solid var(--border)', color: p.pendingCount ? 'var(--text-secondary)' : 'var(--success)',
+                        borderRadius: '4px', padding: '2px 8px', fontSize: '0.65rem', fontWeight: 700,
+                        cursor: p.pendingCount ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '4px',
+                    }}>
+                    {p.pendingCount ? <>Següent pendent ({p.pendingCount}) <ChevronRight size={10} /></> : <><Check size={10} /> Tot corregit</>}
+                </button>
+                </div>
             </div>
 
             {selectedId && (

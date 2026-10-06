@@ -10,6 +10,8 @@ import type { PDFDocumentProxy } from './pdfDocument';
 const MAX_CACHED_PIXELS = 32_000_000;
 const cache = new Map<string, Promise<HTMLCanvasElement>>();
 const pixelCount = new Map<string, number>();
+/** Les pàgines de la cau que ja estan pintades (per poder-les fer servir sense esperar cap promesa). */
+const ready = new Map<string, HTMLCanvasElement>();
 
 function evict() {
     let total = [...pixelCount.values()].reduce((a, b) => a + b, 0);
@@ -18,6 +20,7 @@ function evict() {
         total -= pixelCount.get(key) ?? 0;
         cache.delete(key);
         pixelCount.delete(key);
+        ready.delete(key);
     }
 }
 const docIds = new WeakMap<PDFDocumentProxy, number>();
@@ -27,6 +30,9 @@ const docKey = (doc: PDFDocumentProxy) => {
     if (!docIds.has(doc)) docIds.set(doc, nextDocId++);
     return docIds.get(doc)!;
 };
+
+const pageKey = (doc: PDFDocumentProxy, pageNumber: number, scale: number, invert: boolean) =>
+    `${docKey(doc)}:${pageNumber}:${scale}:${invert ? 1 : 0}`;
 
 async function rasterize(doc: PDFDocumentProxy, pageNumber: number, scale: number, invert: boolean): Promise<HTMLCanvasElement> {
     const page = await doc.getPage(pageNumber);
@@ -53,7 +59,7 @@ async function rasterize(doc: PDFDocumentProxy, pageNumber: number, scale: numbe
 export function renderPage(doc: PDFDocumentProxy, pageNumber: number, opts: { scale?: number; invert?: boolean; cache?: boolean } = {}): Promise<HTMLCanvasElement> {
     const { scale = RENDER_SCALE, invert = false, cache: useCache = true } = opts;
     if (!useCache) return rasterize(doc, pageNumber, scale, invert);
-    const key = `${docKey(doc)}:${pageNumber}:${scale}:${invert ? 1 : 0}`;
+    const key = pageKey(doc, pageNumber, scale, invert);
     const hit = cache.get(key);
     if (hit) {
         cache.delete(key);
@@ -63,10 +69,15 @@ export function renderPage(doc: PDFDocumentProxy, pageNumber: number, opts: { sc
     const promise = rasterize(doc, pageNumber, scale, invert);
     cache.set(key, promise);
     promise.then(
-        canvas => { if (cache.get(key) === promise) { pixelCount.set(key, canvas.width * canvas.height); evict(); } },
+        canvas => { if (cache.get(key) === promise) { pixelCount.set(key, canvas.width * canvas.height); ready.set(key, canvas); evict(); } },
         () => { cache.delete(key); pixelCount.delete(key); },
     );
     return promise;
+}
+
+/** La pàgina, si ja és a la cau i pintada; si no, `undefined` (no la demana). */
+export function peekPage(doc: PDFDocumentProxy, pageNumber: number, opts: { scale?: number; invert?: boolean } = {}): HTMLCanvasElement | undefined {
+    return ready.get(pageKey(doc, pageNumber, opts.scale ?? RENDER_SCALE, !!opts.invert));
 }
 
 /** Còpia independent del canvas de la pàgina (per dibuixar-hi anotacions). */

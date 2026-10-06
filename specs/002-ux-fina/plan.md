@@ -13,6 +13,9 @@ Spec validada per l'Adrià el 2026-10-05.
 | Gruixos de Caveat | Carregar `wght@400..700` i treure el `900` sintètic si l'original no el té | El navegador inventa la negreta |
 | Auditoria | `auditoria.md`: taula pantalla · acció · resposta · arreglat? | RF-005 |
 | C1 | Ja hi ha pre-càrrega a `useExerciseRender` (render de `nextStudent`): mesurar-la i completar-la | No refer el que ja funciona |
+| C1 (fet) | Camí instantani amb `peekPage` (canvas ja resolts, sense frame «Carregant») + pre-càrrega de l'alumne anterior, el següent i el mateix alumne a l'exercici següent. Mesurat: ~47 ms de mediana (`e2e/perf.spec.ts`) | La fletxa enrere també parpellejava |
+| C2 (fet) | Vista guardada per exercici amb `fitFor` (retall@mida del contenidor): es restaura si encaixa, si no `fit()` | Canviar d'alumne dins l'exercici manté el zoom; un retall diferent no hereta una vista absurda |
+| C4 (fet) | «Feta» = `hasWork` a la parella alumne-exercici. ✓/○ del desplegable = exercici actual; la barra de progrés continua comptant alumnes amb alguna feina. `n` i botó «Següent pendent (N)»: resta d'alumnes del mateix exercici, després exercicis següents, i torna a començar | Es corregeix exercici a exercici |
 | R3 | Imant de 8 px de pantalla a vores i zones, Alt el desactiva | Habitual a editors |
 
 ## Fitxers
