@@ -4,7 +4,8 @@ import type { Student, ExerciseDef, AnnotationStore, RubricCountStore, PresetHig
 import { computeStudentScore, getScaleFactor } from '../../domain/scoring';
 import { blobToBase64, buildMimeMessage, sendMail } from '../../services/google/gmail';
 import type { PDFDocumentProxy } from '../../services/pdf/pdfDocument';
-import { downloadBlob, generateCombinedPdf, generateStudentPdf, studentPdfFileName, type ExportData } from '../../services/pdf/pdfExport';
+import { downloadBlob } from '../../services/pdf/pdfExport';
+import { EXPORTERS, exportAll, getExporter, type ExportContext } from '../../services/export/registry';
 import HandwrittenTitle from '../common/HandwrittenTitle';
 import FlowGradingLogo from '../common/FlowGradingLogo';
 
@@ -22,6 +23,9 @@ FlowGrading.`;
 interface Props {
     pdfDoc: PDFDocumentProxy;
     stampSize: number;
+    title: string;
+    exportFormat: string;
+    onExportFormat: (id: string) => void;
     students: Student[];
     exercises: ExerciseDef[];
     annotations: AnnotationStore;
@@ -45,7 +49,7 @@ interface Props {
 }
 
 export default function ResultsView({
-    pdfDoc, stampSize, students, exercises, annotations, rubricCounts, targetMaxScore,
+    pdfDoc, stampSize, title, exportFormat, onExportFormat, students, exercises, annotations, rubricCounts, targetMaxScore,
     presets, commentBank,
     onUpdateStudents, onBack, theme, onToggleTheme,
     accessToken, userEmail, classroomStudents,
@@ -62,8 +66,9 @@ export default function ResultsView({
 
     const scoreOf = (studentId: string) =>
         computeStudentScore(studentId, exercises, annotations, rubricCounts, targetMaxScore, { presets, commentBank });
-    const exportData = (): ExportData => ({
-        pdfDoc, exercises, annotations, rubricCounts, targetMaxScore, presets, commentBank, stampSize,
+    const exporter = getExporter(exportFormat);
+    const exportData = (): ExportContext => ({
+        title, pdfDoc, exercises, annotations, rubricCounts, targetMaxScore, presets, commentBank, stampSize,
         scaleFactor: getScaleFactor(exercises, targetMaxScore),
     });
 
@@ -79,11 +84,11 @@ export default function ResultsView({
         setExportProgress(0);
         setActionState({ title: 'Generant PDFs', text: 'Preparant el document sencer...', type: 'loading' });
         try {
-            const blob = await generateCombinedPdf(exportData(), students, (p) => {
+            const blob = await exportAll(exporter, exportData(), students, (p) => {
                 setExportProgress(p);
                 setActionState({ title: 'Generant PDFs', text: `Processant... ${p}%`, type: 'loading' });
             });
-            downloadBlob(blob, 'correccions_totes.pdf');
+            downloadBlob(blob, exporter.allFileName);
             setActionState({ title: 'Èxit', text: 'PDF combinat generat correctament.', type: 'success' });
             setTimeout(() => setActionState(null), 3000);
         } catch (err) {
@@ -100,7 +105,7 @@ export default function ResultsView({
         setIsProcessing(true);
         setActionState({ title: 'Generant PDF', text: `Preparant la descàrrega per a ${student.name}...`, type: 'loading' });
         try {
-            downloadBlob(await generateStudentPdf(exportData(), student), studentPdfFileName(student));
+            downloadBlob(await exporter.student(exportData(), student), exporter.fileName(student));
             setActionState(null);
         } catch (err) {
             console.error(err);
@@ -133,9 +138,9 @@ export default function ResultsView({
         let body = fill(emailTemplate);
         if (isTest) body += "\n\n---\n(Aquest és un correu de prova del sistema per verificar el format.)";
 
-        const pdfBlob = await generateStudentPdf(exportData(), student);
+        const pdfBlob = await exporter.student(exportData(), student);
         const mime = buildMimeMessage(targetEmail, subject, body, {
-            fileName: studentPdfFileName(student), contentType: 'application/pdf', base64: await blobToBase64(pdfBlob),
+            fileName: exporter.fileName(student), contentType: 'application/pdf', base64: await blobToBase64(pdfBlob),
         });
         await sendMail(accessToken, mime);
     };
@@ -240,9 +245,19 @@ export default function ResultsView({
                         Enviament Massiu
                     </button>
 
-                    <button className="btn btn-primary" onClick={handleDownloadAll} disabled={isExporting} style={{ height: '42px' }}>
+                    <select
+                        data-testid="export-format"
+                        value={exporter.id}
+                        onChange={e => onExportFormat(e.target.value)}
+                        title="Format de l'exportació i dels correus"
+                        style={{ height: '42px', padding: '0 0.75rem', borderRadius: '0.75rem', border: '1px solid var(--border)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', flexShrink: 0 }}
+                    >
+                        {EXPORTERS.map(e => <option key={e.id} value={e.id}>{e.label}</option>)}
+                    </select>
+
+                    <button className="btn btn-primary" onClick={handleDownloadAll} disabled={isExporting} style={{ height: '42px', whiteSpace: 'nowrap', flexShrink: 0 }}>
                         {isExporting ? <RefreshCw size={18} className="spin" /> : <FileDown size={18} />}
-                        {isExporting ? `Generant... ${exportProgress}%` : 'Baixar tots els PDF'}
+                        {isExporting ? `Generant... ${exportProgress}%` : exporter.id === 'report' ? 'Baixar tots els informes' : 'Baixar tots els PDF'}
                     </button>
                 </div>
             </header>
@@ -351,7 +366,7 @@ export default function ResultsView({
                                             </td>
                                             <td style={{ textAlign: 'center' }}>
                                                 <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                                                    <button className="btn-icon" title="Baixar PDF" onClick={() => handleDownloadStudent(s)}>
+                                                    <button className="btn-icon" title={exporter.id === 'report' ? 'Baixar informe' : 'Baixar PDF'} onClick={() => handleDownloadStudent(s)}>
                                                         <Download size={18} />
                                                     </button>
                                                     <button 

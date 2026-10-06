@@ -41,6 +41,8 @@ export interface SessionData {
     studentsPagesPerExam: number | null;
     /** Mida de lletra del segell de nota (la mateixa al corrector i al PDF). */
     stampSize: number;
+    /** Format d'exportació triat a Resultats (`services/export/registry.ts`). */
+    exportFormat: string;
 }
 
 /** El que necessita la pantalla d'inici per mostrar una targeta de sessió. */
@@ -102,6 +104,7 @@ export function createEmptySession(fileName: string, globals: Pick<GlobalSetting
         aiSuggestions: {},
         studentsPagesPerExam: null,
         stampSize: 24,
+        exportFormat: 'pdf',
     };
 }
 
@@ -151,6 +154,7 @@ export function migrateSession(raw: unknown, fallbackFileName = ''): SessionData
         studentsPagesPerExam: typeof r.studentsPagesPerExam === 'number' ? r.studentsPagesPerExam
             : students.length ? Math.max(1, asNumber(r.pagesPerExam, 1)) : null,
         stampSize: asNumber(r.stampSize, 24),
+        exportFormat: typeof r.exportFormat === 'string' ? r.exportFormat : 'pdf',
     };
     if (session.lastStudentIdx >= Math.max(1, students.length)) session.lastStudentIdx = 0;
     return session;

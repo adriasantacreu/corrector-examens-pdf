@@ -154,17 +154,6 @@ export async function generateStudentPdf(data: ExportData, student: Student): Pr
     return new Blob([bytes as BlobPart], { type: 'application/pdf' });
 }
 
-export async function generateCombinedPdf(data: ExportData, students: Student[], onProgress?: (pct: number) => void): Promise<Blob> {
-    const merged = await PDFDocument.create();
-    for (let i = 0; i < students.length; i++) {
-        const studentPdf = await PDFDocument.load(await (await generateStudentPdf(data, students[i])).arrayBuffer());
-        const pages = await merged.copyPages(studentPdf, studentPdf.getPageIndices());
-        pages.forEach(p => merged.addPage(p));
-        onProgress?.(Math.round(((i + 1) / students.length) * 100));
-    }
-    return new Blob([(await merged.save()) as BlobPart], { type: 'application/pdf' });
-}
-
 export const studentPdfFileName = (student: Student) => `correccio_${student.name.replace(/\s+/g, '_')}.pdf`;
 
 export function downloadBlob(blob: Blob, fileName: string): void {

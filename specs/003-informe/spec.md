@@ -1,6 +1,6 @@
 # Especificació: informe de correcció (bloc C)
 
-**Carpeta**: `specs/003-informe` · **Creada**: 2026-10-06 · **Estat**: esborrany, pendent de l'OK de l'Adrià
+**Carpeta**: `specs/003-informe` · **Creada**: 2026-10-06 · **Estat**: validada per l'Adrià (2026-10-06)
 **Entrada**: «No em dones opció de fer l'informe com el de la precorrecció» + decisió del 2026-10-05: dos exportadors a triar (001 §F11, «Dos exportadors»).
 
 **Límit fix (constitució I)**: la pantalla de Resultats no es redissenya. S'hi afegeix només la tria del format allà on ja hi ha «Baixar tots els PDF» i el botó per alumne.

@@ -244,6 +244,9 @@ export default function App() {
                         <ResultsView
                             pdfDoc={pdfDoc}
                             stampSize={session.stampSize}
+                            title={session.sessionAlias || session.fileName.replace(/\.pdf$/i, '')}
+                            exportFormat={session.exportFormat}
+                            onExportFormat={exportFormat => update({ exportFormat })}
                             students={session.students}
                             exercises={session.exercises}
                             annotations={session.annotations}
