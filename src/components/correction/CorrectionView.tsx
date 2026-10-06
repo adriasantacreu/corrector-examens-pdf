@@ -9,7 +9,7 @@ import {
     getGradableExercises, getMaxScore, getScaleFactor, getTotalPossiblePoints, hasWork, round2,
 } from '../../domain/scoring';
 import { DEFAULT_STAMP_SIZE, customStampAnnotation, resolveStamp, type StampPlacement } from '../../domain/stamp';
-import { newAnnotationId } from '../../domain/annotations';
+import { countPresetUses, newAnnotationId } from '../../domain/annotations';
 import { useStageViewport } from '../../hooks/useStageViewport';
 import type { PDFDocumentProxy } from '../../services/pdf/pdfDocument';
 import type {
@@ -80,7 +80,7 @@ export default function CorrectionView(props: Props) {
 
     const tools = useCorrectionTools();
     const vp = useStageViewport();
-    const { render, isLoading } = useExerciseRender(pdfDoc, student, students[studentIdx + 1], exercise, isDarkMode);
+    const { render, isLoading, error: renderError, retry: retryRender } = useExerciseRender(pdfDoc, student, students[studentIdx + 1], exercise, isDarkMode);
 
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [editingText, setEditingText] = useState<EditingText | null>(null);
@@ -141,6 +141,8 @@ export default function CorrectionView(props: Props) {
     const correctedIds = useMemo(() => new Set(students
         .filter(st => gradable.some(ex => hasWork(annotations[st.id]?.[ex.id], rubricCounts[st.id]?.[ex.id])))
         .map(st => st.id)), [students, gradable, annotations, rubricCounts]);
+
+    const presetUses = useCallback((id: string) => countPresetUses(annotations, id), [annotations]);
 
     // --- Segell de nota ---
     const stamp: StampData | null = useMemo(() => {
@@ -356,6 +358,8 @@ export default function CorrectionView(props: Props) {
                         vp={vp}
                         render={render}
                         isLoading={isLoading}
+                        renderError={renderError}
+                        onRetryRender={retryRender}
                         student={student}
                         exercise={exercise}
                         annotations={current}
@@ -424,6 +428,8 @@ export default function CorrectionView(props: Props) {
                     commentPoints={exScore.comments}
                     presets={presets}
                     onUpdatePresets={props.onUpdatePresets}
+                    presetUses={presetUses}
+                    showConfirm={showConfirm}
                     tools={tools}
                     onDeselect={() => setSelectedId(null)}
                 />

@@ -320,6 +320,9 @@ body {
 .btn-icon:hover { color: var(--text-primary); background-color: var(--bg-tertiary); }
 .btn-icon.active { background-color: var(--accent); color: white; }
 [data-theme='dark'] .btn-icon.active { color: black; }
+/* Un botó desactivat s'ha de veure desactivat: sense això, semblava un clic que no fa res */
+.btn:disabled, .btn-icon:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+.btn-icon:disabled:hover { background-color: transparent; color: inherit; }
 
 .header {
   height: 70px;

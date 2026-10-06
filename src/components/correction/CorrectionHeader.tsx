@@ -22,6 +22,9 @@ const pagesInfo = (ex: GradableExercise) =>
 
 export default function CorrectionHeader(p: Props) {
     const { exercises, exerciseIdx, onExerciseIdx, spansTwoPages, theme } = p;
+    const current = exercises[exerciseIdx];
+    // Només té sentit per a un exercici de diverses pàgines senceres; en un retall, el botó no faria res
+    const canSpan = current?.type === 'pages' && current.pageIndexes.length > 1;
     return (
         <AppHeader
             style={{ height: '70px', padding: '0 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10, flexShrink: 0 }}
@@ -57,7 +60,8 @@ export default function CorrectionHeader(p: Props) {
                 </div>
                 <button
                     className={`btn-icon ${spansTwoPages ? 'active' : ''}`}
-                    title={spansTwoPages ? 'Vista completa — clic per a mode scroll' : 'Mode scroll — clic per a vista completa'}
+                    title={!canSpan ? 'Només per a exercicis de diverses pàgines senceres' : spansTwoPages ? 'Vista completa — clic per a mode scroll' : 'Mode scroll — clic per a vista completa'}
+                    disabled={!canSpan}
                     style={{ gap: '0.3rem', paddingLeft: '0.6rem', paddingRight: '0.6rem', fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.04em' }}
                     onClick={p.onToggleSpans}
                 >

@@ -75,7 +75,7 @@ export default function SessionCard({ session, showCloudToggle, onOpen, onDelete
                     onMouseLeave={e => { e.currentTarget.style.opacity = '0.6'; }}
                 ><Trash2 size={16} /></button>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}><Clock size={14} /> {new Date(s.lastModified).toLocaleDateString()}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}><Clock size={14} /> {new Date(s.lastModified).toLocaleDateString('ca-ES')}</div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 800, marginBottom: '0.2rem' }}>
                 <span style={{ color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Progrés</span>

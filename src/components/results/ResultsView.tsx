@@ -192,21 +192,24 @@ export default function ResultsView({
 
         showConfirm("Enviament Massiu", `S'enviaran ${studentsWithEmail.length} correus a tots els alumnes vinculats. Vols continuar?`, async () => {
             setSendingState({ current: '', done: 0, total: studentsWithEmail.length });
-            let successCount = 0;
+            const failed: string[] = [];
 
             for (let i = 0; i < studentsWithEmail.length; i++) {
                 const student = studentsWithEmail[i];
                 setSendingState({ current: student.name, done: i, total: studentsWithEmail.length });
                 try {
                     await sendEmailForStudent(student, false);
-                    successCount++;
                 } catch (err) {
                     console.error(`Error enviant a ${student.name}`, err);
+                    failed.push(student.name);
                 }
             }
-            
+
             setSendingState(null);
-            showToast("Enviament completat", `S'han enviat ${successCount} de ${studentsWithEmail.length} correus correctament.`, "success");
+            const total = studentsWithEmail.length;
+            // Si en falla algun, ha de quedar clar quins: un toast verd amagava els que no havien arribat
+            if (failed.length === 0) showToast("Enviament completat", `S'han enviat els ${total} correus correctament.`, "success");
+            else showToast("Enviament amb errors", `No s'han pogut enviar ${failed.length} de ${total} correus: ${failed.join(', ')}. Torna-ho a provar amb el botó de cada alumne.`, "error");
         });
     };
     return (
@@ -230,6 +233,7 @@ export default function ResultsView({
                         className="btn btn-secondary" 
                         onClick={handleMassSend} 
                         disabled={!!sendingState || !accessToken}
+                        title={accessToken ? undefined : 'Connecta amb Google per enviar correus'}
                         style={{ height: '42px', fontSize: '0.85rem' }}
                     >
                         {sendingState ? <RefreshCw size={16} className="spin" /> : <SendIcon size={16} />}
@@ -352,7 +356,7 @@ export default function ResultsView({
                                                     </button>
                                                     <button 
                                                         className="btn-icon" 
-                                                        title="Rebre correu de prova (format real)" 
+                                                        title={accessToken ? 'Rebre correu de prova (format real)' : 'Connecta amb Google per enviar correus'}
                                                         disabled={!accessToken || isSendingTest}
                                                         onClick={() => handleSendTestEmail(s)}
                                                     >
@@ -360,7 +364,7 @@ export default function ResultsView({
                                                     </button>
                                                     <button 
                                                         className="btn-icon" 
-                                                        title="Enviar correu a l'alumne" 
+                                                        title={!accessToken ? 'Connecta amb Google per enviar correus' : !s.email ? "Aquest alumne no té correu: vincula'l a Classroom" : "Enviar correu a l'alumne"}
                                                         disabled={!s.email || !accessToken || isSendingTest}
                                                         onClick={() => handleSendIndividualEmail(s)}
                                                     >

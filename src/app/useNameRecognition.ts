@@ -66,6 +66,7 @@ export function useNameRecognition(store: SessionStore, showToast: ShowToast) {
             // 2. Lectura dels noms
             showToast('Identificant', 'Processant noms amb IA...', 'loading');
             let names: { raw: string | null; matched: string | null }[];
+            let usedLocalOcr = false;
             try {
                 names = await recognizeNames(crops, known, {
                     onProgress: (done, total) => setProgress({ current: done, total }),
@@ -74,6 +75,7 @@ export function useNameRecognition(store: SessionStore, showToast: ShowToast) {
                 console.warn('[ocr] La IA no ha respost, es fa servir Tesseract', err);
                 showToast('Identificant', 'Processant noms un a un...', 'loading');
                 names = [];
+                usedLocalOcr = true;
                 for (let i = 0; i < students.length; i++) {
                     setProgress({ current: i + 1, total: students.length });
                     showToast('OCR', `Llegint alumne ${i + 1}/${students.length}`, 'loading');
@@ -94,7 +96,10 @@ export function useNameRecognition(store: SessionStore, showToast: ShowToast) {
                     return { ...st, name, originalOcrName: reading?.raw ?? undefined, ...(email ? { email } : {}) };
                 }),
             }));
-            showToast('Èxit OCR', `S'han identificat ${identified} noms correctament.`, 'success');
+            // El canvi a l'OCR local era silenciós: llegeix pitjor la lletra, i cal saber-ho per revisar els noms
+            showToast('Èxit OCR', usedLocalOcr
+                ? `IA no disponible: s'ha fet servir l'OCR local. S'han identificat ${identified} noms; revisa'ls.`
+                : `S'han identificat ${identified} noms correctament.`, 'success');
         } catch (err) {
             console.error('[ocr] Error identificant noms', err);
             showToast('Error OCR', "No s'ha pogut completar la identificació per IA.", 'error');

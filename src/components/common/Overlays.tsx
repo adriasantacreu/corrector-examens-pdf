@@ -18,10 +18,10 @@ export function ProcessingOverlay({ message }: { message: string }) {
 }
 
 /** Notificació a la cantonada inferior dreta. També la fa servir la pantalla de resultats. */
-export function ToastCard({ title, text, type, zIndex = 10001 }: { title: string; text: string; type?: ToastState['type']; zIndex?: number }) {
+export function ToastCard({ title, text, type, zIndex = 10001, side = 'right', testId }: { title: string; text: string; type?: ToastState['type']; zIndex?: number; side?: 'left' | 'right'; testId?: string }) {
     return (
-        <div className="card" style={{
-            position: 'fixed', bottom: '2rem', right: '2rem', zIndex,
+        <div className="card" role={type === 'error' ? 'alert' : undefined} data-testid={testId} style={{
+            position: 'fixed', bottom: '2rem', [side]: '2rem', zIndex,
             width: '320px', padding: '1.25rem 1.5rem',
             boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.25)',
             border: '1px solid var(--border)',

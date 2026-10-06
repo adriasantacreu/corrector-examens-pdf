@@ -37,6 +37,9 @@ interface Props {
     vp: StageViewport;
     render: ExerciseRender | null;
     isLoading: boolean;
+    /** Error en pintar el retall: substitueix el motiu genèric i ofereix tornar-ho a provar. */
+    renderError?: string | null;
+    onRetryRender?: () => void;
     student: Student;
     exercise: GradableExercise;
     annotations: Annotation[];
@@ -498,7 +501,9 @@ export default function CorrectionCanvas(p: Props) {
                             {isLoading ? 'Carregant exercici...' : "No es pot carregar l'exercici"}
                         </h3>
                         <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.5' }}>
-                            {student.pageIndexes.length === 0
+                            {!isLoading && p.renderError
+                                ? `No s'ha pogut pintar la pàgina del PDF (${p.renderError}).`
+                                : student.pageIndexes.length === 0
                                 ? 'Aquest alumne no té cap pàgina de PDF assignada.'
                                 : `L'exercici requereix pàgines d'alumne que no estan disponibles. Pàgines de l'alumne: [${student.pageIndexes.join(', ')}].`}
                         </p>
@@ -511,6 +516,9 @@ export default function CorrectionCanvas(p: Props) {
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: '0.75rem' }}>
+                        {!isLoading && p.renderError && p.onRetryRender && (
+                            <button className="btn btn-primary" onClick={p.onRetryRender}>Torna-ho a provar</button>
+                        )}
                         <button className="btn btn-secondary" onClick={p.onBack}>Tornar a Configuració</button>
                         <button className="btn btn-primary" onClick={p.onTryNextStudent}>Provar següent alumne</button>
                     </div>

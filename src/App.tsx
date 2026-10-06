@@ -102,6 +102,8 @@ export default function App() {
     return (
         <div className={`app-container ${mode === 'upload' ? 'home-page' : ''}`} style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
             {processing && <ProcessingOverlay message={processing} />}
+            {/* Fix mentre no es pugui desar: si no, es podia perdre feina sense saber-ho. A l'esquerra per no tapar els avisos normals */}
+            {store.saveError && <ToastCard title="No es desa" text={`${store.saveError} No tanquis la pestanya: es tornarà a provar amb el pròxim canvi.`} type="error" side="left" testId="save-error" />}
             {dialogs.toast.show && <ToastCard title={dialogs.toast.title} text={dialogs.toast.text} type={dialogs.toast.type} />}
             {dialogs.dialog.show && (
                 <GlobalDialog

@@ -41,6 +41,9 @@ interface Props {
     // Fluorescents
     presets: PresetHighlighter[];
     onUpdatePresets: (presets: PresetHighlighter[]) => void;
+    /** Quantes anotacions de tota la sessió fan servir aquest fluorescent. */
+    presetUses: (presetId: string) => number;
+    showConfirm: (title: string, message: string, onConfirm: () => void) => void;
     tools: CorrectionTools;
     onDeselect: () => void;
 }
@@ -130,7 +133,13 @@ export default function GradingSidebar(p: Props) {
                     <button onClick={() => { setEditingPresetId(preset.id); setPresetForm(preset); }} style={{ padding: '0.15rem', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }} title="Edit">
                         <Pencil size={10} />
                     </button>
-                    <button onClick={() => { p.onUpdatePresets(presets.filter(pr => pr.id !== preset.id)); if (tools.activePresetId === preset.id) tools.setActivePresetId(null); }}
+                    <button onClick={() => {
+                        const remove = () => { p.onUpdatePresets(presets.filter(pr => pr.id !== preset.id)); if (tools.activePresetId === preset.id) tools.setActivePresetId(null); };
+                        // Si ja s'ha fet servir, esborrar-lo canvia la nota de qui el té: cal confirmar-ho
+                        const uses = p.presetUses(preset.id);
+                        if (uses) p.showConfirm('Eliminar fluorescent', `«${preset.label}» es fa servir en ${uses} ${uses === 1 ? 'marca' : 'marques'}. Si l'elimines, aquestes marques deixaran de comptar a la nota. Vols continuar?`, remove);
+                        else remove();
+                    }}
                         style={{ padding: '0.15rem', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5, color: 'var(--danger)' }} title="Delete">
                         <Trash2 size={10} />
                     </button>
@@ -229,7 +238,7 @@ export default function GradingSidebar(p: Props) {
             </div>
 
             <div style={{ padding: '1rem', flex: 1, overflowY: 'auto' }}>
-                <HandwrittenTitle size="1rem" color="purple">Rúbrica</HandwrittenTitle>
+                <HandwrittenTitle size="1rem" color="purple" noMargin>Rúbrica</HandwrittenTitle>
                 <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'var(--bg-secondary)', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.6rem' }}>
                         {rubric.length === 0 && (

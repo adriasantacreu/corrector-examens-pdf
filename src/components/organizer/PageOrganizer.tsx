@@ -240,10 +240,10 @@ export default function PageOrganizer(props: Props) {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '120px', justifyContent: 'flex-end' }}>
                                         <span style={{ fontSize: '0.85rem', fontWeight: 800, color: isErr ? 'var(--danger)' : 'var(--success)' }}>{group.pageIndexes.length}/{pagesPerExam}</span>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                            <button onClick={() => setGroups(moveGroup(groups, gi, -1))} className="btn-icon" style={{ padding: '2px', height: '24px' }}><ChevronUp size={16} /></button>
-                                            <button onClick={() => setGroups(moveGroup(groups, gi, 1))} className="btn-icon" style={{ padding: '2px', height: '24px' }}><ChevronDown size={16} /></button>
+                                            <button onClick={() => setGroups(moveGroup(groups, gi, -1))} disabled={gi === 0} className="btn-icon" style={{ padding: '2px', height: '24px' }}><ChevronUp size={16} /></button>
+                                            <button onClick={() => setGroups(moveGroup(groups, gi, 1))} disabled={gi === groups.length - 1} className="btn-icon" style={{ padding: '2px', height: '24px' }}><ChevronDown size={16} /></button>
                                         </div>
-                                        <button onClick={() => setGroups(groups.filter((_, i) => i !== gi))} className="btn-icon" style={{ padding: '4px', color: 'var(--danger)' }}><Trash2 size={18} /></button>
+                                        <button onClick={() => showConfirm('Eliminar alumne', `Vols treure ${group.name || `l'alumne ${gi + 1}`} i les seves ${group.pageIndexes.length} pàgines de la distribució?`, () => setGroups(groups.filter((_, i) => i !== gi)))} title="Eliminar alumne" className="btn-icon" style={{ padding: '4px', color: 'var(--danger)' }}><Trash2 size={18} /></button>
                                     </div>
                                 </div>
                             );

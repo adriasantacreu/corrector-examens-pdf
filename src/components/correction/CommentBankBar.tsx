@@ -252,8 +252,8 @@ export default function CommentBankBar(p: Props) {
                                 <input type="color" value={customColor} onChange={e => setCustomColor(e.target.value)}
                                     style={{ width: '30px', height: '24px', padding: 0, border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer' }} />
                             )}
-                            <button onClick={save}
-                                style={{ background: editingId ? '#f59e0b' : 'var(--accent)', color: 'white', border: 'none', borderRadius: '4px', padding: '0.2rem 0.4rem', cursor: 'pointer', fontWeight: 700, fontSize: '0.7rem' }}>
+                            <button data-testid="comment-add" onClick={save} disabled={!text.trim()} title={text.trim() ? undefined : 'Escriu el text del comentari'}
+                                style={{ background: editingId ? '#f59e0b' : 'var(--accent)', color: 'white', border: 'none', borderRadius: '4px', padding: '0.2rem 0.4rem', cursor: text.trim() ? 'pointer' : 'not-allowed', opacity: text.trim() ? 1 : 0.5, fontWeight: 700, fontSize: '0.7rem' }}>
                                 {editingId ? <Check size={14} /> : '+'}
                             </button>
                         </div>

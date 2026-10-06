@@ -1,4 +1,4 @@
-import type { Annotation, AnnotationComment, HighlighterAnnotation, TextAnnotation } from '../types';
+import type { Annotation, AnnotationComment, AnnotationStore, HighlighterAnnotation, TextAnnotation } from '../types';
 import type { Point } from './geometry';
 import { pointInRect } from './geometry';
 
@@ -118,3 +118,8 @@ export function detachFromPreset(ann: HighlighterAnnotation, points: number | un
     delete rest.presetId;
     return { ...rest, points };
 }
+
+/** Fluorescents de tota la sessió (tots els alumnes i exercicis) que fan servir un preset. */
+export const countPresetUses = (store: AnnotationStore, presetId: string): number =>
+    Object.values(store).flatMap(byEx => Object.values(byEx)).flat()
+        .filter(a => a.type === 'highlighter' && a.presetId === presetId).length;

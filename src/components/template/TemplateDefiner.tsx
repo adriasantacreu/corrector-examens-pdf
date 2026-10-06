@@ -66,6 +66,8 @@ export default function TemplateDefiner(props: Props) {
 
     const [currentPageIndex, setCurrentPageIndex] = useState(0);
     const [pageImage, setPageImage] = useState<HTMLCanvasElement | null>(null);
+    const [pageError, setPageError] = useState<string | null>(null);
+    const [pageAttempt, setPageAttempt] = useState(0);
     const [mode, setMode] = useState<Mode>('draw');
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [transformingId, setTransformingId] = useState<string | null>(null);
@@ -89,6 +91,7 @@ export default function TemplateDefiner(props: Props) {
     const absolutePage = templatePage(currentPageIndex);
     useEffect(() => {
         let cancelled = false;
+        setPageError(null);
         renderPage(pdfDoc, absolutePage, { invert: isDarkMode }).then(canvas => {
             if (cancelled) return;
             setPageImage(canvas);
@@ -96,9 +99,15 @@ export default function TemplateDefiner(props: Props) {
                 fittedPage.current = currentPageIndex;
                 fitContent({ width: canvas.width, height: canvas.height });
             }
-        }).catch(err => console.error('[template] Error carregant la pàgina', err));
+        }).catch(err => {
+            if (cancelled) return;
+            console.error('[template] Error carregant la pàgina', err);
+            // Sense això, el loader girava per sempre
+            setPageImage(null);
+            setPageError(err instanceof Error ? err.message : String(err));
+        });
         return () => { cancelled = true; };
-    }, [pdfDoc, absolutePage, currentPageIndex, isDarkMode, fitContent]);
+    }, [pdfDoc, absolutePage, currentPageIndex, isDarkMode, fitContent, pageAttempt]);
 
     // En crear un exercici, el focus va al nom amb el text seleccionat per sobreescriure'l
     useEffect(() => {
@@ -427,6 +436,11 @@ export default function TemplateDefiner(props: Props) {
                                     )}
                                 </Layer>
                             </Stage>
+                        </div>
+                    ) : pageError ? (
+                        <div role="alert" style={{ margin: 'auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                            <span>No s'ha pogut pintar la pàgina {currentPageIndex + 1} del PDF ({pageError}).</span>
+                            <button className="btn btn-primary" onClick={() => setPageAttempt(a => a + 1)}>Torna-ho a provar</button>
                         </div>
                     ) : <div className="loader" />}
                 </div>

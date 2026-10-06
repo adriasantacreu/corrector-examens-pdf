@@ -75,6 +75,8 @@ export function useExerciseRender(
 ) {
     const [render, setRender] = useState<ExerciseRender | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [attempt, setAttempt] = useState(0);
 
     // Només es torna a renderitzar si canvia alguna cosa que afecta les imatges
     const exKey = ex ? JSON.stringify(ex.type === 'crop'
@@ -87,6 +89,7 @@ export function useExerciseRender(
         let cancelled = false;
         setIsLoading(true);
         setRender(null);
+        setError(null);
         renderExercise(doc, student, ex, isDark)
             .then(pages => {
                 if (cancelled) return;
@@ -95,10 +98,16 @@ export function useExerciseRender(
                 // Precàrrega de l'alumne següent (sense bloquejar)
                 for (const page of pagesFor(nextStudent, ex, doc.numPages)) void renderPage(doc, page, { invert: isDark }).catch(() => undefined);
             })
-            .catch(err => { if (!cancelled) console.error('[correcció] Error carregant l\'exercici', err); })
+            .catch(err => {
+                if (cancelled) return;
+                console.error('[correcció] Error carregant l\'exercici', err);
+                setError(err instanceof Error ? err.message : String(err));
+            })
             .finally(() => { if (!cancelled) setIsLoading(false); });
         return () => { cancelled = true; };
-    }, [doc, studentKey, exKey, isDark]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [doc, studentKey, exKey, isDark, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    return { render, isLoading };
+    /** Error de pintat (PDF malmès, memòria…): es mostra al lloc del retall amb «Torna-ho a provar». */
+    const retry = () => setAttempt(a => a + 1);
+    return { render, isLoading, error, retry };
 }
