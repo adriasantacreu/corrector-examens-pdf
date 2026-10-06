@@ -18,7 +18,9 @@ Spec validada per l'Adrià el 2026-10-05.
 | C4 (fet) | «Feta» = `hasWork` a la parella alumne-exercici. ✓/○ del desplegable = exercici actual; la barra de progrés continua comptant alumnes amb alguna feina. `n` i botó «Següent pendent (N)»: resta d'alumnes del mateix exercici, després exercicis següents, i torna a començar | Es corregeix exercici a exercici |
 | C5 (fet) | Zona lliure del segell només quan no hi ha posició fixada: graella de tinta (cel·les de 16 px, fons = lluminositat més freqüent, per això igual en fosc) i la zona sense tinta més a baix a la dreta. Petjada fixa (`stampFootprint`), només tinta (no esquiva anotacions). Mateixa funció a pantalla i PDF | Que el segell no salti mentre s'anota; fidelitat |
 | C6 (fet) | `keepInPaper`: comentaris i fluorescents es desplacen el mínim per quedar dins en crear, deixar anar o transformar; el fluorescent dibuixat es retalla. Etiqueta del fluorescent: a sota (`labelOffsetY` desat) si a sobre no hi cap. Segell en moure'l: tota la petjada dins | Desat a les dades: pantalla i PDF iguals; les dades antigues no canvien |
-| R3 | Imant de 8 px de pantalla a vores i zones, Alt el desactiva | Habitual a editors |
+| R2 (fet) | Fletxes = 2 unitats (Maj = 20), dins del full. Ctrl+D només per a retalls (nom i nota són únics), +40 i «(còpia)», rúbrica amb ids nous. Historial propi de la plantilla (50 passos); canvis a menys de 700 ms (escriure, mantenir una fletxa) = un pas; dins d'un camp de text, el desfer és el del navegador | Una fletxa mantinguda no ha d'omplir l'historial |
+| R3 (fet) | Imant de 8 px de pantalla a vores del full i de les altres zones de la pàgina, en moure i en redimensionar (només les vores que es mouen). Alt el desactiva | Habitual a editors |
+| R4 (fet) | Zona en blanc = < 0,2 % de píxels amb tinta (fons = valor més freqüent) o alumne sense aquella pàgina. Pàgines en petit (escala 0,5, grisos, ~125 kB) en segon pla, una a una, sense cau de canvas. Avís a la barra lateral; l'enllaç obre la correcció en aquell alumne i exercici | No gastar RAM; un enunciat imprès no és «en blanc», una pàgina buida o mal assignada sí |
 
 ## Fitxers
 

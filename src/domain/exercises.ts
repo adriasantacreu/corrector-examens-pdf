@@ -73,6 +73,8 @@ export function rubricExceedsMax(ex: ExerciseDef): boolean {
     return getScoringMode(ex) === 'from_max' ? Math.abs(sum) > ex.maxScore : sum > ex.maxScore;
 }
 
+export const newExerciseId = () => uid('ex');
+
 export const newRubricItem = (label = ''): RubricItem => ({ id: uid('r'), label, points: 0 });
 
 export const hasGradableExercises = (exercises: ExerciseDef[]): boolean => exercises.some(isGradable);

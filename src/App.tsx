@@ -197,6 +197,11 @@ export default function App() {
                             ocrCompleted={session.ocrCompleted}
                             showConfirm={showConfirm}
                             showToast={showToast}
+                            students={session.students}
+                            onOpenStudent={(lastStudentIdx, lastExerciseIdx) => {
+                                update({ lastStudentIdx, lastExerciseIdx });
+                                void completeTemplate();
+                            }}
                         />
                     )}
 

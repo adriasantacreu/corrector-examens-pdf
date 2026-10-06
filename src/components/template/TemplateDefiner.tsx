@@ -2,27 +2,30 @@
  * Definidor de plantilla: sobre la primera còpia de l'examen es marquen els retalls d'exercici,
  * les pàgines senceres, l'àrea del nom i l'àrea de la nota final.
  * Els canvis es desen a la sessió a l'instant (abans es perdien en tornar enrere o recarregar).
+ * Teclat (R2): fletxes mouen la zona (Maj = pas gran), Ctrl+D duplica, Ctrl+Z / Ctrl+Maj+Z desfer/refer.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Image as KonvaImage, Layer, Rect, Stage } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
-import { Award, Check, ChevronLeft, ChevronRight, FileText, MousePointer2, RefreshCw, Square, TextSelect, Trash2 } from 'lucide-react';
+import { AlertTriangle, Award, Check, ChevronLeft, ChevronRight, FileText, MousePointer2, RefreshCw, Square, TextSelect, Trash2 } from 'lucide-react';
 import {
     addRegion, createPagesExercise, createRegion, distributeRubric, hasGradableExercises,
-    newRubricItem, rubricExceedsMax, withAutoDistribution, type RegionKind,
+    newExerciseId, newRubricItem, rubricExceedsMax, withAutoDistribution, type RegionKind,
 } from '../../domain/exercises';
 import { clipRectToBounds, normalizeRect } from '../../domain/geometry';
 import { isGradable } from '../../domain/scoring';
+import { duplicateRegion, NUDGE_STEP, NUDGE_STEP_BIG, nudge, snapTargets } from '../../domain/templateEdit';
 import { useStageViewport } from '../../hooks/useStageViewport';
 import type { PDFDocumentProxy } from '../../services/pdf/pdfDocument';
 import { renderPage } from '../../services/pdf/pageRenderer';
 import type { ShowConfirm, ShowToast } from '../../state/useDialogs';
-import type { ExerciseDef, OcrNameRegion, Rect as RectShape, RegionExercise, RubricItem, ThemeMode } from '../../types';
+import type { ExerciseDef, OcrNameRegion, Rect as RectShape, RegionExercise, RubricItem, Student, ThemeMode } from '../../types';
 import HandwrittenTitle from '../common/HandwrittenTitle';
 import { AccountBadge, AppHeader, BackButton, SessionTitle, ThemeToggle, type AccountProps } from '../common/HeaderParts';
 import ZoomControls from '../common/ZoomControls';
 import ExerciseCard from './ExerciseCard';
 import RegionItem from './RegionItem';
+import { useBlankZones } from './useBlankZones';
 
 type Mode = 'select' | 'draw' | 'draw_ocr' | 'draw_total_score';
 
@@ -36,6 +39,11 @@ const REGION_STYLE: Record<string, { fill: string; stroke: string; label: string
 };
 
 const MIN_REGION_SIZE = 20;
+/** Historial de la plantilla: canvis seguits en menys d'aquest temps (escriure, mantenir una fletxa) són un sol pas. */
+const HISTORY_COALESCE_MS = 700;
+const MAX_HISTORY = 50;
+/** Zones en blanc que es llisten (la resta, «i N més»). */
+const MAX_BLANK_LISTED = 6;
 
 interface Props extends AccountProps {
     pdfDoc: PDFDocumentProxy;
@@ -56,10 +64,14 @@ interface Props extends AccountProps {
     ocrCompleted: boolean;
     showConfirm: ShowConfirm;
     showToast: ShowToast;
+    /** Alumnes (R4: avís de zones en blanc). */
+    students: Student[];
+    /** Obre la correcció en aquest alumne i exercici (índex entre els corregibles). */
+    onOpenStudent: (studentIdx: number, exerciseIdx: number) => void;
 }
 
 export default function TemplateDefiner(props: Props) {
-    const { pdfDoc, pagesPerExam, templatePage, exercises, onChange, fileName, sessionAlias, onRename, onComplete, onBack, theme, onToggleTheme, onRunOCR, onResetOCR, ocrCompleted, showConfirm, showToast } = props;
+    const { pdfDoc, pagesPerExam, templatePage, exercises, onChange, fileName, sessionAlias, onRename, onComplete, onBack, theme, onToggleTheme, onRunOCR, onResetOCR, ocrCompleted, showConfirm, showToast, students, onOpenStudent } = props;
     const isDarkMode = theme === 'dark';
     const vp = useStageViewport();
     const { fitContent } = vp;
@@ -81,11 +93,48 @@ export default function TemplateDefiner(props: Props) {
     // Les actualitzacions sempre parteixen de la llista més recent (evita perdre canvis seguits)
     const exercisesRef = useRef(exercises);
     useEffect(() => { exercisesRef.current = exercises; }, [exercises]);
-    const setExercises = useCallback((recipe: (prev: ExerciseDef[]) => ExerciseDef[]) => {
-        const next = recipe(exercisesRef.current);
+    const history = useRef<{ past: ExerciseDef[][]; future: ExerciseDef[][]; at: number }>({ past: [], future: [], at: -Infinity });
+    const commit = useCallback((next: ExerciseDef[]) => {
         exercisesRef.current = next;
         onChange(next);
     }, [onChange]);
+    const setExercises = useCallback((recipe: (prev: ExerciseDef[]) => ExerciseDef[]) => {
+        const prev = exercisesRef.current;
+        const next = recipe(prev);
+        if (next === prev) return;
+        const h = history.current, now = performance.now(); // (Date.now pot estar congelat als tests)
+        if (now - h.at > HISTORY_COALESCE_MS) h.past = [...h.past.slice(-(MAX_HISTORY - 1)), prev];
+        h.at = now;
+        h.future = [];
+        commit(next);
+    }, [commit]);
+    const undo = useCallback(() => {
+        const h = history.current;
+        const prev = h.past.pop();
+        if (!prev) return;
+        h.future.push(exercisesRef.current);
+        h.at = -Infinity;
+        commit(prev);
+    }, [commit]);
+    const redo = useCallback(() => {
+        const h = history.current;
+        const next = h.future.pop();
+        if (!next) return;
+        h.past.push(exercisesRef.current);
+        h.at = -Infinity;
+        commit(next);
+    }, [commit]);
+
+    // R3: l'imant es desactiva mentre es manté Alt
+    const altDown = useRef(false);
+    useEffect(() => {
+        const set = (e: KeyboardEvent) => { if (e.key === 'Alt') { altDown.current = e.type === 'keydown'; e.preventDefault(); } };
+        const reset = () => { altDown.current = false; };
+        window.addEventListener('keydown', set);
+        window.addEventListener('keyup', set);
+        window.addEventListener('blur', reset);
+        return () => { window.removeEventListener('keydown', set); window.removeEventListener('keyup', set); window.removeEventListener('blur', reset); };
+    }, []);
 
     // Carrega la pàgina de plantilla (cancel·lant càrregues antigues si es canvia de pàgina ràpid)
     const absolutePage = templatePage(currentPageIndex);
@@ -141,6 +190,30 @@ export default function TemplateDefiner(props: Props) {
             }
             if (isInput) return;
             const key = e.key.toLowerCase();
+            const mod = e.ctrlKey || e.metaKey;
+            if (mod && key === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+            if (mod && key === 'y') { e.preventDefault(); redo(); return; }
+            const selected = exercisesRef.current.find(ex => ex.id === selectedId);
+            const region = selected && selected.type !== 'pages' ? selected : null;
+            const pageSize = pageImage ? { width: pageImage.width, height: pageImage.height } : null;
+            if (mod && key === 'd') {
+                e.preventDefault();
+                if (!region || !pageSize) return;
+                const copy = duplicateRegion(region, pageSize, newExerciseId());
+                if (!copy) { showToast('No es pot duplicar', 'Només hi pot haver una àrea del nom i una de la nota.', 'error'); return; }
+                setExercises(prev => [...prev, copy]);
+                setSelectedId(copy.id);
+                return;
+            }
+            const arrow = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+            if (arrow && region && pageSize) {
+                e.preventDefault();
+                const step = e.shiftKey ? NUDGE_STEP_BIG : NUDGE_STEP;
+                const pos = nudge(region, arrow[0] * step, arrow[1] * step, pageSize);
+                setExercises(prev => prev.map(ex => (ex.id === region.id ? { ...ex, ...pos } as ExerciseDef : ex)));
+                return;
+            }
+            if (mod) return;
             if (key === 'v') setMode('select');
             else if (key === 'r') setMode('draw');
             else if (key === 'p') { e.preventDefault(); addFullPageExercise(); }
@@ -153,7 +226,7 @@ export default function TemplateDefiner(props: Props) {
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [selectedId, showConfirm, addFullPageExercise, removeExercise]);
+    }, [selectedId, showConfirm, showToast, addFullPageExercise, removeExercise, undo, redo, setExercises, pageImage]);
 
     const updateExercise = (id: string, updates: Partial<ExerciseDef>) => {
         setExercises(prev => prev.map(ex => {
@@ -230,6 +303,8 @@ export default function TemplateDefiner(props: Props) {
         }
         setDraft(null);
     };
+
+    const blankZones = useBlankZones(pdfDoc, students, exercises);
 
     const regions = exercises.filter((e): e is RegionExercise => e.type !== 'pages' && e.pageIndex === currentPageIndex);
     const gradable = exercises.filter(isGradable);
@@ -338,6 +413,30 @@ export default function TemplateDefiner(props: Props) {
 
                         <section>
                             <HandwrittenTitle size="1.8rem" color="green" noMargin={true} style={{ marginBottom: '0.5rem' }}>Exercicis corregibles</HandwrittenTitle>
+                            {blankZones.length > 0 && (
+                                <div data-testid="blank-zones" style={{ fontSize: '0.75rem', background: 'var(--danger-light)', border: '1px solid var(--danger)', borderRadius: '0.5rem', padding: '0.6rem 0.8rem', marginBottom: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--danger)', fontWeight: 700 }}>
+                                        <AlertTriangle size={14} /> Zones en blanc: potser hi ha pàgines mal assignades
+                                    </div>
+                                    {blankZones.slice(0, MAX_BLANK_LISTED).map(z => {
+                                        const exIdx = gradable.findIndex(g => g.id === z.exerciseId);
+                                        const st = students[z.studentIdx];
+                                        return (
+                                            <button
+                                                key={`${z.studentIdx}-${z.exerciseId}`}
+                                                data-testid="blank-zone"
+                                                disabled={!canFinish || exIdx < 0}
+                                                onClick={() => onOpenStudent(z.studentIdx, exIdx)}
+                                                title={canFinish ? 'Obrir aquest alumne a la correcció' : 'Cal acabar la plantilla'}
+                                                style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', color: 'var(--text-primary)', cursor: canFinish ? 'pointer' : 'default', fontSize: '0.75rem', textDecoration: canFinish ? 'underline' : 'none' }}
+                                            >
+                                                {gradable[exIdx]?.name ?? 'Exercici'} · {st?.name || `Alumne ${z.studentIdx + 1}`}
+                                            </button>
+                                        );
+                                    })}
+                                    {blankZones.length > MAX_BLANK_LISTED && <span style={{ color: 'var(--text-secondary)' }}>i {blankZones.length - MAX_BLANK_LISTED} més</span>}
+                                </div>
+                            )}
                             {gradable.length === 0 ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                                     <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic', margin: 0 }}>Cap exercici definit.</p>
@@ -428,6 +527,7 @@ export default function TemplateDefiner(props: Props) {
                                                 onSelect={() => setSelectedId(region.id)}
                                                 onStartTransform={() => { setTransformingId(region.id); setSelectedId(region.id); }}
                                                 onChange={rect => updateRegionRect(region.id, rect)}
+                                                snap={() => (altDown.current ? null : snapTargets(regions, region.id, { width: pageImage.width, height: pageImage.height }))}
                                             />
                                         );
                                     })}

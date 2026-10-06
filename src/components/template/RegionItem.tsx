@@ -4,13 +4,18 @@
  *  - el `dragend` dels ancoratges del Transformer ja no mou la regió (abans la feia saltar);
  *  - els límits de redimensionament es calculen en coordenades de pàgina (abans barrejaven píxels de pantalla);
  *  - moure sense desplaçament ja no deixa la regió a (0,0).
+ * En moure o redimensionar, s'enganxa a les vores del full i de les altres zones (R3; Alt ho desactiva).
  */
 import { useEffect, useRef } from 'react';
 import { Group, Rect, Text, Transformer } from 'react-konva';
 import type Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { clampPositionToBounds, clampResizeToBounds, type Size } from '../../domain/geometry';
+import { snapMove, snapResize, type SnapTargets } from '../../domain/templateEdit';
 import type { Rect as RectShape, RegionExercise } from '../../types';
+
+/** Distància de l'imant, en píxels de pantalla. */
+const SNAP_PX = 8;
 
 interface Props {
     region: RegionExercise;
@@ -24,9 +29,11 @@ interface Props {
     onSelect: () => void;
     onStartTransform: () => void;
     onChange: (rect: RectShape) => void;
+    /** Línies de l'imant, o `null` si està desactivat (Alt). */
+    snap?: () => SnapTargets | null;
 }
 
-export default function RegionItem({ region, fill, stroke, label, selectable, isTransforming, baseScale, pageSize, onSelect, onStartTransform, onChange }: Props) {
+export default function RegionItem({ region, fill, stroke, label, selectable, isTransforming, baseScale, pageSize, onSelect, onStartTransform, onChange, snap }: Props) {
     const groupRef = useRef<Konva.Group>(null);
     const rectRef = useRef<Konva.Rect>(null);
     const labelRef = useRef<Konva.Group>(null);
@@ -38,6 +45,9 @@ export default function RegionItem({ region, fill, stroke, label, selectable, is
             trRef.current.getLayer()?.batchDraw();
         }
     }, [isTransforming]);
+
+    /** Distància de l'imant en unitats de la pàgina (depèn del zoom). */
+    const snapThreshold = () => SNAP_PX / (groupRef.current?.getLayer()?.getAbsoluteTransform().getMatrix()[0] || 1);
 
     /** Converteix la caixa del Transformer (en píxels de pantalla) a coordenades de pàgina. */
     const toPageBox = (box: { x: number; y: number; width: number; height: number }) => {
@@ -96,7 +106,9 @@ export default function RegionItem({ region, fill, stroke, label, selectable, is
                 if (!layer) return pos;
                 const t = layer.getAbsoluteTransform();
                 const inv = t.copy().invert();
-                const local = clampPositionToBounds(inv.point(pos), region, pageSize);
+                let local = clampPositionToBounds(inv.point(pos), region, pageSize);
+                const targets = snap?.();
+                if (targets) local = clampPositionToBounds(snapMove({ ...local, width: region.width, height: region.height }, targets, snapThreshold()), region, pageSize);
                 return t.point(local);
             }}
         >
@@ -128,8 +140,10 @@ export default function RegionItem({ region, fill, stroke, label, selectable, is
                     padding={5 / baseScale}
                     boundBoxFunc={(oldBox, newBox) => {
                         if (!groupRef.current?.getLayer()) return oldBox;
-                        const clamped = clampResizeToBounds(toPageBox(newBox), pageSize);
+                        let clamped = clampResizeToBounds(toPageBox(newBox), pageSize);
                         if (!clamped) return oldBox;
+                        const targets = snap?.();
+                        if (targets) clamped = clampResizeToBounds(snapResize(clamped, toPageBox(oldBox), targets, snapThreshold()), pageSize) ?? clamped;
                         const t = groupRef.current.getLayer()!.getAbsoluteTransform();
                         const p1 = t.point({ x: clamped.x, y: clamped.y });
                         const p2 = t.point({ x: clamped.x + clamped.width, y: clamped.y + clamped.height });
